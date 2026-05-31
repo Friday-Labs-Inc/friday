@@ -115,7 +115,7 @@ A persistent, vector-indexed record of something an agent learned, observed, or 
 A skill (`memory_search`) the agent calls explicitly to retrieve relevant past memories. Memory is never auto-injected into every prompt — only fetched on demand.
 
 **Domain**
-A tag on Skills, Agent Role Profiles, Memory Entries, and Agent Projects that scopes knowledge and learning. Examples: `erpnext-procurement`, `infra-kubernetes`, `general`. Prevents cross-contamination between unrelated domains.
+A tag on Skills, Agent Role Profiles, Memory Entries, and Agent Projects that scopes knowledge and learning. Examples: `customer-support`, `infra-kubernetes`, `general`. Prevents cross-contamination between unrelated domains.
 
 ---
 

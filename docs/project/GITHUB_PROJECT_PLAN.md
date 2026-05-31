@@ -24,7 +24,7 @@ Public.
 - **By Contributor Type** — group by `for:*` labels (humans / AI / pair)
 - **Design Decisions** — filter to label `type:proposal`
 - **Security and Governance** — filter to label `type:security` or `area:permissions`
-- **PO Flagship** — filter to milestone `Phase 1 PO Flagship` (created when v0.1 ships)
+- **Business Flagship** — filter to milestone `Phase 1 Business Flagship` (created when v0.1 ships)
 
 ## Columns
 
@@ -41,8 +41,8 @@ Public.
 | Field | Values | Source |
 |---|---|---|
 | Slice | `Slice 1` … `Slice 9` | `CODEX.md` §5 |
-| Area | Framework Core, Agent Kernel, Workflow, Sandbox, Control Room, CLI, LLM, Permissions, CI, ERPNext PO | `LABELS.md` §4 |
-| Phase | v0.1, Phase 1 PO Flagship, Phase 1.5, Phase 2, Future | `LABELS.md` §3 |
+| Area | Framework Core, Agent Kernel, Workflow, Sandbox, Control Room, CLI, LLM, Permissions, CI | `LABELS.md` §4 |
+| Phase | v0.1, Phase 1 Business Flagship, Phase 1.5, Phase 2, Future | `LABELS.md` §3 |
 | Risk | Low, Medium, High, Critical | Used for security-sensitive issues |
 | Contributor type | Human, AI agent, Human-AI pair | `AI_CONTRIBUTORS.md` Pillar 5 |
 
@@ -67,7 +67,7 @@ These were the original seed issues. All resolved, captured in design docs and `
 - ✅ Decide PostgreSQL setup path → **PostgreSQL + pgvector from day one** (D2)
 - ✅ Decide Friday CLI / bench command strategy → **Extend bench with `friday` group** (D5)
 - ✅ Decide Raven v0.1 vs v0.2 → **v0.2** (D3)
-- ✅ ERPNext PO flagship track scope → defined in `42-phase-one-authority-contract.md` §6
+- ✅ First business-automation flagship scope → defined in `42-phase-one-authority-contract.md` §6
 - ✅ Audit public security claims → `46-security-claims-audit.md`
 - ✅ Define fork policy → `45-fork-policy.md`
 - ✅ Prepare open-source launch checklist → in progress (this document + `GITHUB_SETUP_CHECKLIST.md`)
@@ -90,7 +90,7 @@ Each slice is one milestone on the GitHub board. Open child issues for the sub-t
 
 ### After Phase 1
 
-- **Phase 1 PO Flagship** — Procurement / Inventory / Coordinator agents on top of v0.1
+- **Phase 1 Business Flagship** — domain agents on top of v0.1
 - **Phase 1.5 Hardening** — warm pool, egress proxy, security attack suite, multi-host
 - **Phase 2 Public Launch** — Raven War Rooms, additional platform adapters, semantic memory
 

@@ -23,7 +23,7 @@ this module and adds it to the existing tuple.
 We expose a single click Group named `friday` so all Friday subcommands
 are namespaced — `bench --site X friday chat`,
 `bench --site X friday <future-subcommand>`. No collisions with stock
-Frappe / ERPNext command names.
+Frappe command names.
 
 WHY click AND NOT argparse / typer
 ==================================

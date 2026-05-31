@@ -1,6 +1,6 @@
 # Friday Roadmap
 
-## Phase 1: Fundamentals And PO Flagship
+## Phase 1: Fundamentals
 
 Build the governed framework loop first:
 
@@ -15,13 +15,12 @@ Build the governed framework loop first:
 - Permission Decision Log
 - Control Room
 
-Then run the ERPNext Purchase Order flagship dogfood:
+Then run the first business-automation flagship dogfood:
 
-- Procurement Agent profile
-- Inventory read-only support or alerts
+- A domain-specific Agent Profile
+- Read-only support / alerting where it reduces risk
 - Coordinator Agent basic oversight
-- Operations Policy DocType
-- PO draft / supplier follow-up / GRN matching / variance flagging
+- Operations Policy DocType (approval thresholds)
 - human approval for high-risk or financially binding actions
 
 ## Phase 1.5: Hardening

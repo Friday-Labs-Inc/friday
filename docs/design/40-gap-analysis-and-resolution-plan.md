@@ -19,7 +19,7 @@ All eight stack decisions are resolved in `docs/decisions/spike-results.md`. All
 
 **Was:** Three documents defined conflicting Phase 1 scopes (docs 06/10/11 = CLI MVP; docs 14/16/24 = integrated platform with Raven; docs 19/30/35 = ERPNext business automation).
 
-**Resolution:** `42-phase-one-authority-contract.md` is the single source of truth for v0.1 scope. Phase 1 proves the governed framework loop. ERPNext PO automation is the Phase 1 flagship track that starts after v0.1 is complete. All other documents calling something "Phase 1" are roadmap context unless explicitly included in doc 42.
+**Resolution:** `42-phase-one-authority-contract.md` is the single source of truth for v0.1 scope. Phase 1 proves the governed framework loop. The first business-automation track starts after v0.1 is complete. All other documents calling something "Phase 1" are roadmap context unless explicitly included in doc 42.
 
 ---
 
@@ -151,6 +151,6 @@ These items are resolved at the decision level but require follow-up commits bef
 
 ## The Friday Architecture Statement
 
-Friday is an agentic framework that runs on a hard fork of Frappe v16 stable, with the full bench ecosystem intact, agent-native primitives built into framework core, and ERPNext operations as the first flagship business use case delivered through a Friday app.
+Friday is an agentic framework that runs on a hard fork of Frappe v16 stable, with the full bench ecosystem intact, agent-native primitives built into framework core, and business automation as the first flagship use case delivered through a Friday app.
 
 Single-site. Two-worker model. Framework Console as the product surface. Agent Core Worker as the engine. Permission first, always. Audit everything. Kanban is a view, not the workflow.

@@ -152,12 +152,12 @@ No custom shell. The workspace primitive handles layout, persistence, and per-us
 v16 allows eval expressions on DocType fields for visibility, defaults, and validation. Friday Skills use this for runtime-dependent parameter schemas:
 
 ```
-# Skill: send_invoice
+# Skill: send_notification
 parameters_schema = {
-  "invoice_id":  {"type": "Link", "options": "Sales Invoice"},
+  "note_id":     {"type": "Link", "options": "Note"},
   "include_pdf": {"type": "Check",
                   "default": "eval: frappe.db.get_single_value('Friday Settings', 'attach_pdf_default')"},
-  "send_to":     {"type": "Data", "depends_on": "eval: doc.invoice_id != null"}
+  "send_to":     {"type": "Data", "depends_on": "eval: doc.note_id != null"}
 }
 ```
 

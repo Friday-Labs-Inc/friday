@@ -23,7 +23,7 @@ Every time an agent is about to call a tool ("skill"), three things are checked,
 
 1. **Is the agent active right now?** (A suspended employee can't print things even if they used to be allowed.)
 2. **Is the tool itself active and safe to use?** (No drafts, no retired tools.)
-3. **Does the agent's job description cover the things this tool needs?** (A Sales Agent should not be calling the Procurement-only tool.)
+3. **Does the agent's job description cover the things this tool needs?** (One agent should not be calling another agent's restricted tool.)
 
 If all three are yes → **allow**. If any is no → **deny**, with a written reason. Either way, one row goes into an immutable audit log so a regulator, an auditor, or the team can answer "what happened on March 12th?" later.
 

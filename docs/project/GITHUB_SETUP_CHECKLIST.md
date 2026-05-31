@@ -108,7 +108,7 @@ Add columns:
 Add custom fields:
 - [ ] **Slice** (single-select): `Slice 1` through `Slice 9`
 - [ ] **Area** (single-select): values from `LABELS.md` §4
-- [ ] **Phase** (single-select): `v0.1`, `1-po-flagship`, `1.5`, `2`
+- [ ] **Phase** (single-select): `v0.1`, `1-business-flagship`, `1.5`, `2`
 - [ ] **Risk** (single-select): `Low`, `Medium`, `High`, `Critical`
 
 Workflows (auto-add items):

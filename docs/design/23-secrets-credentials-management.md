@@ -175,24 +175,24 @@ The three together answer: "On date D, agent A accessed credential C for executi
 
 ---
 
-## 7. ERPNext-specific pattern — one user per agent
+## 7. One user per agent (credential forensics)
 
-A critical case for the Phase 1 ERPNext PO flagship (runs after v0.1 framework loop is proven; see `30-autonomous-business-operations-architecture.md`).
+A critical case whenever an agent acts on records on a user's behalf.
 
-Naive setup: one shared ERPNext API user across all Friday agents. Audit trail says "API User created Purchase Order #123" — useless for forensics.
+Naive setup: one shared API user across all Friday agents. Audit trail says "API User created record #123" — useless for forensics.
 
 Friday's pattern:
 
-1. **System Manager Agent** has elevated ERPNext permissions and a corresponding Credential Profile.
-2. On project setup, it creates one ERPNext user per agent: `procurement.agent@friday.local`, `finance.agent@friday.local`, and so on.
-3. Each ERPNext user receives:
-   - The appropriate ERPNext role (Purchase Manager, Finance Manager, etc.).
+1. **System Manager Agent** has elevated permissions and a corresponding Credential Profile.
+2. On project setup, it creates one platform user per agent: `research.agent@friday.local`, `support.agent@friday.local`, and so on.
+3. Each user receives:
+   - The appropriate role (e.g. Note Writer, Knowledge User).
    - An API key + secret.
    - Stored as a Credential Profile in Friday, scoped to that specific Agent Profile.
-4. The Friday Agent Profile links to its ERPNext user via `linked_user`.
-5. When the agent invokes an ERPNext skill, it uses **its own** credentials, never a shared service account.
+4. The Friday Agent Profile links to its user via `linked_user`.
+5. When the agent invokes a skill, it uses **its own** credentials, never a shared service account.
 
-ERPNext audit then shows "procurement.agent created Purchase Order #123" — full forensic clarity.
+The audit then shows "research.agent created record #123" — full forensic clarity.
 
 ---
 

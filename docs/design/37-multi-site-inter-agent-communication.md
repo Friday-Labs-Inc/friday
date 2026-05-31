@@ -12,7 +12,7 @@ A single Friday installation runs on a single Frappe site. Real organisations ha
 - Multiple Frappe sites (one per company, one per region).
 - Parent and subsidiaries each running separate Friday instances.
 - Friday running locally for a customer alongside Friday Labs cloud services.
-- Partner Friday instances that need to coordinate directly (supplier ↔ customer Friday).
+- Partner Friday instances that need to coordinate directly across organisations.
 
 Agents in different Friday sites must discover, authenticate, and exchange messages with each other — safely.
 
@@ -38,12 +38,12 @@ ACP is a minimal, secure, async messaging protocol between Friday sites.
   "conversation_id": "uuid-v4",
   "sender": {
     "site": "https://friday-a.example.com",
-    "agent": "procurement-agent",
+    "agent": "support-agent",
     "instance_id": "uuid"
   },
   "recipient": {
     "site": "https://friday-b.example.com",
-    "agent": "sales-agent"
+    "agent": "support-agent"
   },
   "intent": "purchase_order_announce",
   "payload": { ... },
@@ -56,12 +56,12 @@ ACP is a minimal, secure, async messaging protocol between Friday sites.
 
 A small, versioned catalogue. Initial set:
 
-- `purchase_order_announce` — supplier-side Friday announces an incoming PO from a customer-side Friday.
-- `shipment_notification` — supplier notifies customer of dispatch.
-- `invoice_announce` — supplier announces invoice availability.
-- `payment_confirmation` — customer announces payment sent.
-- `inventory_query` — request stock availability from a partner.
-- `inventory_response` — answer to query.
+- `task_announce` — one site announces a new cross-org request to a partner site.
+- `status_notification` — a site notifies a partner of a status change.
+- `result_announce` — a site announces that a deliverable or result is ready.
+- `receipt_confirmation` — a site confirms it received and accepted a message.
+- `resource_query` — request resource/availability information from a partner.
+- `resource_response` — answer to query.
 - `escalation_handoff` — escalate a problem to a partner's human supervisor.
 - `acknowledgment` — generic ACK with optional payload.
 
@@ -73,7 +73,7 @@ Intents are namespaced (`erpnext.purchase_order_announce`) and versioned (`v1`).
 
 | Field | Type |
 |---|---|
-| `site_name` | Data (unique) — e.g. "Acme Suppliers Friday" |
+| `site_name` | Data (unique) — e.g. "Acme Org Friday" |
 | `site_url` | Data — base URL |
 | `public_key` | Long Text — signature verification |
 | `certificate_fingerprint` | Data — mTLS cert pin |
@@ -97,7 +97,7 @@ Each Friday site exposes `https://{site}/.well-known/friday-acp`:
 
 ```json
 {
-  "site_name": "Acme Suppliers Friday",
+  "site_name": "Acme Org Friday",
   "public_key": "ed25519-pubkey-base64",
   "supported_intents": [ ... ],
   "contact": "ops@acme.com",
@@ -141,7 +141,7 @@ Incoming messages enqueue to a Frappe RQ queue. A worker:
 
 1. Resolves the intent handler (`friday.acp.handlers.{intent_name}`).
 2. Invokes the handler with the message.
-3. Handler is intent-specific — `purchase_order_announce` creates a Sales Order in local ERPNext from the incoming PO data.
+3. Handler is intent-specific — `task_announce` creates a local work item from the incoming request data.
 4. Handler emits an acknowledgment message back to the sender.
 
 Intent handlers run in the same sandbox isolation as skills per `24-sandbox-architecture-implementation.md`. They are code Friday maintainers ship and review.
@@ -200,7 +200,7 @@ Trust-level changes are supervisor decisions, logged.
 
 ## 12. Conflict resolution
 
-When two sites disagree (e.g. supplier says shipped, customer says not received):
+When two sites disagree (e.g. one site says a task is done, the other says it never arrived):
 
 1. Both agents flag the discrepancy.
 2. Escalation handoff initiated.
@@ -257,7 +257,7 @@ Visible in the Framework Console operations view.
 | Phase | Scope |
 |---|---|
 | 1 (v0.1) | Not in scope per `42-phase-one-authority-contract.md` §4. Friday Phase 1 is single-site only |
-| 2 | Partner Site DocType (manual entry); ACP protocol; 4 core intents (PO announce, shipment notify, invoice announce, payment confirm); mTLS + Ed25519 signature verification; rate limiting; basic escalation handoff |
+| 2 | Partner Site DocType (manual entry); ACP protocol; 4 core intents (task announce, status notify, result announce, receipt confirm); mTLS + Ed25519 signature verification; rate limiting; basic escalation handoff |
 | 3 | Well-known endpoint discovery; full intent catalogue; trust levels; data-sharing audit; failure-mode handling |
 | 4 | Optional cloud relay; partner registry (Friday Labs hosted); multi-party conversations (3+ sites); inter-site analytics with consent |
 

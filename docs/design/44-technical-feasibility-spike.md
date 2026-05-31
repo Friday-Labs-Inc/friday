@@ -215,7 +215,7 @@ The spike does NOT:
 - Build production-grade DocTypes
 - Build the Control Room (per doc 43)
 - Implement learning loops, memory, autopilot, multi-site
-- Build the ERPNext PO flagship (that's a Phase 1 deliverable on top of v0.1)
+- Build the first business-automation flagship (that's a Phase 1 deliverable on top of v0.1)
 - Make any choice that doc 42 has already locked
 - Touch the `main` branch of the friday repo
 

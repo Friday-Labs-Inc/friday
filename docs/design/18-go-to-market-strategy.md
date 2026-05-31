@@ -196,7 +196,7 @@ The novel piece. Friday Labs revenue, after operations, flows back to community 
 | Frappe core absorbs agentic features; Friday becomes redundant | Become so good and so embedded that Friday is what they would absorb; collaborate, don't compete |
 | Community contributions don't materialise | Core team produces 80% of value for the first year; revenue-share kicks in to attract contributors |
 | Friday Labs operational complexity sinks the team | Don't launch Friday Labs until Phase 1 product is rock-solid; small early-customer beta first |
-| Indian SMBs don't adopt agentic automation fast enough | Lead with concrete ROI on a single workflow (ERPNext PO automation), not "platform" pitches |
+| Indian SMBs don't adopt agentic automation fast enough | Lead with concrete ROI on a single concrete workflow, not "platform" pitches |
 | Founder bandwidth | Document everything (the design dossier already does); build for handoff from day one |
 
 ---
