@@ -7,7 +7,7 @@ Build the governed framework loop first:
 - Friday framework shell
 - Agent Profile
 - Skill
-- Agent Project / Agent Task
+- Project / Task / Issue tracker (generic work objects; agents are stakeholder Users — see [doc 53](design/53-project-issue-tracker-port.md))
 - configurable workflow and Kanban view
 - permission engine
 - sandboxed execution path
