@@ -40,7 +40,7 @@ One per slice in `CODEX.md` §5.
 | Label | Colour | Phase |
 |---|---|---|
 | `phase:v0.1` | `#0e8a16` green | Phase 1 — governed framework loop |
-| `phase:1-po-flagship` | `#216e39` darker green | Phase 1 — ERPNext PO dogfood |
+| `phase:1-business-flagship` | `#216e39` darker green | Phase 1 — first business-automation dogfood |
 | `phase:1.5-hardening` | `#bfdadc` light teal | Phase 1.5 — production-grade hardening |
 | `phase:2-public-launch` | `#c5def5` pale blue | Phase 2 — open source launch and Raven |
 | `phase:future` | `#e4e669` pale yellow | Beyond Phase 2 |
@@ -121,7 +121,7 @@ done
 
 # Phase
 create "phase:v0.1"             "0e8a16" "Phase 1 — governed framework loop"
-create "phase:1-po-flagship"    "216e39" "Phase 1 — ERPNext PO dogfood"
+create "phase:1-business-flagship" "216e39" "Phase 1 — first business-automation dogfood"
 create "phase:1.5-hardening"    "bfdadc" "Phase 1.5 — production-grade hardening"
 create "phase:2-public-launch"  "c5def5" "Phase 2 — open source launch"
 create "phase:future"           "e4e669" "Beyond Phase 2"

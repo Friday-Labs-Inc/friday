@@ -123,9 +123,9 @@ The orchestrator maintains a warm pool (configurable; default min_idle=5, max_id
 
 ```json
 {
-  "skill_name": "send_invoice",
+  "skill_name": "send_notification",
   "skill_version": 4,
-  "parameters": {"invoice_id": "INV-001"},
+  "parameters": {"note_id": "NOTE-001"},
   "frappe_base_url": "http://frappe:8000",
   "execution_id": "uuid...",
   "trace_id": "uuid..."

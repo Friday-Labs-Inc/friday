@@ -85,7 +85,7 @@ A hard fork is the honest position: Friday **is** a new framework. It starts fro
 
 ### Domain features (Friday apps, not core)
 
-- ERPNext Purchase Order automation
+- Business-process automation
 - Raven War Room integration
 - pgvector memory and knowledge graph
 - Auto-research agents

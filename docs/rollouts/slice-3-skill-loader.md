@@ -61,7 +61,7 @@ Both pull from the same permission matrix. Both invalidate from the same hooks. 
 This is the moment Friday's permission story becomes *complete enough to demo*. Today you can write code like:
 
 ```python
-tools = load_for_profile("Procurement Agent")
+tools = load_for_profile("Research Agent")
 # → list of OpenAI-format tool definitions, filtered, fresh
 ```
 

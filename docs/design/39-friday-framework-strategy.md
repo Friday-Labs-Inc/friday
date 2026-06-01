@@ -74,7 +74,7 @@ The line is **framework vs domain**.
 - Friday shell: Framework Console workspace, `friday` CLI commands, navigation defaults
 
 **Friday apps (never in core):**
-- ERPNext Purchase Order automation
+- Business-process automation
 - Raven War Room integration
 - pgvector memory and knowledge graph
 - Auto-research agents
@@ -156,7 +156,7 @@ Phase 1 establishes the framework shell and proves one governed execution path:
 5. Sandboxed execution path
 6. One end-to-end skill proving the loop
 
-ERPNext PO automation is the north-star business use case. The first engineering milestone is the governed framework loop. PO automation comes after the loop is proven. See `42-phase-one-authority-contract.md`.
+Business automation is the north-star use case. The first engineering milestone is the governed framework loop; business automation comes after the loop is proven. See `42-phase-one-authority-contract.md`.
 
 ---
 

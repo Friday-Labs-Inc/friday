@@ -9,11 +9,11 @@ PLAIN ENGLISH
 
 Before the LLM running an agent can use any tool, it needs to be
 *given* the list of tools — names, descriptions, parameter schemas.
-That list is different per agent (a Procurement Agent and a Sales
+That list is different per agent (a Research Agent and a Support
 Agent should not see each other's tools) and different over time (a
 suspended skill should silently disappear). This module produces it.
 
-The flow when `load_for_profile("Procurement Agent")` is called:
+The flow when `load_for_profile("Research Agent")` is called:
 
   1. **Cache check.** Is the list already in Redis? If yes, return it.
   2. **Otherwise**, read the Agent Profile's `permitted_skills` child

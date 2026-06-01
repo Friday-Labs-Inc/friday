@@ -24,7 +24,7 @@ Distinct from a chat session that searches. The research agent runs autonomously
 
 | Domain | Application |
 |---|---|
-| Procurement | New supplier — financial stability, reviews, certifications, alternatives |
+| DevOps | New dependency — maintenance status, security advisories, alternatives |
 | Sales | Pre-meeting research on a prospect — company profile, recent news, decision-makers |
 | HR | Compensation benchmarking — market rates, comparable roles |
 | Legal | Regulatory landscape before a new business activity |
@@ -181,7 +181,7 @@ Auto-research agents have powerful capabilities (web fetch, document read). Cons
 |---|---|---|
 | Public web | News, blogs, docs | Default for research agents |
 | Internal Wiki | Frappe Wiki pages | Wiki Reader |
-| ERPNext data | Customer, Supplier, Item records | Standard ERPNext role |
+| Business records | Contact, Project, Document records | Standard data role |
 | Past research | Memory Entries | Memory Reader |
 | External APIs | Crunchbase, LinkedIn (if integrated) | Specific API role |
 

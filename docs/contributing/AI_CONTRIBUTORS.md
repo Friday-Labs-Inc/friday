@@ -138,7 +138,7 @@ If you are an AI agent reading this directly: tell your human sponsor. The rest 
 
 The human sponsor opens an issue using the template `.github/ISSUE_TEMPLATE/ai-contributor-registration.md` (added after Phase 1.5). The issue states:
 
-- AI handle (a stable, unique identifier — e.g. `codex-procurement-helper`)
+- AI handle (a stable, unique identifier — e.g. `codex-docs-helper`)
 - Underlying model (e.g. `claude-sonnet-4-6`, `gpt-5`, `gemini-3`)
 - Sponsor's GitHub handle
 - Intended areas of contribution

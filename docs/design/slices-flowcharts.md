@@ -148,7 +148,7 @@ It's like receiving a box of 8 different printed forms in the mail. They sit on 
 
 1. Is your employee badge active today? (Not suspended?)
 2. Is the tool/equipment you're trying to use actually available for use? (Not under maintenance or retired?)
-3. Does your job role cover that specific action? (The finance team can't use the procurement system, even if their badges are active.)
+3. Does your job role cover that specific action? (One department can't use another department's system, even if their badges are active.)
 
 If all three are "yes" → the guard waves you through and writes "allowed" in the logbook.
 If any is "no" → the guard stops you and writes "denied: [reason]" in the logbook.
@@ -453,7 +453,7 @@ The key seam was exactly one function: `run_turn()`. We replaced the echo stub i
 
 ### Where does the system prompt come from?
 
-The `Agent Profile.system_prompt` field. Operators write custom instructions like "You are a helpful procurement assistant. You specialize in creating purchase orders." That text goes at the top of the LLM's context window.
+The `Agent Profile.system_prompt` field. Operators write custom instructions like "You are a helpful research assistant. You specialize in summarizing documents." That text goes at the top of the LLM's context window.
 
 ### Does the LLM see the conversation history?
 

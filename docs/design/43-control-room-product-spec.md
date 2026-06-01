@@ -85,7 +85,7 @@ The operator's queue. Items appear here when human attention is required.
 
 Item types:
 
-- **Approval Request** — agent has drafted an action requiring sign-off (e.g. PO submission above threshold)
+- **Approval Request** — agent has drafted an action requiring sign-off (e.g. a financial action above threshold)
 - **Escalation** — agent encountered a situation outside its training and paused
 - **Anomaly Flag** — automated validation detected unusual output during execution
 - **Question** — agent needs a piece of information not in memory
@@ -116,7 +116,7 @@ Clicking an agent opens the detail page showing:
 - Execution timeline (last 100)
 - Permission denial history (last 30)
 
-"View capabilities" produces a human-readable summary: "This agent can read Customer, create Purchase Order drafts, and message suppliers. It cannot submit financial documents above ₹50,000 or modify supplier master data."
+"View capabilities" produces a human-readable summary: "This agent can read Contact, create Note drafts, and message teammates. It cannot submit financial documents above ₹50,000 or modify master data."
 
 ### 5.4 Tasks
 
@@ -224,7 +224,7 @@ Phase 1 targets desktop primarily. The Control Room must render on mobile (Frapp
 
 What must work on mobile:
 
-- Inbox approvals (a supervisor approving a PO from their phone is a common case)
+- Inbox approvals (a supervisor approving a request from their phone is a common case)
 - Kill Switch (panic button must work from anywhere)
 - Stop single execution
 - View live activity
@@ -320,7 +320,7 @@ The Control Room is "done" for v0.1 when:
 
 The Control Room is the product. Everything else in Friday — Agent Profile, Skill, Permission Decision, Sandbox, Execution Log, Workflow — exists to make the Control Room's five questions answerable in seconds.
 
-Build the Control Room shell first. Build the agent kernel to feed it. Build flagship use cases (ERPNext PO) on top.
+Build the Control Room shell first. Build the agent kernel to feed it. Build flagship business use cases on top.
 
 If a supervisor cannot trust what they see in the Control Room, no amount of backend governance will earn the trust required for autonomous business operations.
 

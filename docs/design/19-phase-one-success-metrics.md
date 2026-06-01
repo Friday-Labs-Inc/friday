@@ -12,7 +12,7 @@
 
 If this single statement is green, v0.1 succeeded. If it is not, no amount of feature breadth compensates.
 
-The ERPNext Purchase Order flagship dogfood follows the governed loop becoming green. It is sequenced behind the framework proof, not removed (per 42 §6).
+The first business-automation dogfood follows the governed loop becoming green. It is sequenced behind the framework proof, not removed (per 42 §6).
 
 ---
 
@@ -135,7 +135,7 @@ These matter in Phase 2 and beyond. In Phase 1 they are noise.
 
 **End-of-Phase:**
 - Run the governed framework loop repeatedly through the checklist.
-- Once v0.1 is green, run the ERPNext PO flagship dogfood as business validation.
+- Once v0.1 is green, run the first business-automation dogfood as business validation.
 - Operators check in daily and record interventions.
 - Compile the Phase 1 Completion Report per §7.
 

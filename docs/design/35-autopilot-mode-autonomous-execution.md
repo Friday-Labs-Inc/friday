@@ -31,7 +31,7 @@ A taxonomy for repeated task patterns.
 
 | Field | Type | Notes |
 |---|---|---|
-| `task_type_code` | Data (unique) | e.g. `procurement.create_po_standard` |
+| `task_type_code` | Data (unique) | e.g. `support.create_ticket_standard` |
 | `description` | Text | What this task type covers |
 | `domain` | Link → Domain | |
 | `agent_role_profile` | Link → Agent Role Profile | Which profile executes |
@@ -79,7 +79,7 @@ Demotes Autopilot → Assisted when any of:
 
 1. Rolling 30d success rate falls below `autopilot_threshold - 0.05` (default below 0.90), OR
 2. Three or more anomalies in 7 days, OR
-3. A single high-severity incident (financial loss, customer complaint, regulator-relevant), OR
+3. A single high-severity incident (financial loss, user complaint, regulator-relevant), OR
 4. Supervisor manually demotes via War Room.
 
 Demotion is **automatic** for the first three conditions. Friday does not wait for permission to step down — fail-safe defaults.
@@ -140,7 +140,7 @@ Even in Autopilot mode, individual tasks can be marked:
 Used when:
 
 - Task references unusually large amounts (above per-task threshold).
-- Task involves a new entity (first-time supplier, first-time customer).
+- Task involves a new entity (first-time contact, first-time partner).
 - Task is in a sensitive time window (end-of-month close, audit period).
 
 ---
@@ -155,7 +155,7 @@ Autopilot configuration lives in `Friday Operations Policy`.
 | `default_autopilot_threshold` | Float |
 | `default_min_samples` | Int |
 | `task_type_overrides` | Child table — per-task-type config |
-| `autopilot_value_thresholds` | Child table — monetary thresholds per domain (e.g. "procurement: autopilot only for POs ≤ ₹50,000") |
+| `autopilot_value_thresholds` | Child table — monetary thresholds per domain (e.g. "ops: autopilot only for amounts ≤ ₹50,000") |
 | `autopilot_time_windows` | Child table — restrict autopilot to certain hours (e.g. "no autopilot 22:00–06:00 IST") |
 | `autopilot_blackout_dates` | Child table — disable around key dates (e.g. "no autopilot during financial year close, March 25 – April 5") |
 

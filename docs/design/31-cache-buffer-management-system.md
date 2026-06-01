@@ -7,7 +7,7 @@
 
 ## 1. Why a cache layer
 
-A Friday agent answering "what is the credit limit for customer X?" must not hit ERPNext's PostgreSQL every time. With dozens of agents acting in parallel and hundreds of queries per minute, naive direct queries:
+A Friday agent answering "what is the current status of record X?" must not hit PostgreSQL every time. With dozens of agents acting in parallel and hundreds of queries per minute, naive direct queries:
 
 - Add 30–80ms latency per query.
 - Increase PostgreSQL load and lock contention.
@@ -23,7 +23,7 @@ A well-designed cache layer dramatically improves responsiveness and protects ER
 
 For frequently-accessed reference data:
 
-- ERPNext masters: Customer, Supplier, Item, Warehouse, Account, Employee.
+- Reference records: Contact, Project, Task, Document, User, Team.
 - Friday Operations Policy thresholds.
 - Active Agent Role Profile configurations.
 - Permission matrices (role scope per user).
@@ -36,7 +36,7 @@ TTL: 5 minutes default, configurable per data type. Invalidated on document chan
 
 Within-execution memoisation:
 
-- Same skill calling `customer_get(X)` twice → second call hits process local.
+- Same skill calling `record_get(X)` twice → second call hits process local.
 - LRU cache (`functools.lru_cache` or equivalent).
 - Bounded to ~10MB per execution.
 - Cleared at execution end.
@@ -54,7 +54,7 @@ For repeated embedding queries:
 
 For deterministic, idempotent prompts where input fully determines output:
 
-- Skill-internal helper prompts (e.g. "classify this customer email as urgent / non-urgent").
+- Skill-internal helper prompts (e.g. "classify this incoming message as urgent / non-urgent").
 - **Not** for open-ended agent reasoning — that must always be fresh.
 - Hash full prompt + model + temperature → cached completion.
 - TTL: 1 hour, configurable per Skill.
@@ -70,7 +70,7 @@ Tuning surface for admins, no code changes.
 | Field | Type |
 |---|---|
 | `cache_layer` | Select — Redis Hot / Process Local / Embedding / LLM Response |
-| `data_type` | Data — e.g. `Customer`, `Item`, `Supplier` |
+| `data_type` | Data — e.g. `Contact`, `Document`, `Project` |
 | `ttl_seconds` | Int |
 | `max_size_mb` | Int |
 | `invalidation_strategy` | Select — TTL only / Event-based / Both |
@@ -89,13 +89,13 @@ On Friday startup or on a scheduled refresh (every 30 minutes):
 
 The warm set is data-driven: a background job inspects Execution Logs over the last 7 days, identifies the most-accessed records per domain, and updates the warm set definition weekly.
 
-Example warm set for Procurement Agent:
+Example warm set for Support Agent:
 
-- All active Suppliers.
-- All Items with `is_stock_item=1`.
-- All Warehouses.
-- Current PO statuses for the last 30 days.
-- Operations Policy thresholds for procurement.
+- All active Contacts.
+- All Documents tagged for the agent's domain.
+- All Teams.
+- Recent Task statuses for the last 30 days.
+- Operations Policy thresholds for the agent's domain.
 
 Pre-load takes ~5–30 seconds depending on data size and primes the cache before agents need it.
 
@@ -121,14 +121,14 @@ def on_doctype_change(doc, method):
     redis_client.delete(f"frappe:list:{doc.doctype}")
 ```
 
-Critical for data where staleness matters (customer credit limit, current stock).
+Critical for data where staleness matters (quotas, current resource availability).
 
 ---
 
 ## 6. Read path
 
 ```
-frappe_get("Customer", "CUST-001")
+frappe_get("Contact", "CONT-001")
 1. Process-local cache hit? → return.
 2. Redis hot cache hit?     → populate process-local, return.
 3. Fetch from PostgreSQL via Frappe ORM.
@@ -216,8 +216,8 @@ One process fetches; others wait briefly and read from cache.
 
 Some operations must always read fresh:
 
-- Stock quantity checks during PO submission (race conditions).
-- Account balance during Payment Entry.
+- Resource/quota checks during task submission (race conditions).
+- Account balance during a financial action.
 - Bank statement reconciliation source data.
 
 Skills mark these reads with `bypass_cache=True`. The helper skips cache and reads directly from PostgreSQL.

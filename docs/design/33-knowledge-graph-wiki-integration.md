@@ -38,10 +38,10 @@ Reused, not reinvented.
              │ surfaces / curates / links to
 ┌────────────▼────────────────────────────────────────────┐
 │ Frappe Wiki (human-readable layer)                      │
-│   - Domain pages: /erpnext-procurement, /infra-k8s      │
-│   - Process pages: "How we handle late deliveries"      │
-│   - Reference pages: "Supplier S onboarding history"    │
-│   - Decision logs: "Why we chose vendor X"              │
+│   - Domain pages: /customer-support, /infra-k8s      │
+│   - Process pages: "How we handle escalations"          │
+│   - Reference pages: "Service S onboarding history"     │
+│   - Decision logs: "Why we chose tool X"                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -120,8 +120,8 @@ Agents propose wiki edits via two skills. **Disabled by default in early phases*
 
 Every Memory Concept can carry a `canonical_wiki_page` link:
 
-- The wiki page for Customer X is the reference on Customer X.
-- Memory entries about Customer X surface this page in their context.
+- The wiki page for Project X is the reference on Project X.
+- Memory entries about Project X surface this page in their context.
 - Wiki page updates invalidate downstream caches.
 
 Hierarchy:
@@ -162,7 +162,7 @@ Over time the wiki becomes a deeply connected graph mirroring the concept graph.
 
 Wiki pages inherit Frappe role permissions. Friday additionally checks domain alignment:
 
-- `erpnext-procurement` agent reads pages in its domain freely.
+- `customer-support` agent reads pages in its domain freely.
 - Pages in other domains: only if `cross_domain_read = True` in its profile.
 - Edits only on pages tagged with its domain.
 

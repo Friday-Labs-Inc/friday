@@ -9,13 +9,13 @@
 
 A naive memory system stores facts independently:
 
-- "Customer X prefers email contact."
-- "Customer X had a quality complaint in March."
-- "Quality complaints in March were due to supplier S's faulty batch."
+- "Service X prefers async notifications."
+- "Service X had an outage in March."
+- "March outages were traced to dependency S's faulty release."
 
-These three facts live as separate entries. When an agent asks about Customer X, it surfaces the first two. The link to Supplier S is lost.
+These three facts live as separate entries. When an agent asks about Service X, it surfaces the first two. The link to Dependency S is lost.
 
-Real cognition links concepts. Thinking "Customer X" surfaces related concepts (their complaints, the supplier behind those complaints, the product line involved) by association strength.
+Real cognition links concepts. Thinking "Service X" surfaces related concepts (its outages, the dependency behind those outages, the module involved) by association strength.
 
 This document designs an association graph that augments Friday's vector memory.
 
@@ -23,14 +23,14 @@ This document designs an association graph that augments Friday's vector memory.
 
 ## 2. Memory Concept DocType
 
-A concept is a noun that anchors memory entries: a Customer, Supplier, Item, Project, Skill, Issue, Topic, Event.
+A concept is a noun that anchors memory entries: a Service, Dependency, Module, Project, Skill, Issue, Topic, Event.
 
 | Field | Type |
 |---|---|
 | `concept_name` | Data |
-| `concept_type` | Select — Customer / Supplier / Item / Project / Skill / Issue / Topic / Event / Other |
-| `linked_doctype` | Data (optional) — e.g. `Customer` if anchored to a Frappe DocType |
-| `linked_docname` | Data (optional) — e.g. `CUST-001` |
+| `concept_type` | Select — Service / Dependency / Module / Project / Skill / Issue / Topic / Event / Other |
+| `linked_doctype` | Data (optional) — e.g. `Project` if anchored to a Frappe DocType |
+| `linked_docname` | Data (optional) — e.g. `PROJ-001` |
 | `domain` | Link → Domain (per `29-domain-specific-self-learning.md`) |
 | `created_from` | Select — Manual / Auto-Extracted / Imported |
 | `embedding` | Long Text — concept vector |
@@ -56,7 +56,7 @@ The edge in the association graph.
 | `domain` | Link → Domain |
 | `created_at` | Datetime |
 
-A link from "Customer X" to "Supplier S" with type `Caused-By` represents the example chain above.
+A link from "Service X" to "Dependency S" with type `Caused-By` represents the example chain above.
 
 ---
 
@@ -112,7 +112,7 @@ Result:
 {
   "direct_matches": [...],
   "associated_concepts": [
-    {"concept": "Supplier S", "via": "Customer X", "strength": 0.78, "memories": [...]}
+    {"concept": "Dependency S", "via": "Service X", "strength": 0.78, "memories": [...]}
   ]
 }
 ```
@@ -134,7 +134,7 @@ Agent sees the surrounding knowledge web, not just direct hits.
 
 ## 9. Cross-domain associations
 
-Memory Concept Links carry a domain. Cross-domain links (e.g. `erpnext-procurement.Supplier S` → `erpnext-quality.Issue Q`) require:
+Memory Concept Links carry a domain. Cross-domain links (e.g. `customer-support.Service S` → `infra-networking.Issue Q`) require:
 
 - Explicit allow-list in the Domain DocType, or
 - Approval workflow if not allow-listed.
@@ -161,8 +161,8 @@ Prevents accidental cross-contamination; permits intentional integration.
 
 When a Memory Concept has `linked_doctype` and `linked_docname` set, it is anchored to a real Frappe document. Agents move both directions:
 
-- Memory → ERPNext: "What do you know about Customer X?" pulls the Customer doc AND surrounding memory.
-- ERPNext → Memory: opening Customer X displays a Friday-rendered sidebar of associated memories (Phase 3 UI).
+- Memory → records: "What do you know about Project X?" pulls the Project doc AND surrounding memory.
+- Records → Memory: opening Project X displays a Friday-rendered sidebar of associated memories (Phase 3 UI).
 
 ---
 
@@ -175,25 +175,25 @@ For a chosen concept:
 - Colour-coded by domain.
 - Filterable by link type.
 
-Used by supervisors to audit "what does Friday think it knows about Customer X?"
+Used by supervisors to audit "what does Friday think it knows about Project X?"
 
 ---
 
 ## 13. Worked example
 
-Task: "Draft a follow-up email to Customer X about their pending order."
+Task: "Draft a follow-up message to Service X about their pending incident."
 
-1. Memory search on "Customer X pending order".
+1. Memory search on "Service X pending incident".
 2. Direct matches:
-   - "Customer X ordered 50 units of Item A on March 5".
-   - "Customer X had quality complaint about Item A in March".
+   - "Service X deployed Module A on March 5".
+   - "Service X had an outage involving Module A in March".
 3. Associated concepts via graph:
-   - Item A → Supplier S (caused-by, strength 0.78).
-   - Quality complaint → "Resolution: replacement batch" (resolved-by, strength 0.9).
-4. Agent now knows: there was a complaint, it was resolved with a replacement, original cause was Supplier S.
-5. Drafted email acknowledges the prior issue and confirms the replacement batch is being shipped.
+   - Module A → Dependency S (caused-by, strength 0.78).
+   - Outage → "Resolution: patched release" (resolved-by, strength 0.9).
+4. Agent now knows: there was an outage, it was resolved with a patch, original cause was Dependency S.
+5. Drafted update acknowledges the prior issue and confirms the patched release is being rolled out.
 
-Without association, the agent might draft a generic follow-up that ignores the complaint history.
+Without association, the agent might draft a generic follow-up that ignores the incident history.
 
 ---
 
@@ -227,5 +227,5 @@ Latency per `memory_search`:
 ## 16. Open questions
 
 - Embedding model for concept embeddings — same as memory entries or separate? Same in Phase 2; revisit if quality demands specialised embedding.
-- Concepts that should never link (e.g. competitive customer info that must stay isolated) — "Quarantined" flag; links involving it require explicit permission.
+- Concepts that should never link (e.g. sensitive client info that must stay isolated) — "Quarantined" flag; links involving it require explicit permission.
 - Graph traversal cost at very high concept counts (> 100K) — likely fine with an indexed link table; profile during Phase 2.

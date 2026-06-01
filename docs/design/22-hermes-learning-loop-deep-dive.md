@@ -39,7 +39,7 @@ The agent never auto-promotes. Flow:
 
 ```
 Agent generates improvement → Skill Draft (status=Pending Review)
-  → Supervisor sees in War Room: "Procurement Agent suggests an update to skill X"
+  → Supervisor sees in War Room: "Support Agent suggests an update to skill X"
     → Supervisor reviews the diff with confidence + reasoning
       → Approve: Skill Draft → new Skill Version → Active
       → Reject: Skill Draft marked Rejected with reason; agent learns the reasoning
@@ -147,7 +147,7 @@ def analyse_and_propose(agent_profile, skill_name):
     logs = recent_execution_logs(skill_name, limit=50)
 
     # Agent runs in its own sandbox with a focused prompt:
-    # "You are improving skill 'send_invoice'. Current version + recent
+    # "You are improving skill 'send_notification'. Current version + recent
     #  Execution Logs (successes and failures). Propose a revised version
     #  addressing the failure patterns. Output: diff_summary,
     #  proposed_version JSON, confidence."
@@ -186,7 +186,7 @@ def analyse_and_propose(agent_profile, skill_name):
 ## 5. Approval UX in War Room
 
 ```
-💡 Procurement Agent proposes update to skill `send_supplier_email`
+💡 Support Agent proposes update to skill `send_followup_email`
    Confidence: 0.87 (high)
    Evidence: 23 recent executions
    Summary: "Current skill produces overly formal emails for follow-ups.
