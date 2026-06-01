@@ -147,6 +147,13 @@ choice** (B1, B2), **(5) handle long conversations** (C), **(6) close the remain
 security gaps and clean up** (H3, H2, M2, C2/L3, L*). Within that, respect hard dependencies
 and do the already-locked, well-understood slices first.
 
+> **User-prioritised insert (2026-06-01):** the **Project / Issue Tracker port** — slice
+> **S2.5**, design locked in [doc 53](53-project-issue-tracker-port.md) — is sequenced right
+> after the task-route foundation (S2). It is the *operating model* agents work inside (generic
+> `Project`/`Task`/`Issue` + Frappe `ToDo`; an agent is just one stakeholder `User`) and the one
+> sanctioned ERPNext port (port the design, don't depend on ERPNext). Being a different subsystem
+> from the LLM features, it can also run **in parallel** with S3–S8. Full build order: doc 53 §10.
+
 > **The ordering of the security-foundation block (S9–S12) vs. the feature block (S3–S8)
 > is the one real fork — see §5 Fork 1.** The sequence below is my recommendation; the user
 > may want HIGH security items pulled ahead of features.
@@ -156,6 +163,7 @@ and do the already-locked, well-understood slices first.
 | **S0** | M1 — reconcile stale docs 04 + 05 | root cause of drift | MED | — | ✅ committed `2fe9ec1` | — |
 | **S1** | M3 — converge skill handler to `create_note`, single registry | hard prereq for C1 | MED | — | one registry; handler name is `create_note`; `grep slice6-create-note` → 0 hits; existing skill tests pass | doc 50 §6 |
 | **S2** | **C1** — route async tasks through `dispatch` via RQ | dead CRITICAL path | **CRIT** | S1 | task enqueues to `long` queue; runs `matrix.check`; writes Execution + Permission Decision logs; M4/M5 gone (`grep api_key=`, `agent_role_profile` → 0 hits); new task-route tests assert *execution + enforcement* | doc 50 |
+| **S2.5** | **Project/Issue Tracker port** — generic `Project`/`Task`/`Issue` (+ Frappe `ToDo`); rename `Agent Project/Task`→`Project/Task`; assignee→`User`; add `Issue` + `depends_on` | the operating model agents work *inside*; **user-prioritised** | HIGH | S2 (rename Task after its route is stable) | `Project`/`Task`/`Issue` exist; `assigned_to` is a `User`; Blocked/OOM/timeout auto-raises a `Failure` Issue; unfinished `depends_on` auto-raises `Dependency-Wait` + parks task; tracker tests pass | **doc 53** |
 | **S3** | **A** — ReAct loop in `runner.run_turn` | headline agent feature | HIGH (H1) | S2 (shared dispatch path stable) | `run_turn` loops ≤15 iterations; tool errors fed back; permission denial breaks loop; one inbound + one outbound Chat Message per turn; the 9 tests in `tests/test_react_loop.py` pass | doc 48 §1 |
 | **S4** | **F** — error classifier (`llm/error_classifier.py`) | A's error feedback + B's retry both consume it | MED | — (pairs with S3) | trimmed `FailoverReason` enum + `classify_api_error`; `MinimaxProvider` retry uses it; classifier unit tests per reason | **§4 (F)** |
 | **S5** | **D** — within-turn dedup + deterministic IDs | small; slots into A's loop | LOW | S3 | duplicate `(name,args)` calls dropped before dispatch; IDs stable across re-serialisation; dedup tests | **§4 (D)** |
@@ -176,6 +184,7 @@ and do the already-locked, well-understood slices first.
 - `S6 (B1) → S7 (B2)` — share an OpenAI-compatible base before adding the Anthropic shape.
 - `S6 (B1) → S8 (C)` — compression needs a working aux provider.
 - `S2 (C1) → S10 (H2)` — approval hangs off the stable dispatch path.
+- `S2 (C1) → S2.5 (tracker)` — rename `Task` only after its route is stable; the tracker then runs parallel to S3–S8 (different subsystem). Design: doc 53.
 
 Everything else (S9, S11, S12, S13) is independent and can move earlier if the user
 re-prioritises (see §5 Fork 1).
