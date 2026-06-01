@@ -30,11 +30,11 @@ Friday v0.1 has no chat UI. Agents are triggered and tested from the bench CLI. 
 
 ---
 
-## D4 — ERPNext
+## D4 — Business-Automation Use Cases
 
 **Decision: Not relevant to this phase.**
 
-ERPNext Purchase Order automation is a use case, not a framework requirement. It does not affect how we build the agent runtime, permissions, skills, sandbox, or audit layer. Deferred entirely until the framework is working.
+Business-process automation is a use case, not a framework requirement. It does not affect how we build the agent runtime, permissions, skills, sandbox, or audit layer. Deferred entirely until the framework is working.
 
 ---
 

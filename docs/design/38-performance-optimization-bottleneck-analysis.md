@@ -65,9 +65,9 @@ Tune `ef_search` at query time. Higher = better recall, slower. Start at 40, pro
 **Partial indexes per domain.** Most queries are domain-scoped per `29-domain-specific-self-learning.md`.
 
 ```sql
-CREATE INDEX idx_memory_embedding_procurement ON memory_entry_embeddings
+CREATE INDEX idx_memory_embedding_support ON memory_entry_embeddings
 USING hnsw (embedding vector_cosine_ops)
-WHERE domain_id = 'erpnext-procurement';
+WHERE domain_id = 'customer-support';
 ```
 
 **Pre-filtered search.** Apply metadata filters (domain, time range, concept) before vector search where possible. PostgreSQL's planner can sometimes do this; explicit hints help.
@@ -116,7 +116,7 @@ Every skill call passes through the permission gate (`04-security-model.md`). Na
 
 **Pre-computed permission sets.** For each Agent Role Profile, compute and cache the full set of `(skill, target_doctype, action)` tuples it can perform. Skill calls become O(1) membership tests.
 
-**Approval threshold lookup.** Threshold checks ("PO ≤ ₹50,000 → autopilot") use indexed lookups, not table scans.
+**Approval threshold lookup.** Threshold checks ("amount ≤ ₹50,000 → autopilot") use indexed lookups, not table scans.
 
 ---
 
@@ -140,7 +140,7 @@ Standardised benchmarks ship with Friday and run in CI on every core PR. Regress
 
 | Benchmark | What it measures |
 |---|---|
-| `benchmark_simple_task.py` | 100 sequential simple PO-create tasks; p50, p95, p99 latencies |
+| `benchmark_simple_task.py` | 100 sequential simple record-create tasks; p50, p95, p99 latencies |
 | `benchmark_concurrent_agents.py` | 50 concurrent agents, each a 5-step task; wall-clock + resource utilisation |
 | `benchmark_memory_search.py` | 100K pre-loaded entries; 1000 vector searches; p50/p99 latency |
 | `benchmark_war_room_throughput.py` | 500 messages/second sustained for 2 minutes; lag distribution |

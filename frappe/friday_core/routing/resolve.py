@@ -12,7 +12,7 @@ A2A doesn't need this — the sending agent names the recipient directly.
 
 External platform adapters (Telegram, Slack, Raven) call this to translate
 their world ("a message in chat 12345 from user 555") to a Friday concept
-("Agent Profile 'Sales Agent'"). In v0.1 the only routing rule is the
+("Agent Profile 'Support Agent'"). In v0.1 the only routing rule is the
 `Chat Platform.default_agent_profile` fallback. Richer routing (per-chat
 mappings, per-user mappings, keyword routing) lands as a separate
 DocType when the first webhook adapter has concrete needs.

@@ -17,9 +17,9 @@ Why so paranoid? Because the decision log is what auditors,
 regulators, and incident-responders read after the fact to answer
 questions like:
 
-  - "Did the Procurement Agent have permission to create that purchase
-    order on March 12th?"
-  - "Why was the Sales Agent denied access to Customer records last
+  - "Did the Research Agent have permission to create that Note
+    on March 12th?"
+  - "Why was the Research Agent denied access to Contact records last
     week?"
   - "Show me every time Agent X was allowed to do something risky."
 

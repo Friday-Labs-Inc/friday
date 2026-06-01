@@ -8,7 +8,7 @@
 
 ## 1. Why scope learning per domain
 
-If every agent learns from every other agent's execution, knowledge contaminates across domains. A pattern that works for "send email follow-up" should not bleed into "approve purchase orders". A skill that fits a React frontend project should not surface for a Kubernetes infrastructure task.
+If every agent learns from every other agent's execution, knowledge contaminates across domains. A pattern that works for "send email follow-up" should not bleed into "approve records". A skill that fits a React frontend project should not surface for a Kubernetes infrastructure task.
 
 The learning loop runs **per domain** so each domain becomes its own specialist over time.
 
@@ -18,8 +18,8 @@ The learning loop runs **per domain** so each domain becomes its own specialist 
 
 Initial set:
 
-- `erpnext-procurement`
-- `erpnext-sales`
+- `customer-support`
+- `field-ops`
 - `erpnext-finance`
 - `erpnext-hr`
 - `erpnext-production`
@@ -40,7 +40,7 @@ Custom domains created by supervisors with appropriate permissions.
 |---|---|
 | `domain_name` | Data (unique) |
 | `description` | Text |
-| `parent_domain` | Link → Domain — supports hierarchy (e.g. `erpnext-procurement` is a child of `erpnext`) |
+| `parent_domain` | Link → Domain — supports hierarchy (e.g. `infra-kubernetes` is a child of `infra`) |
 | `enabled` | Check |
 | `governance_supervisor` | Link → User — approves Skill Drafts in this domain |
 | `learning_loop_active` | Check (Phase 1: all off) |
@@ -59,7 +59,7 @@ When an Execution Log completes successfully, the curator (`22-hermes-learning-l
 4. The draft is visible only to that domain's supervisors.
 5. Approval required from the domain's `governance_supervisor`.
 
-A pattern proven in `erpnext-procurement` does not auto-propagate to `erpnext-sales`, even if logic looks similar. Sharing requires explicit promotion (§7).
+A pattern proven in `customer-support` does not auto-propagate to `field-ops`, even if logic looks similar. Sharing requires explicit promotion (§7).
 
 ---
 
@@ -67,7 +67,7 @@ A pattern proven in `erpnext-procurement` does not auto-propagate to `erpnext-sa
 
 Memory Entries (`32-memory-association-neural-linking.md`, `34-efficient-multilayer-memory-system.md`) carry a `domain` field. The `memory_search` skill defaults to filtering by the calling agent's domain. Cross-domain queries require an explicit `include_domains` parameter and may require approval based on memory sensitivity.
 
-This blocks accidental leakage: an `erpnext-finance` agent does not surface customer purchase patterns to an `infra-kubernetes` agent.
+This blocks accidental leakage: a `customer-support` agent does not surface its private notes to an `infra-kubernetes` agent.
 
 ---
 
@@ -85,7 +85,7 @@ Tight, focused skill sets per execution — consistent with the OpenClaw skill-c
 
 ## 7. Cross-domain promotion
 
-Some patterns belong everywhere (e.g. `validate ISO date format` discovered in `erpnext-procurement` is genuinely general).
+Some patterns belong everywhere (e.g. `validate ISO date format` discovered in `customer-support` is genuinely general).
 
 Promotion flow:
 
@@ -116,7 +116,7 @@ Metrics show whether a domain is maturing (intervention rate falling, success ra
 
 ## 9. Domain-scoped auto-research
 
-When an agent encounters an unknown pattern, it may trigger auto-research (`21-auto-research-integration-strategy.md`). Research results store as Memory Entries scoped to the domain — a K8s networking note does not pollute the procurement agent's memory.
+When an agent encounters an unknown pattern, it may trigger auto-research (`21-auto-research-integration-strategy.md`). Research results store as Memory Entries scoped to the domain — a K8s networking note does not pollute the support agent's memory.
 
 ---
 
@@ -148,7 +148,7 @@ Forces clarity at task boundaries.
 | 1 (v0.1) | Domain as a string tag on Skills, Agent Role Profiles, Memory Entries, and Agent Projects. No Domain DocType. No learning loop. Manual skill authoring. |
 | 2 | Domain DocType; tag enforcement; memory and skill resolution filtered by domain |
 | 3 | Curator scoped per domain; Skill Draft + Skill Version per domain; domain metrics dashboard; cross-domain promotion workflow |
-| 4 | Nested sub-domains (e.g. `erpnext-procurement-import` vs `erpnext-procurement-local`); domain-specific evaluation harnesses; domain-level performance budgets |
+| 4 | Nested sub-domains (e.g. `customer-support-import` vs `customer-support-local`); domain-specific evaluation harnesses; domain-level performance budgets |
 
 ---
 

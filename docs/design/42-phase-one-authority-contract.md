@@ -26,7 +26,7 @@ Phase 1 proves the governed framework loop and the Friday product feel.
 
 That is the foundation. Everything else is breadth, not depth.
 
-ERPNext Purchase Order automation remains inside the Phase 1 program as the flagship dogfood track — but it starts **after** the governed framework loop is proven. The mistake to avoid: making PO automation the first engineering slice, before the framework has identity, permissions, workflow, and audit.
+A business-automation flagship remains inside the Phase 1 program — but it starts **after** the governed framework loop is proven. The mistake to avoid: making business automation the first engineering slice, before the framework has identity, permissions, workflow, and audit.
 
 ---
 
@@ -97,7 +97,7 @@ These are not "nice to have later" — they are explicit exclusions from v0.1 th
 - Cross-site agent communication
 - Multi-platform adapters beyond CLI or Raven (if Raven is included)
 - Deep Raven fork
-- Full ERPNext domain-agent suite (PO flagship comes after v0.1)
+- Full domain-agent business suite (flagship comes after v0.1)
 - Production-grade multi-host scaling
 
 ---
@@ -128,25 +128,24 @@ Phase 1 must not be unsafe. The minimum bar is not the production sandbox.
 
 ---
 
-## 6. ERPNext PO Flagship Track
+## 6. First Business-Automation Track (post-v0.1)
 
-The ERPNext Purchase Order workflow is the first named business use case of Phase 1. It is not v0.1. It begins after v0.1 proves the framework loop.
+The first named business-automation use case is **not** v0.1. Whatever it turns out to be, it begins only after v0.1 proves the governed framework loop.
 
-**Gate: v0.1 must be green before PO track starts.**
+**Gate: v0.1 must be green before any business-automation track starts.**
 
-v0.1 gates for PO track readiness:
+v0.1 gates for business-track readiness:
 1. Agent Project / Agent Task orchestration works
 2. Agent Profile and Skill governance works
 3. Permission and execution logs are reliable
 4. Dispatcher handles configurable workflows
 5. Framework Console lets a human understand and stop the system
 
-**Minimum PO track scope (after v0.1):**
-- Procurement Agent profile
-- Inventory read-only support or alerts
+**Minimum business-track scope (after v0.1):**
+- A domain-specific Agent Profile
+- Read-only support / alerting where it reduces risk
 - Coordinator Agent basic oversight
 - Operations Policy DocType (approval thresholds)
-- PO draft / supplier follow-up / GRN matching / variance flagging
 - Human approval for all high-risk and financially binding actions
 - Zero unsafe actions
 - Full audit traceability
@@ -168,7 +167,7 @@ v0.1 is complete when all of the following are true:
 - [ ] Execution and permission logs are sufficient to reconstruct exactly what happened
 - [ ] Tests cover permission checks, dispatcher claim safety, and the first end-to-end skill
 
-After this gate is green, the PO flagship track begins.
+After this gate is green, the first business-automation track begins.
 
 ---
 

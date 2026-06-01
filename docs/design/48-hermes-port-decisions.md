@@ -17,11 +17,11 @@ Friday today has the storage, permission, audit, and dispatch layers but is miss
 | § | Feature | Status |
 |---|---|---|
 | 1 | Feature A — ReAct loop in `agent_runner.runner` | **LOCKED ↓** |
-| 2 | Feature B1 — OpenAI provider adapter | DRAFT |
-| 3 | Feature B2 — Anthropic provider adapter | DRAFT |
-| 4 | Feature C — Conversation history compression | DRAFT |
-| 5 | Feature D — Per-tool idempotency wiring | DRAFT |
-| 6 | Feature F — LLM error classification | DRAFT |
+| 2 | Feature B1 — OpenAI provider adapter | **LOCKED → [doc 51 §4.B1](51-hermes-core-port-roadmap.md)** |
+| 3 | Feature B2 — Anthropic provider adapter | **LOCKED → [doc 51 §4.B2](51-hermes-core-port-roadmap.md)** |
+| 4 | Feature C — Conversation history compression | **LOCKED → [doc 51 §4.C](51-hermes-core-port-roadmap.md)** |
+| 5 | Feature D — Per-tool idempotency wiring | **LOCKED → [doc 51 §4.D](51-hermes-core-port-roadmap.md)** |
+| 6 | Feature F — LLM error classification | **LOCKED → [doc 51 §4.F](51-hermes-core-port-roadmap.md)** |
 
 Each section answers Q-by-Q the calls the implementer would otherwise make alone (and get wrong — see Slice 5's 10 audit findings).
 
@@ -37,7 +37,12 @@ Each section answers Q-by-Q the calls the implementer would otherwise make alone
 
 ## 2. Sprint precondition
 
-**[PR #35](https://github.com/Friday-Labs-Inc/friday/pull/35) must be merged before Feature A starts.** It restores main to green by adding the missing `Skill Credential` DocType and fixing 5 other production bugs. Without it, Roo Code is building on broken ground.
+**[PR #35](https://github.com/Friday-Labs-Inc/friday/pull/35) must be merged before Feature A starts.** It restores main to green by adding the missing `Skill Credential` DocType and fixing 5 other production bugs. Without it, the port is building on broken ground.
+
+> **Status (2026-05-30): satisfied.** PR #35 is merged (`main @ 0f2cdd9`). Also note the
+> workflow change recorded in [doc 51 §0](51-hermes-core-port-roadmap.md): the Roo Code
+> hand-off is discontinued — this Claude now writes the production code directly. References
+> to "Roo Code" elsewhere in this doc are historical.
 
 ---
 
@@ -269,41 +274,31 @@ The Hermes implementation is much richer (parallel, streaming, compression, fall
 
 # §2 — Feature B1: OpenAI provider adapter
 
-**Status: DRAFT — design lock in progress.**
-
-(To be filled in next.)
+**Status: LOCKED — see [doc 51 §4.B1](51-hermes-core-port-roadmap.md).** Build order: slice S6.
 
 ---
 
 # §3 — Feature B2: Anthropic provider adapter
 
-**Status: DRAFT — design lock in progress.**
-
-(To be filled in next.)
+**Status: LOCKED — see [doc 51 §4.B2](51-hermes-core-port-roadmap.md).** Build order: slice S7.
 
 ---
 
 # §4 — Feature C: Conversation history compression
 
-**Status: DRAFT — design lock in progress.**
-
-(To be filled in next.)
+**Status: LOCKED — see [doc 51 §4.C](51-hermes-core-port-roadmap.md).** Build order: slice S8. (Storage model is an open fork — doc 51 §5 Fork 3.)
 
 ---
 
 # §5 — Feature D: Per-tool idempotency wiring
 
-**Status: DRAFT — design lock in progress.**
-
-(To be filled in next.)
+**Status: LOCKED — see [doc 51 §4.D](51-hermes-core-port-roadmap.md).** Build order: slice S5. Note: Hermes-core's actual mechanism is *within-turn dedup*, not a cross-turn idempotency key — doc 51 §4.D scopes it accordingly.
 
 ---
 
 # §6 — Feature F: LLM error classification
 
-**Status: DRAFT — design lock in progress.**
-
-(To be filled in next.)
+**Status: LOCKED — see [doc 51 §4.F](51-hermes-core-port-roadmap.md).** Build order: slice S4 (precedes the provider adapters, which consume the classifier).
 
 ---
 

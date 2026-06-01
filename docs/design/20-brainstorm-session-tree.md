@@ -194,20 +194,20 @@ FRIDAY
 ## Branch 7 — Autonomy and memory
 
 ```
-19. AUTONOMOUS BUSINESS OPS (ERPNext)
+19. AUTONOMOUS BUSINESS OPS
     └─ 6-layer architecture
-       ├─ L1 Data integration (REST API to ERPNext)
-       ├─ L2 Domain agents (Procurement, Sales, Finance, HR, Production)
+       ├─ L1 Data integration (REST API to the business system)
+       ├─ L2 Domain agents (Support, Research, Operations, HR, ...)
        ├─ L3 Decision rules (configurable thresholds)
        ├─ L4 Approval gates (Workflow Request)
        ├─ L5 Audit & compliance
        └─ L6 Learning loop
-          └─ One ERPNext user per agent (audit by agent identity)
+          └─ One platform user per agent (audit by agent identity)
              └─ System Manager Agent bootstraps other agent users
 
 20. CACHE BUFFER MANAGEMENT
     └─ Optional, configurable per project
-       ├─ Pre-load suppliers, customers, items, pricing into Redis
+       ├─ Pre-load frequently-read records into Redis
        └─ TTL-based, agent queries cache first
 
 21. MEMORY ARCHITECTURE
@@ -314,7 +314,7 @@ FRIDAY
     └─ Customer service ticket triage
 
 34. PHASE 1 BUSINESS VALIDATION
-    └─ ERPNext PO workflow, end-to-end, one week, zero unsafe actions
+    └─ Business-process workflow, end-to-end, one week, zero unsafe actions
        └─ Runs after the governed framework loop is proven (per 42 §6).
 ```
 

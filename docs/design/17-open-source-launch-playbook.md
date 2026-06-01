@@ -118,7 +118,7 @@ Semantic versioning. `v0.x.y` signals "early, breaking changes possible".
 | v0.3.0 | Learning loop + autonomous curator |
 | v0.4.0 | Multi-site agent-to-agent (`37-multi-site-inter-agent-communication.md`) |
 | v0.5.0 | Sandbox hardening — warm pool, egress proxy, gVisor backend (per `42` §5 deferred items) |
-| v1.0.0 | Production-ready, API-stable, ERPNext PO flagship complete |
+| v1.0.0 | Production-ready, API-stable, first business-automation flagship complete |
 
 If Raven is included in v0.1 per the feasibility spike, v0.2.0's Raven scope shifts to advanced features (Approve Skill, document-share previews, archive automation).
 

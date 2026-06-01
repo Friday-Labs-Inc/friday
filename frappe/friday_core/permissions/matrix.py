@@ -17,7 +17,7 @@ This file answers that question. Three steps:
 
   1. **Look up the agent** — read the Agent Profile DocType, see which
      Frappe roles it has (a "role" is just a named bundle of permissions,
-     like 'Sales User' or 'Accountant'; same idea as a job role).
+     like 'Note Writer' or 'Knowledge User'; same idea as a job role).
   2. **Add up what those roles can do** — every role has rows in
      Frappe's DocPerm table that say "this role can read/write/create/
      delete this DocType". We collect all of those into one big map
@@ -123,7 +123,7 @@ class Decision:
 
 	`allowed` is a yes/no. `reason` is a short human-readable string that
 	either says "Allowed" or explains exactly what was missing — e.g.
-	"Profile lacks 'write' on 'Sales Invoice' (roles=['Sales User'])".
+	"Profile lacks 'write' on 'Note' (roles=['Note Writer'])".
 
 	`reason` is meant to be read by humans (in audit logs, in War Room
 	UIs), not parsed by code. If you need machine-readable detail later,
@@ -158,11 +158,11 @@ class PermissionMatrix:
 	Fields:
 
 	- `profile_name` — the Agent Profile DocType's name (its primary key
-	  in Frappe). E.g. "Procurement Agent 01".
+	  in Frappe). E.g. "Research Agent 01".
 	- `profile_status` — "Active" | "Suspended" | "Retired". A
 	  non-Active profile can never run anything, period.
 	- `roles` — tuple of Frappe role names assigned to this agent (e.g.
-	  `("Sales User", "Note Writer")`). Sorted for deterministic
+	  `("Knowledge User", "Note Writer")`). Sorted for deterministic
 	  snapshots.
 	- `permitted_ops` — the precomputed answer to "what DocType
 	  operations can this agent do?", as `{doctype_name: frozenset of
@@ -171,7 +171,7 @@ class PermissionMatrix:
 	      {
 	          "Note":          frozenset({"read", "write", "create"}),
 	          "ToDo":          frozenset({"read"}),
-	          "Sales Invoice": frozenset(),  # explicitly nothing
+	          "Contact": frozenset(),  # explicitly nothing
 	      }
 
 	The matrix is the **expensive thing** to compute (joins across

@@ -107,9 +107,8 @@ Friday runs on a single-site bench installation (one bench = one agent ecosystem
 
 | # | Document | Purpose |
 |---|---|---|
-| 30 | [Autonomous Business Ops](./30-autonomous-business-operations-architecture.md) | ERPNext 6-layer design; PO flagship track |
 | 35 | [Autopilot Mode](./35-autopilot-mode-autonomous-execution.md) | Confidence-gated autonomy, circuit breaker (Phase 2+) |
-| 36 | [Analytical Agents](./36-analytical-predictive-agents.md) | Trend, demand forecast, cash flow, performance insights |
+| 36 | [Analytical Agents](./36-analytical-predictive-agents.md) | Trend, demand forecast, resource budget, performance insights |
 
 ### Roadmap Context (Phase 2–4 design depth)
 

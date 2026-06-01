@@ -1,5 +1,12 @@
 # 05 — Module Design
 
+> **⚠️ Authority & v0.1 status.** This document lists the *target* module + DocType
+> structure, including modules and DocTypes that are not yet built. **The real `friday_core/`
+> tree and schema differ** — the **AS BUILT** notes below mark every gap. This was the *root
+> cause* of the foundations drift (doc 49 finding **M1**): code was written against the ghosts
+> on this page. [Doc 42](42-phase-one-authority-contract.md) is the v0.1 scope authority;
+> [doc 49](49-foundations-deviation-audit.md) audits the drift. Verified against `main @ 0f2cdd9`.
+
 > See `00-glossary.md` for term definitions.
 > See `45-fork-policy.md` for the one-repo kernel model and `39-friday-framework-strategy.md` for the fork-not-app framing.
 > See `14-integrated-architecture.md` for request flow and runtime architecture (this doc covers structure, not flow).
@@ -21,33 +28,53 @@ Friday Core is part of the fork. Removing or disabling it is not supported. Frid
 
 ## Module layout
 
-Agent kernel modules live inside the Frappe source tree per `45-fork-policy.md` (one-repo kernel model). Conceptual paths:
+Agent kernel modules live inside the Frappe source tree per `45-fork-policy.md` (one-repo kernel model).
+
+**AS BUILT (`main @ 0f2cdd9`).** This is the real `friday_core/` tree. Note two structural
+differences from the earlier plan: (1) all DocTypes live in **one central `doctype/`**
+directory, not in per-module `doctype/` subfolders; (2) the directory names differ from the
+plan below (`agent_runner/` not `agents/`, no `messaging/` / `approvals/` / `memory/` /
+`tools/` / `api/v1/`).
+
+```
+frappe/friday_core/
+├── doctype/         ← ALL agent-kernel DocTypes live here (agent_profile, skill,
+│                       agent_task, execution_log, permission_decision_log, chat_message, …)
+├── gateway/         ← unified inbound chokepoint (service.handle_inbound), run-turn pipeline
+├── agent_runner/    ← profile-scoped runner + skill dispatcher (the chat execution path)
+├── skills/          ← Skill schema + loader (governed-skill resolution)
+├── tasks/           ← agent project / task / dispatcher / workflow
+├── permissions/     ← permission matrix engine + decision log writer
+├── sandbox/         ← Docker runner, limits, credentials
+├── llm/             ← LLM provider adapters
+├── routing/         ← surface/intent routing
+├── warroom/         ← Raven War Room publisher
+├── cli/             ← friday CLI surface
+└── tests/           ← module tests
+```
+
+**PLANNED (target — NOT as built).** The tree below is the longer-term module vision. Several
+of these directories do **not exist** yet (`messaging/`, `approvals/`, `memory/`, `tools/`,
+`api/v1/`) and several DocTypes are not built (see the DocType notes further down). Keep it as
+a roadmap, not a map of today's code.
 
 ```
 frappe/friday_core/
 ├── gateway/                ← session orchestrator, prompt builder, response delivery
-│   └── doctype/agent_session, chat_message
-├── agents/                 ← profile + execution
-│   └── doctype/agent_profile, agent_role_profile, agent_execution
+├── agents/                 ← profile + execution            (built as agent_runner/)
 ├── skills/                 ← schema, loader, curator, learner
-│   └── doctype/skill, skill_draft, skill_version, skill_usage_metric
 ├── tasks/                  ← agent project / task / dispatcher
-│   └── doctype/agent_project, agent_task, task_dependency
-├── messaging/              ← platform adapters (CLI Phase 1; Telegram/Discord/Slack/etc. Phase 2)
-│   └── doctype/chat_platform, message_attachment
-├── approvals/              ← human-in-the-loop
-│   └── doctype/workflow_request
-├── memory/                 ← long-term store, pgvector retrieval
-│   └── doctype/memory_entry, user_model
-├── tools/                  ← non-skill capabilities (browser, vision, image gen, MCP)
-│   └── doctype/mcp_server, browser_task, vision_task, image_generation_task
+├── messaging/              ← platform adapters               (NOT built — see routing/, cli/)
+├── approvals/              ← human-in-the-loop               (NOT built — Workflow Request unbuilt)
+├── memory/                 ← long-term store, pgvector       (NOT built — out of v0.1 scope)
+├── tools/                  ← browser, vision, image gen, MCP (NOT built — Phase 2)
 ├── permissions/            ← gateway permission engine + decision log
-│   └── doctype/permission_decision_log
 ├── sandbox/                ← Docker runner, cgroups, network isolation
-└── api/v1/                 ← REST endpoints used by sandbox containers
+└── api/v1/                 ← REST endpoints used by containers (NOT built as a module)
 ```
 
-Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messaging) ship the DocTypes but enter active development per `42-phase-one-authority-contract.md` staging.
+Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messaging) are
+roadmap per `42-phase-one-authority-contract.md` staging — they are not shipped in v0.1.
 
 ---
 
@@ -55,19 +82,21 @@ Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messa
 
 ### Agent Profile
 
+Types corrected to the **as-built** `agent_profile.json`. ⚠️ rows mark drift.
+
 | Field | Type | Notes |
 |---|---|---|
 | `profile_name` | Data | Unique |
 | `description` | Text | |
-| `agent_role_profile` | Link → Agent Role Profile | Governance bundle |
-| `assigned_roles` | Table → Role | Resolved from role profile or set explicitly |
-| `model_provider` | Link → LLM Provider | Phase 1: Minimax; pluggable via provider adapter interface |
+| ~~`agent_role_profile`~~ | ⚠️ **not built** | Earlier draft listed `Link → Agent Role Profile`. No such field exists; native Frappe roles are used instead (doc 49 §3). Reading it raised `AttributeError` (finding **M5**). |
+| `assigned_roles` | Table → Has Role | Roles set explicitly on the profile |
+| `model_provider` | Link → LLM Provider | Pluggable via provider adapter interface |
 | `model_name` | Data | Specific model identifier |
 | `system_prompt` | Long Text | Persona / SOUL |
-| `permitted_skills` | Table → Skill | Explicit whitelist; defaults to role profile grant |
-| `resource_quota` | Section | CPU, memory, requests-per-hour, tokens, wall-clock |
-| `network_allowlist` | Table | External hosts the sandbox may reach |
-| `requires_approval_above_risk` | Select | low / medium / high / always |
+| `permitted_skills` | Table → Agent Profile Skill | Explicit Skill whitelist (child table) |
+| ~~`resource_quota`~~ | ⚠️ **not built** | Earlier draft listed a `Section` for CPU/memory/tokens/wall-clock. No such field exists; sandbox limits fall back to hard-coded defaults (finding **M2**). |
+| `network_allowlist` | Small Text ⚠️ | **Not a Table** — newline-delimited hosts as built |
+| `requires_approval_above_risk` | Select | low / medium / high / always. Field exists; enforcement unbuilt (**H2**). |
 | `status` | Select | Active / Suspended / Retired |
 
 ### Skill
@@ -110,7 +139,7 @@ Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messa
 
 | Field | Type | Notes |
 |---|---|---|
-| `session_id` | Link → Agent Session | |
+| `session_id` | Data ⚠️ | **Not** `Link → Agent Session` — Agent Session is not a v0.1 DocType; conversation identity is a plain `Data` string |
 | `platform` | Link → Chat Platform | CLI (Phase 1); Telegram/Discord/Slack/etc. (Phase 2) |
 | `direction` | Select | inbound / outbound |
 | `sender_id` | Data | Platform-specific |
@@ -149,6 +178,10 @@ Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messa
 
 ### Workflow Request
 
+> **AS BUILT.** In scope per [doc 42 §3](42-phase-one-authority-contract.md) but **not yet
+> built** — zero occurrences in code (doc 49 finding **H2**). The schema below is the target;
+> a future slice must create it before any `requires_approval` skill is activated.
+
 | Field | Type | Notes |
 |---|---|---|
 | `agent_profile` | Link | |
@@ -165,6 +198,11 @@ Phase 2 and later modules (browser, vision, image gen, MCP, multi-platform messa
 ## Background jobs
 
 The runtime architecture and request flow are in `14-integrated-architecture.md`. The jobs below are scheduled work that does not appear there.
+
+> **AS BUILT.** The **Curator and Learner are out of v0.1 scope.** [Doc 42 §4](42-phase-one-authority-contract.md)
+> explicitly excludes the "autonomous skill activation or learning loop that changes active
+> skills" and semantic-memory queries. Neither job is wired in `hooks.py` today (the real
+> `scheduler_events` runs only the task dispatcher). Treat the two jobs below as roadmap.
 
 ### Curator (daily)
 
@@ -198,6 +236,10 @@ Skill Drafts never activate without supervisor approval.
 
 All endpoints under `/api/method/friday.api.v1.*`. Used by sandbox containers and external integrations. Every endpoint authenticates with a Frappe API key scoped to one Agent Profile and re-runs the permission check server-side.
 
+> **AS BUILT.** This endpoint surface is the *target*; there is **no `api/v1/` module** in
+> `friday_core/` today (see the module tree above). `memory.search` (pgvector) is **out of v0.1
+> scope** per [doc 42 §4](42-phase-one-authority-contract.md). Treat this table as roadmap.
+
 | Endpoint | Purpose |
 |---|---|
 | `skills.list` | Paginated, filtered by the calling agent's permissions |
@@ -212,28 +254,51 @@ All endpoints under `/api/method/friday.api.v1.*`. Used by sandbox containers an
 
 ## Hooks wiring (`hooks.py`)
 
-```python
-scheduler_events = {
-    "hourly": ["friday.skills.curator.tick"],
-    "daily":  ["friday.skills.learner.run"],
-    "cron":   {"*/1 * * * *": ["friday.tasks.dispatcher.tick"]},
-}
+**AS BUILT (`main @ 0f2cdd9`).** Two corrections from earlier drafts: the module prefix is
+`frappe.friday_core.` (not `friday.`), and the inbound chokepoint is
+**`gateway.service.handle_inbound`** (not the fictional `gateway.session_manager.on_new_message`).
+There are **no** curator/learner scheduler entries (those jobs are out of v0.1 scope, above).
 
+```python
 doc_events = {
-    "Chat Message": {
-        "after_insert": "friday.gateway.session_manager.on_new_message",
+    "Agent Profile": {
+        "on_update": [
+            "frappe.friday_core.permissions.cache.invalidate_for_profile",
+            "frappe.friday_core.skills.loader.invalidate_for_profile",
+        ],
     },
-    "Agent Task": {
-        "on_update": "friday.tasks.workflow.on_state_change",
+    "Role": {
+        "on_update": [
+            "frappe.friday_core.permissions.cache.invalidate_all",
+            "frappe.friday_core.skills.loader.invalidate_all",
+        ],
     },
     "Skill": {
-        "after_insert": "friday.skills.loader.invalidate_cache",
-        "on_update":    "friday.skills.loader.invalidate_cache",
+        # on_update only — no after_insert; method is invalidate_for_skill
+        "on_update": "frappe.friday_core.skills.loader.invalidate_for_skill",
+    },
+    "Chat Message": {
+        # The unified gateway chokepoint — every inbound message from any
+        # surface (CLI, Telegram, Slack, Raven, A2A) lands here.
+        "after_insert": "frappe.friday_core.gateway.service.handle_inbound",
+    },
+    "Agent Task": {
+        "on_update": "frappe.friday_core.tasks.workflow.on_state_change",
+    },
+}
+
+scheduler_events = {
+    "cron": {
+        # Every 60 seconds — task dispatcher claims dispatchable tasks.
+        "*/1 * * * *": ["frappe.friday_core.tasks.dispatcher.tick"],
+        # Sweeps orphaned inbound Chat Messages (async-dispatch recovery).
+        # "<cron>": ["frappe.friday_core.gateway.recovery.sweep_orphans"],
     },
 }
 ```
 
-The dispatcher fires every 60 seconds. The curator runs hourly (with daily promotion/retirement logic). The learner runs every six hours.
+The dispatcher fires every 60 seconds. Cache-invalidation hooks keep the permission matrix and
+skill loader fresh when an Agent Profile, Role, or Skill changes.
 
 ---
 

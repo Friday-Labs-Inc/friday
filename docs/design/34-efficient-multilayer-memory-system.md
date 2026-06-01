@@ -51,10 +51,10 @@ Independent of tier, every Memory Entry carries a category.
 
 | Category | Meaning | Example |
 |---|---|---|
-| **Episodic** | What happened | "Customer X placed an order for 50 units on March 5." |
-| **Semantic** | What is true | "Customer X payment terms: Net 30." |
+| **Episodic** | What happened | "Client X opened a support ticket on March 5." |
+| **Semantic** | What is true | "Client X SLA: response within 30 days." |
 | **Procedural** | How to do | Typically codified as Skills, not memory entries. |
-| **Reflective** | What was learned | "Following up with Customer X via WhatsApp is more effective than email." |
+| **Reflective** | What was learned | "Following up with Client X via chat is more effective than email." |
 
 `memory_search` filters by category.
 
@@ -169,7 +169,7 @@ Latency target: < 300ms (warm tier only).
 
 Old episodic memories compress into summary form.
 
-Example: 50 entries about "Procurement Agent processed PO-X with supplier follow-up" → one summary "In Q1 2025, Procurement Agent processed 50 POs averaging 3.2 days to completion."
+Example: 50 entries about "Support Agent resolved Ticket-X with a follow-up" → one summary "In Q1 2025, Support Agent resolved 50 tickets averaging 3.2 days to completion."
 
 Rules:
 
