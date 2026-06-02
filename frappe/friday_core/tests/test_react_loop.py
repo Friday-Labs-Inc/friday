@@ -119,8 +119,15 @@ class TestSingleToolCall(unittest.TestCase):
 
 class TestSequentialDispatch(unittest.TestCase):
 	def test_multiple_tool_calls_dispatched_in_order(self):
+		# Distinct arguments so Feature D's dedup keeps all three (three
+		# *identical* (name, arguments) would correctly collapse to one — that
+		# behaviour is covered in test_react_dedup).
 		prov = _provider(
-			_resp(tool_calls=[_tc("c1"), _tc("c2"), _tc("c3")]),
+			_resp(tool_calls=[
+				_tc("c1", arguments='{"title": "a"}'),
+				_tc("c2", arguments='{"title": "b"}'),
+				_tc("c3", arguments='{"title": "c"}'),
+			]),
 			_resp(content="finished"),
 		)
 		result, md, _ = _run(prov, dispatch_results=[_ok(call_id="c1"), _ok(call_id="c2"), _ok(call_id="c3")])
