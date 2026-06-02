@@ -31,13 +31,14 @@ we deleted work Hermes had to build itself.
 Today, Friday can do this end-to-end, with a full audit trail:
 
 > A message arrives → Friday checks the agent is **allowed** (Frappe roles) →
-> runs a **multi-step loop** (call the **Minimax** model → run a skill in a
-> **Docker sandbox** → observe → repeat, up to 15 steps) → writes the reply
-> back → logs every step (Execution Log + Permission Decision Log).
+> runs a **multi-step loop** (call the model — **Minimax, OpenAI, or
+> Anthropic** → run a skill in a **Docker sandbox** → observe → repeat, up to
+> 15 steps) → **compresses** the history if it has grown too long → writes the
+> reply back → logs every step (Execution Log + Permission Decision Log).
 
-That is the working core. What it can't do **yet**: use **OpenAI/Anthropic**
-(only Minimax today), shorten very long conversations, or learn/create its own
-skills. Those are the remaining planned features below (B, C + the learning loop).
+That is the working core. What it can't do **yet**: learn or create its own
+skills — the **learning loop** (§9). That is the one big Hermes capability
+Friday still lacks; everything else on the core thinking/serving path is built.
 
 ---
 
@@ -54,8 +55,8 @@ skills. Those are the remaining planned features below (B, C + the learning loop
 | In Hermes | In Friday | Status | How it changes for Frappe |
 |---|---|---|---|
 | Declarative **`ProviderProfile`** (base_url, api_mode, auth type, default model…) in `providers/base.py` | **LLM Provider** DocType + `LLMProvider` base class (`llm/provider.py`) | ✅ | A provider is now a **database record** you edit in the Frappe admin screen — no code/YAML. |
-| ~40 model plugins (OpenAI, Anthropic, Gemini, Bedrock, OpenRouter, DeepSeek, xAI, Minimax…) | **Minimax** only, today | 🟡 | One adapter built; **OpenAI** = 🔨 **B1**, **Anthropic** = 🔨 **B2**. Friday needs a few, not forty. |
-| Transports: OpenAI chat-completions (default), Anthropic Messages, codex | Minimax uses the OpenAI-compatible shape | 🟡 | B1 extracts a shared OpenAI-style base; B2 adds the Anthropic translation. |
+| ~40 model plugins (OpenAI, Anthropic, Gemini, Bedrock, OpenRouter, DeepSeek, xAI, Minimax…) | **Minimax + OpenAI + Anthropic** | ✅ **Built** (Feature B1/B2) | The three Friday needs are built; the other ~37 are deliberately out of scope. A new native API = one subclass + one branch. |
+| Transports: OpenAI chat-completions (default), Anthropic Messages, codex | Shared `_OpenAICompatibleProvider` base (Minimax/OpenAI) + native `AnthropicProvider` (Messages API) | ✅ | All adapters normalise tool calls to one canonical `{id, name, arguments}` shape before the runner sees them. |
 | Credential **pool** + key rotation | one key per provider record (Frappe Password field) | 🚫 | Single tenant → no key pool. Secrets sit encrypted in the DocType. |
 
 ## 3. Tools the agent can use (built-in tools)
@@ -127,7 +128,7 @@ skills. Those are the remaining planned features below (B, C + the learning loop
 |---|---|---|---|
 | **SQLite SessionDB** — sessions + messages tables, on disk (`hermes_state.py`) | **Chat Message** DocType rows in Frappe's database | ✅ | Conversation history is just database rows now — backed up, searchable, admin-visible for free. |
 | Profile-aware paths, `~/.hermes/config.yaml`, `.env` | **Agent Settings** + **LLM Provider** DocTypes | ✅ | All config lives in the database, edited in the admin screen. |
-| Long conversations get **compressed** (protect head+tail, summarize the middle, mark "reference only") | — | 🔨 **Feature C** | Ported; summary likely stored as its own DocType. |
+| Long conversations get **compressed** (protect head+tail, summarize the middle, mark "reference only") | `llm/compression.py` + **Compaction Summary** DocType | ✅ **Built** (Feature C) | Ported; summary stored as a durable `Compaction Summary` row, old turns flagged `compacted`. |
 | Smart **error classification / failover** (retryable? compress? fall back?) | `llm/error_classifier.py` — one shared classifier; `MinimaxProvider` routes through it | ✅ **Built** (Feature F) | One shared classifier; no key-rotation (single tenant). |
 
 ## 11. Where it runs (deployment)
@@ -155,10 +156,14 @@ In order, each already has a locked design:
 1. ✅ **Feature A** — multi-step thinking loop (§1) — *done*.
 2. ✅ **Feature F** — error classifier (§10) — *done*.
 3. ✅ **Feature D** — tool-call de-dup + IDs (§1) — *done*.
-4. **Feature B1 / B2** — OpenAI + Anthropic providers (§2). ← **next**
-5. **Feature C** — conversation compression (§10).
-6. Wire the **Agent Task** auto-trigger (§8) / finish the Project/Issue tracker.
+4. ✅ **Feature B1 / B2** — OpenAI + Anthropic providers (§2) — *done*.
+5. ✅ **Feature C** — conversation compression (§10) — *done*.
+6. Finish the **Project/Issue tracker** (§8 / doc 53) — rename to generic Project/Task, add `depends_on`, wire the Dependency-Wait + Failure auto-raise. ← **next**
 7. **H2/H3** — approval workflow + scoped-token polish (§5).
+
+The whole **Hermes-core feature block (A, F, D, B1, B2, C) is now built.** What
+remains is the tracker port, the two HIGH security items, and — further out —
+the learning loop.
 
 Further out (currently ❌): the **learning loop** (§9) — memory, recall, and
 self-improving skills. That is what makes Hermes "Hermes"; decide later if and
