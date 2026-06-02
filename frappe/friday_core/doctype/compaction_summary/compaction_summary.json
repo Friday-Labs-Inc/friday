@@ -1,0 +1,79 @@
+{
+    "actions": [],
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "session_id",
+        "summary",
+        "from_message",
+        "to_message",
+        "message_count",
+        "model"
+    ],
+    "fields": [
+        {
+            "description": "The conversation session whose middle turns this summary replaces.",
+            "fieldname": "session_id",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Session ID",
+            "reqd": 1
+        },
+        {
+            "description": "The auxiliary-model summary of the compacted turns. Stored WITHOUT the reference-only preamble; prompt_builder prepends it at assembly time.",
+            "fieldname": "summary",
+            "fieldtype": "Long Text",
+            "label": "Summary",
+            "reqd": 1
+        },
+        {
+            "description": "Name of the first Chat Message row in the compacted range (audit trail).",
+            "fieldname": "from_message",
+            "fieldtype": "Data",
+            "label": "From Message"
+        },
+        {
+            "description": "Name of the last Chat Message row in the compacted range (audit trail).",
+            "fieldname": "to_message",
+            "fieldtype": "Data",
+            "label": "To Message"
+        },
+        {
+            "description": "How many Chat Message rows were folded into this summary.",
+            "fieldname": "message_count",
+            "fieldtype": "Int",
+            "in_list_view": 1,
+            "label": "Message Count"
+        },
+        {
+            "description": "The auxiliary model that produced this summary (audit trail).",
+            "fieldname": "model",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Model"
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Compaction Summary",
+    "naming_rule": "Autoincrement",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}
