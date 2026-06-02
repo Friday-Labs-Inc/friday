@@ -57,6 +57,7 @@ SEE ALSO
 
 from __future__ import annotations
 
+import json
 import time
 from abc import ABC, abstractmethod
 from typing import Any, TypedDict
@@ -100,6 +101,13 @@ class LLMAuthError(LLMError):
 class LLMProvider(ABC):
     """Abstract base for all LLM provider adapters."""
 
+    # Shared transport budget. Concrete providers override PROVIDER_NAME (used
+    # for error classification + audit messages); the timeout / retry budget is
+    # uniform across providers for v0.1.
+    PROVIDER_NAME = "llm"
+    TIMEOUT_SECONDS = 30
+    MAX_RETRIES = 3
+
     @abstractmethod
     def chat(
         self,
@@ -125,6 +133,117 @@ class LLMProvider(ABC):
         """Return the provider's default model identifier."""
         ...
 
+    def _post_with_recovery(
+        self,
+        *,
+        url: str,
+        headers: dict,
+        payload: dict,
+        model: str,
+    ) -> dict:
+        """POST `payload` as JSON and return the parsed response dict.
+
+        The single audited transport path shared by every provider adapter:
+        retry with exponential backoff on retryable failures, routing every
+        error through the shared classifier (`error_classifier.py`, Feature F).
+
+        REDACTION POLICY (load-bearing — do not relax):
+        - On a transport exception we surface only the exception *type name*,
+          never `str(exc)` — a Timeout / Connection error can carry a URL with a
+          query string, and we don't want secrets sneaking into the audit log.
+        - On a non-2xx we pass the body to the classifier for disambiguation
+          only; the raised error names the *reason*, never the raw body (which
+          can carry PII / partial content).
+
+        Raises `LLMAuthError` on auth failure, `LLMError` otherwise.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.TIMEOUT_SECONDS,
+                )
+            except requests.exceptions.RequestException as exc:
+                last_exc = exc
+                classified = classify_api_error(exc, provider=self.PROVIDER_NAME, model=model)
+                if classified.retryable and attempt < self.MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                break
+
+            # 2xx — success.
+            if response.status_code < 300:
+                return response.json()
+
+            # Non-2xx — the classifier decides the recovery action. The body is
+            # passed for disambiguation only; it never enters the raised error.
+            body = response.text[:500] if isinstance(getattr(response, "text", None), str) else ""
+            classified = classify_api_error(
+                status_code=response.status_code,
+                provider=self.PROVIDER_NAME,
+                model=model,
+                message=body,
+            )
+            if classified.is_auth:
+                raise LLMAuthError(
+                    f"{self.PROVIDER_NAME} auth failed (HTTP {response.status_code}). "
+                    f"Check the API key in the LLM Provider DocType."
+                )
+            if classified.retryable and attempt < self.MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise LLMError(
+                f"{self.PROVIDER_NAME} call failed: {classified.reason.value} "
+                f"(HTTP {response.status_code}) after {attempt + 1} attempt(s)."
+            )
+
+        # Transport retries exhausted. Type name only (redaction policy).
+        last_exc_type = type(last_exc).__name__ if last_exc else "Unknown"
+        raise LLMError(
+            f"{self.PROVIDER_NAME} call failed after {self.MAX_RETRIES} retries. "
+            f"Last error type: {last_exc_type}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shared tool-call normalisation
+# ---------------------------------------------------------------------------
+
+
+def _normalize_tool_calls(raw: list[dict] | None) -> list[dict] | None:
+    """Flatten provider tool calls to Friday's canonical `{id, name, arguments}`.
+
+    The dispatcher and the runner's `_assistant_message` both read tool calls in
+    the FLAT shape `{id, name, arguments}` (arguments = a JSON string). But the
+    OpenAI / Minimax wire shape nests them under `function`:
+        {id, type:"function", function:{name, arguments}}
+    Left unflattened, `tool_call.get("name")` is None and the call never
+    dispatches. This is the single seam where every OpenAI-style response is
+    brought to the canonical shape (doc 48 §1; doc 51 §4.B2.2).
+
+    Idempotent: already-flat calls pass straight through, so a provider that
+    returns the canonical shape directly is unaffected.
+    """
+    if not raw:
+        return None
+    normalized = []
+    for tc in raw:
+        fn = tc.get("function") or {}
+        arguments = tc.get("arguments")
+        if arguments is None:
+            arguments = fn.get("arguments", "{}")
+        normalized.append(
+            {
+                "id": tc.get("id", ""),
+                "name": tc.get("name") or fn.get("name", ""),
+                "arguments": arguments,
+            }
+        )
+    return normalized or None
+
 
 # ---------------------------------------------------------------------------
 # OpenAI-compatible providers (Minimax, OpenAI, …)
@@ -148,9 +267,6 @@ class _OpenAICompatibleProvider(LLMProvider):
     PROVIDER_NAME = "openai-compatible"
     DEFAULT_BASE_URL = ""
     CHAT_PATH = "/v1/chat/completions"
-
-    TIMEOUT_SECONDS = 30
-    MAX_RETRIES = 3
 
     def __init__(
         self,
@@ -194,62 +310,8 @@ class _OpenAICompatibleProvider(LLMProvider):
         if self.default_temperature is not None:
             payload["temperature"] = self.default_temperature
 
-        last_exc: Exception | None = None
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                response = requests.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    timeout=self.TIMEOUT_SECONDS,
-                )
-            except requests.exceptions.RequestException as exc:
-                # Transport failure (timeout, connection reset, …). Classify to
-                # decide whether to retry, but NEVER surface str(exc): a Timeout
-                # or Connection error can carry a URL with a query string, and we
-                # don't want secrets sneaking into the audit log.
-                last_exc = exc
-                classified = classify_api_error(exc, provider=self.PROVIDER_NAME, model=model)
-                if classified.retryable and attempt < self.MAX_RETRIES - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                break
-
-            # 2xx — success.
-            if response.status_code < 300:
-                return self._parse_response(response.json())
-
-            # Non-2xx — the shared classifier decides the recovery action. The
-            # body is passed for disambiguation only (e.g. a 429 that is really
-            # credit exhaustion); it is never put into the raised error.
-            body = response.text[:500] if isinstance(getattr(response, "text", None), str) else ""
-            classified = classify_api_error(
-                status_code=response.status_code,
-                provider=self.PROVIDER_NAME,
-                model=model,
-                message=body,
-            )
-            if classified.is_auth:
-                raise LLMAuthError(
-                    f"{self.PROVIDER_NAME} auth failed (HTTP {response.status_code}). "
-                    f"Check the API key in the LLM Provider DocType."
-                )
-            if classified.retryable and attempt < self.MAX_RETRIES - 1:
-                time.sleep(2 ** attempt)
-                continue
-            # Not retryable, or retries exhausted — raise a clean, reason-based
-            # error (no raw body — it can carry PII / partial content).
-            raise LLMError(
-                f"{self.PROVIDER_NAME} call failed: {classified.reason.value} "
-                f"(HTTP {response.status_code}) after {attempt + 1} attempt(s)."
-            )
-
-        # Transport retries exhausted. Type name only (redaction policy).
-        last_exc_type = type(last_exc).__name__ if last_exc else "Unknown"
-        raise LLMError(
-            f"{self.PROVIDER_NAME} call failed after {self.MAX_RETRIES} retries. "
-            f"Last error type: {last_exc_type}"
-        )
+        data = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model)
+        return self._parse_response(data)
 
     def get_default_model(self) -> str:
         return self.default_model
@@ -275,8 +337,9 @@ class _OpenAICompatibleProvider(LLMProvider):
 
         message = choice.get("message", {})
         content = message.get("content", "")
-        # OpenAI-style `tool_calls` field (Minimax uses the same).
-        tool_calls = message.get("tool_calls") or None
+        # OpenAI / Minimax nest tool calls under `function`; flatten to the
+        # canonical `{id, name, arguments}` the dispatcher + runner consume.
+        tool_calls = _normalize_tool_calls(message.get("tool_calls"))
 
         usage = data.get("usage", {})
         return LLMResponse(
@@ -320,6 +383,248 @@ class OpenAIProvider(_OpenAICompatibleProvider):
     PROVIDER_NAME = "openai"
     DEFAULT_BASE_URL = "https://api.openai.com"
     CHAT_PATH = "/v1/chat/completions"
+
+
+# ---------------------------------------------------------------------------
+# Anthropic provider (native Messages API)
+# ---------------------------------------------------------------------------
+
+
+class AnthropicProvider(LLMProvider):
+    """Anthropic Messages API adapter (Feature B2, doc 51 §4.B2).
+
+    Anthropic does NOT speak the OpenAI chat-completions shape, so this is a
+    sibling of `_OpenAICompatibleProvider`, not a subclass. The wire differences
+    it translates, in and out:
+
+      - **Auth / version**: `x-api-key` header (not Bearer) + a pinned
+        `anthropic-version` header (B2.3).
+      - **System prompt**: hoisted out of `messages` into a top-level `system`
+        param — Anthropic has no system *message* role (B2.1).
+      - **Tool calls**: the model emits `tool_use` content blocks and consumes
+        `tool_result` blocks, vs OpenAI's `tool_calls` array + `{role:"tool"}`
+        messages. `chat()` translates both directions so the runner only ever
+        sees the canonical flat `{id, name, arguments}` shape (B2.2).
+      - **max_tokens**: required by Anthropic — defaulted when the row omits it.
+
+    Out of scope for v0.1 (B2.4): prompt caching, extended thinking, the
+    1M-context beta, vision.
+    """
+
+    PROVIDER_NAME = "anthropic"
+    DEFAULT_BASE_URL = "https://api.anthropic.com"
+    MESSAGES_PATH = "/v1/messages"
+    # Pinned, not operator-configurable (B2.3). Bump deliberately on upgrade.
+    ANTHROPIC_VERSION = "2023-06-01"
+    # Anthropic requires max_tokens; used when the LLM Provider row leaves it blank.
+    DEFAULT_MAX_TOKENS = 4096
+
+    def __init__(
+        self,
+        api_key: str,
+        default_model: str,
+        base_url: str | None = None,
+        default_max_tokens: int | None = None,
+        default_temperature: float | None = None,
+    ):
+        self.api_key = api_key
+        self.default_model = default_model
+        self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.default_max_tokens = default_max_tokens
+        self.default_temperature = default_temperature
+
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        model: str | None = None,
+    ) -> LLMResponse:
+        model = model or self.default_model
+        url = f"{self.base_url}{self.MESSAGES_PATH}"
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": self.ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        }
+
+        system, anthropic_messages = _to_anthropic_messages(messages)
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": anthropic_messages,
+            # Anthropic requires max_tokens; fall back to a sane default.
+            "max_tokens": self.default_max_tokens or self.DEFAULT_MAX_TOKENS,
+        }
+        if system:
+            payload["system"] = system
+        if tools:
+            payload["tools"] = _to_anthropic_tools(tools)
+        if self.default_temperature is not None:
+            payload["temperature"] = self.default_temperature
+
+        data = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model)
+        return self._parse_anthropic_response(data)
+
+    def get_default_model(self) -> str:
+        return self.default_model
+
+    def _parse_anthropic_response(self, data: dict) -> LLMResponse:
+        """Map an Anthropic Messages response → canonical `LLMResponse` (B2.2).
+
+        `content` is a list of blocks: `text` blocks concatenate into the reply;
+        `tool_use` blocks become canonical flat tool calls (`{id, name,
+        arguments}`, arguments JSON-encoded). `stop_reason` and the
+        `input/output_tokens` usage are mapped onto the OpenAI-shaped fields the
+        runner already reads (it branches only on `tool_calls`, never on the
+        finish reason, so passing `stop_reason` through verbatim is safe).
+        """
+        blocks = data.get("content", [])
+        if not isinstance(blocks, list):
+            # Redact: structural keys only, never values.
+            raise LLMError(
+                f"anthropic response `content` is not a list. "
+                f"response_keys={sorted(data.keys())}"
+            )
+
+        text_parts: list[str] = []
+        tool_calls: list[dict] = []
+        for block in blocks:
+            block_type = block.get("type")
+            if block_type == "text":
+                text_parts.append(block.get("text", ""))
+            elif block_type == "tool_use":
+                tool_calls.append(
+                    {
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "arguments": json.dumps(block.get("input", {})),
+                    }
+                )
+
+        usage = data.get("usage", {})
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        return LLMResponse(
+            content="".join(text_parts),
+            finish_reason=data.get("stop_reason") or "stop",
+            usage={
+                "prompt_tokens": input_tokens,
+                "completion_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+            tool_calls=tool_calls or None,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Anthropic message translation (canonical ↔ Messages API blocks)
+# ---------------------------------------------------------------------------
+
+
+def _to_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]]:
+    """Translate canonical OpenAI-shaped messages → (system, anthropic_messages).
+
+    (B2.1) Rules:
+      - `system` messages are hoisted out and joined into the top-level
+        `system` string (Anthropic has no system *message* role).
+      - assistant turns carrying tool calls become `tool_use` content blocks
+        (the runner re-sends them in OpenAI wire shape `{id, function:{...}}`,
+        which `_assistant_tool_use_block` also accepts).
+      - `{role:"tool"}` results become `tool_result` blocks inside a *user*
+        message; consecutive tool results merge into ONE user message so a
+        parallel-tool-call turn stays a single Anthropic message.
+      - plain user / assistant text passes through with string content.
+    """
+    system_parts: list[str] = []
+    out: list[dict] = []
+    i = 0
+    n = len(messages)
+    while i < n:
+        msg = messages[i]
+        role = msg.get("role")
+
+        if role == "system":
+            if msg.get("content"):
+                system_parts.append(msg["content"])
+            i += 1
+            continue
+
+        if role == "tool":
+            # Merge a run of consecutive tool results into one user message.
+            tool_blocks: list[dict] = []
+            while i < n and messages[i].get("role") == "tool":
+                result = messages[i]
+                tool_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": result.get("tool_call_id", ""),
+                        "content": result.get("content", ""),
+                    }
+                )
+                i += 1
+            out.append({"role": "user", "content": tool_blocks})
+            continue
+
+        if role == "assistant" and msg.get("tool_calls"):
+            assistant_blocks: list[dict] = []
+            if msg.get("content"):
+                assistant_blocks.append({"type": "text", "text": msg["content"]})
+            for tool_call in msg["tool_calls"]:
+                assistant_blocks.append(_assistant_tool_use_block(tool_call))
+            out.append({"role": "assistant", "content": assistant_blocks})
+            i += 1
+            continue
+
+        # Plain user or assistant text.
+        out.append({"role": role or "user", "content": msg.get("content", "")})
+        i += 1
+
+    return "\n\n".join(system_parts), out
+
+
+def _assistant_tool_use_block(tool_call: dict) -> dict:
+    """One canonical tool call → an Anthropic `tool_use` block.
+
+    Accepts both Friday's flat `{id, name, arguments}` and the OpenAI wire shape
+    `{id, function:{name, arguments}}` that the runner's `_assistant_message`
+    produces when it re-sends an assistant turn. `arguments` (a JSON *string*)
+    is parsed into the `input` object Anthropic expects.
+    """
+    fn = tool_call.get("function") or {}
+    name = tool_call.get("name") or fn.get("name", "")
+    raw_args = tool_call.get("arguments")
+    if raw_args is None:
+        raw_args = fn.get("arguments", "{}")
+    try:
+        tool_input = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+    except (json.JSONDecodeError, TypeError):
+        tool_input = {}
+    return {
+        "type": "tool_use",
+        "id": tool_call.get("id", ""),
+        "name": name,
+        "input": tool_input,
+    }
+
+
+def _to_anthropic_tools(tools: list[dict]) -> list[dict]:
+    """OpenAI tool definitions → Anthropic tool definitions.
+
+    OpenAI wraps the schema under `function` with a `parameters` key; Anthropic
+    is flat with `input_schema`. Accepts an already-flat definition too.
+    """
+    out: list[dict] = []
+    for tool in tools:
+        fn = tool.get("function") or tool
+        out.append(
+            {
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters")
+                or fn.get("input_schema")
+                or {"type": "object", "properties": {}},
+            }
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -372,10 +677,18 @@ def get_provider_for_profile(profile_name: str) -> LLMProvider:
             default_temperature=default_temperature,
         )
 
-    # Future: anthropic → AnthropicProvider(...) (Feature B2). An OpenRouter /
-    # Azure endpoint needs no new class — use `openai` with `base_url` set. Each
-    # new *native* API adds one branch here and one subclass; the DocType's
-    # `provider_type` Select must list it too.
+    if provider_type == "anthropic":
+        return AnthropicProvider(
+            api_key=api_key,
+            default_model=default_model,
+            base_url=base_url,
+            default_max_tokens=default_max_tokens,
+            default_temperature=default_temperature,
+        )
+
+    # An OpenRouter / Azure endpoint needs no new class — use `openai` with
+    # `base_url` set. Each new *native* API adds one branch here and one
+    # subclass; the DocType's `provider_type` Select must list it too.
     raise LLMError(f"Unsupported provider_type {provider_type!r}")
 
 
