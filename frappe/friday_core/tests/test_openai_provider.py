@@ -74,11 +74,23 @@ class TestOpenAIProvider(unittest.TestCase):
 		self.assertEqual(resp["usage"]["total_tokens"], 3)
 
 	@patch(_POST)
-	def test_tool_call_roundtrip(self, mock_post):
-		tc = [{"id": "call_1", "type": "function", "function": {"name": "create_note", "arguments": "{}"}}]
-		mock_post.return_value = _ok(content="", tool_calls=tc)
+	def test_tool_call_normalized_to_flat_canonical(self, mock_post):
+		# OpenAI returns tool calls NESTED under `function`; the provider must
+		# flatten to the canonical {id, name, arguments} the dispatcher + runner
+		# read (doc 51 §4.B2.2). Left nested, dispatch would see no name.
+		nested = [
+			{
+				"id": "call_1",
+				"type": "function",
+				"function": {"name": "create_note", "arguments": '{"title": "x"}'},
+			}
+		]
+		mock_post.return_value = _ok(content="", tool_calls=nested)
 		resp = _p().chat(messages=[{"role": "user", "content": "make a note"}])
-		self.assertEqual(resp["tool_calls"], tc)
+		self.assertEqual(
+			resp["tool_calls"],
+			[{"id": "call_1", "name": "create_note", "arguments": '{"title": "x"}'}],
+		)
 
 	@patch(_POST)
 	def test_401_raises_auth_error(self, mock_post):
