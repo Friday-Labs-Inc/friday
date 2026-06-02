@@ -2,19 +2,20 @@
 # For license information, please see license.txt
 
 """
-Tests for the runner's tool-call detection and dispatching logic.
+Bench integration tests for the runner's ReAct loop (Feature A, doc 48 §1)
+against the real dispatcher / permission engine / Note DocType.
 
-These tests verify the Slice 6 integration between runner.py and
-dispatcher.py — specifically that the runner correctly:
-  1. Detects tool_calls in the LLM response.
-  2. Dispatches the first tool call to the dispatcher.
-  3. Returns the dispatch result's content as the agent reply.
-  4. Falls back to plain text when no tool calls are present.
-  5. Handles multiple tool calls by dispatching only the first.
-  6. Propagates errors from the dispatcher in the reply text.
+They verify the runner correctly:
+  1. Returns plain text directly when there are no tool calls.
+  2. Dispatches tool calls through the real dispatcher (creating a Note),
+     feeds results back, and returns the model's final plain-text reply.
+  3. Dispatches multiple tool calls sequentially, in order.
+  4. Breaks the loop and surfaces the denial on a permission-denied call.
+  5. Feeds a tool error back to the model and continues the loop.
 
-These are UNIT tests with the LLM provider fully mocked. The tests
-exercise the runner's logic without making any real LLM API calls.
+The LLM provider is mocked with scripted responses (a tool-call turn, then a
+plain-text turn so the loop ends); everything below it is real, so these run
+on a bench. The pure-logic loop tests live in test_react_loop.py.
 """
 
 import unittest
@@ -191,7 +192,11 @@ class TestRunnerToolCallDetection(unittest.TestCase):
         }
 
         mock_provider = MagicMock()
-        mock_provider.chat.return_value = fake_response
+        # ReAct loop: a tool-call turn, then a plain-text turn so the loop ends.
+        mock_provider.chat.side_effect = [
+            fake_response,
+            {"content": "I created the note.", "finish_reason": "stop", "usage": {}, "tool_calls": None},
+        ]
 
         with patch(
             "frappe.friday_core.agent_runner.runner.get_provider_for_profile",
@@ -203,9 +208,10 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                 inbound_content="Create a note about the meeting",
             )
 
-        # The dispatcher creates a Note and returns the note title in content.
-        self.assertIn("slice6-runner-note", result)
-        # Verify the Note was actually created in DB.
+        # The loop dispatches the tool, feeds the result back, then returns the
+        # model's final plain-text reply.
+        self.assertEqual(result, "I created the note.")
+        # Verify the Note was actually created in DB by the dispatched tool.
         exists = frappe.db.exists("Note", {"title": "slice6-runner-note"})
         self.assertTrue(exists, "Note should have been created by the create_note handler")
 
@@ -225,7 +231,10 @@ class TestRunnerToolCallDetection(unittest.TestCase):
         }
 
         mock_provider = MagicMock()
-        mock_provider.chat.return_value = fake_response
+        mock_provider.chat.side_effect = [
+            fake_response,
+            {"content": "Created it.", "finish_reason": "stop", "usage": {}, "tool_calls": None},
+        ]
 
         with patch(
             "frappe.friday_core.agent_runner.runner.get_provider_for_profile",
@@ -237,8 +246,8 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                 inbound_content="Create a note",
             )
 
-        # The dispatcher should have created the note and runner returns the result.
-        self.assertIn("slice6-runner-my-note", result)
+        # The dispatched tool created the note; the loop returns the final reply.
+        self.assertEqual(result, "Created it.")
         exists = frappe.db.exists("Note", {"title": "slice6-runner-my-note"})
         self.assertTrue(exists)
 
@@ -289,8 +298,8 @@ class TestRunnerToolCallDetection(unittest.TestCase):
             profile.save(ignore_permissions=True)
             invalidate_for_profile(PROFILE_NAME)
 
-    def test_multiple_tool_calls_dispatches_first_only(self):
-        """When LLM returns multiple tool calls, runner dispatches only the first."""
+    def test_multiple_tool_calls_dispatched_sequentially(self):
+        """Feature A: all tool calls in a response are dispatched, in order."""
         call_log = []
 
         fake_response = {
@@ -310,9 +319,10 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                 },
             ],
         }
+        plain_response = {"content": "Both done.", "finish_reason": "stop", "usage": {}, "tool_calls": None}
 
         mock_provider = MagicMock()
-        mock_provider.chat.return_value = fake_response
+        mock_provider.chat.side_effect = [fake_response, plain_response]
 
         def track_dispatch(**kwargs):
             call_log.append(kwargs)
@@ -329,7 +339,7 @@ class TestRunnerToolCallDetection(unittest.TestCase):
             return_value=mock_provider,
         ):
             with patch(
-                "frappe.friday_core.agent_runner.dispatcher.dispatch",
+                "frappe.friday_core.agent_runner.runner.dispatch",
                 side_effect=track_dispatch,
             ):
                 result = run_turn(
@@ -338,13 +348,13 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                     inbound_content="Create two notes",
                 )
 
-        # Only one dispatch should have happened.
-        self.assertEqual(len(call_log), 1, "Only the first tool call should be dispatched")
-        # The dispatched tool call should be the first one.
-        self.assertEqual(call_log[0]["tool_call"]["id"], "call_first")
+        # Both tool calls dispatched, in order.
+        self.assertEqual(len(call_log), 2)
+        self.assertEqual([c["tool_call"]["id"] for c in call_log], ["call_first", "call_second"])
+        self.assertEqual(result, "Both done.")
 
-    def test_dispatch_error_returns_error_content(self):
-        """When the dispatcher returns an error result, runner propagates it."""
+    def test_dispatch_error_is_fed_back_and_loop_continues(self):
+        """Feature A (A.3): a tool error is fed back to the model; the loop continues."""
         fake_response = {
             "content": "",
             "finish_reason": "tool_calls",
@@ -357,9 +367,10 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                 }
             ],
         }
+        plain_response = {"content": "Sorry, I couldn't do that.", "finish_reason": "stop", "usage": {}, "tool_calls": None}
 
         mock_provider = MagicMock()
-        mock_provider.chat.return_value = fake_response
+        mock_provider.chat.side_effect = [fake_response, plain_response]
 
         with patch(
             "frappe.friday_core.agent_runner.runner.get_provider_for_profile",
@@ -371,7 +382,13 @@ class TestRunnerToolCallDetection(unittest.TestCase):
                 inbound_content="Do something impossible",
             )
 
-        self.assertIn("doesn't exist", result)
+        # The loop re-prompted after feeding the error back; returns the final reply.
+        self.assertEqual(result, "Sorry, I couldn't do that.")
+        self.assertEqual(mock_provider.chat.call_count, 2)
+        # The error text was fed back to the model as a tool message.
+        second_call_messages = mock_provider.chat.call_args_list[1].kwargs["messages"]
+        tool_msgs = [m for m in second_call_messages if m.get("role") == "tool"]
+        self.assertTrue(any("doesn't exist" in m["content"] for m in tool_msgs))
 
 
 if __name__ == "__main__":
