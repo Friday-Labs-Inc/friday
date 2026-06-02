@@ -350,6 +350,33 @@ class TestMinimaxProviderChat(unittest.TestCase):
         call_kwargs = mock_post.call_args[1]
         self.assertEqual(call_kwargs["timeout"], 30)
 
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_404_fails_fast_not_retryable(self, mock_post: MagicMock):
+        """Feature F: 404 (model_not_found) is not retryable — fail on first attempt."""
+        mock_post.return_value = MagicMock(status_code=404, text="model `x` does not exist")
+        p = self._make_provider()
+        with self.assertRaises(LLMError):
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+        self.assertEqual(mock_post.call_count, 1)
+
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_400_fails_fast_not_retryable(self, mock_post: MagicMock):
+        """Feature F: 400 (format_error) is not retryable — fail on first attempt."""
+        mock_post.return_value = MagicMock(status_code=400, text="bad request")
+        p = self._make_provider()
+        with self.assertRaises(LLMError):
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+        self.assertEqual(mock_post.call_count, 1)
+
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_503_retries_as_overloaded(self, mock_post: MagicMock):
+        """Feature F: 503 (overloaded) is retryable — 3 attempts then LLMError."""
+        mock_post.return_value = MagicMock(status_code=503, text="service unavailable")
+        p = self._make_provider()
+        with self.assertRaises(LLMError):
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+        self.assertEqual(mock_post.call_count, 3)
+
 
 # ---------------------------------------------------------------------------
 # Provider resolution tests

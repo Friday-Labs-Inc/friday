@@ -32,13 +32,14 @@ set at construction time, not at call time.
 ERROR HANDLING
 ==============
 
-- **401 Invalid credentials** → raises `LLMAuthError`. Callers write a
-  clean error to the outbound Chat Message, never crash the gateway.
-- **429 Rate limit** → retries up to 3 times with exponential backoff.
-- **500/502/503 server error** → retries up to 3 times.
-- **Timeout (>30 s)** → treated as an error, same retry logic.
-- **After all retries exhausted** → raises `LLMError` with a reason string.
-  The gateway catches it and writes a system-error outbound row.
+Every failure routes through the shared classifier (`error_classifier.py`,
+Feature F), which labels it and returns recovery hints:
+- **401/403** → `LLMAuthError` (bad key — never retried).
+- **429 / 500 / 502 / 503 / timeout** → retryable → up to 3 backoff retries.
+- **404 / 400** → not retryable → fail fast (no point retrying a bad request).
+- **After retries (or a non-retryable reason)** → `LLMError` with a clean,
+  reason-based string (never the raw body or exception text). The gateway
+  catches it and writes a system-error outbound row.
 
 WHAT THIS MODULE DOES NOT DO
 =============================
@@ -62,6 +63,8 @@ from typing import Any, TypedDict
 
 import frappe
 import requests
+
+from frappe.friday_core.llm.error_classifier import classify_api_error
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -211,38 +214,48 @@ class MinimaxProvider(LLMProvider):
                     json=payload,
                     timeout=self.TIMEOUT_SECONDS,
                 )
-                if response.status_code == 401:
-                    raise LLMAuthError(
-                        "Minimax auth failed (401). Check the API key in "
-                        "the LLM Provider DocType."
-                    )
-                if response.status_code == 429:
-                    # Rate limited — back off and retry.
-                    sleep_time = 2 ** attempt
-                    time.sleep(sleep_time)
-                    continue
-                if response.status_code >= 500:
-                    # Server error — retry.
-                    sleep_time = 2 ** attempt
-                    time.sleep(sleep_time)
-                    continue
-                response.raise_for_status()
-                data = response.json()
-                return self._parse_response(data)
-
-            except requests.exceptions.Timeout as exc:
-                last_exc = exc
-                sleep_time = 2**attempt
-                time.sleep(sleep_time)
             except requests.exceptions.RequestException as exc:
+                # Transport failure (timeout, connection reset, …). Classify to
+                # decide whether to retry, but NEVER surface str(exc): a Timeout
+                # or Connection error can carry a URL with a query string, and we
+                # don't want secrets sneaking into the audit log.
                 last_exc = exc
-                sleep_time = 2**attempt
-                time.sleep(sleep_time)
+                classified = classify_api_error(exc, provider="minimax", model=model)
+                if classified.retryable and attempt < self.MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                break
 
-        # All retries exhausted. Include the exception TYPE in the message
-        # so operators can grep, but NOT the str(exc) — Connection/Timeout
-        # exceptions can include URL with the query string, and we don't
-        # want secrets sneaking into the audit log via the URL.
+            # 2xx — success.
+            if response.status_code < 300:
+                return self._parse_response(response.json())
+
+            # Non-2xx — the shared classifier decides the recovery action. The
+            # body is passed for disambiguation only (e.g. a 429 that is really
+            # credit exhaustion); it is never put into the raised error.
+            body = response.text[:500] if isinstance(getattr(response, "text", None), str) else ""
+            classified = classify_api_error(
+                status_code=response.status_code,
+                provider="minimax",
+                model=model,
+                message=body,
+            )
+            if classified.is_auth:
+                raise LLMAuthError(
+                    f"Minimax auth failed (HTTP {response.status_code}). Check the "
+                    f"API key in the LLM Provider DocType."
+                )
+            if classified.retryable and attempt < self.MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)
+                continue
+            # Not retryable, or retries exhausted — raise a clean, reason-based
+            # error (no raw body — it can carry PII / partial content).
+            raise LLMError(
+                f"Minimax call failed: {classified.reason.value} "
+                f"(HTTP {response.status_code}) after {attempt + 1} attempt(s)."
+            )
+
+        # Transport retries exhausted. Type name only (redaction policy).
         last_exc_type = type(last_exc).__name__ if last_exc else "Unknown"
         raise LLMError(
             f"Minimax call failed after {self.MAX_RETRIES} retries. "
