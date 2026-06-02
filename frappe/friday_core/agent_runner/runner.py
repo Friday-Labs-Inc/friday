@@ -48,6 +48,7 @@ import frappe
 
 from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
 from frappe.friday_core.llm import get_provider_for_profile
+from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.prompt_builder import build
 from frappe.friday_core.skills.loader import load_for_profile
 
@@ -87,6 +88,19 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	the last error catcher.
 	"""
 	skill_definitions = load_for_profile(profile_name)
+
+	# Feature C: fold old turns into a summary if this session has grown large,
+	# BEFORE assembling the prompt — build() then sees the summary + the
+	# shortened (uncompacted) tail. Best-effort: a compression failure must
+	# never break the turn, so we log and continue with the full prompt.
+	try:
+		maybe_compress_session(profile_name, session_id)
+	except Exception as exc:  # noqa: BLE001 — compression must never break a turn
+		frappe.logger("friday.compression").warning(
+			f"Compression pass errored for session {session_id!r}: "
+			f"{type(exc).__name__}; continuing with the full prompt."
+		)
+
 	prompt = build(
 		profile_name=profile_name,
 		session_id=session_id,

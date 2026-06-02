@@ -40,8 +40,14 @@ We load the last `max_history_turns` Chat Message rows for the session:
 
 We stop after `max_history_turns` even if more history exists.
 This is a conservative truncation — the LLM still has full context for
-recent conversation, and long-history handling is deferred to
-trajectory compression (future slice).
+recent conversation.
+
+When a session has grown large, the compression pass (Feature C,
+`llm/compression.py`) folds the OLD middle turns into a `Compaction Summary`
+and flags those Chat Messages `compacted = 1`. This builder then loads only
+the **uncompacted** tail and leads it with the latest summary (carrying the
+reference-only preamble), so the model gets the background without the full
+transcript.
 
 SYSTEM PROMPT ASSEMBLY
 =====================
@@ -77,6 +83,7 @@ from typing import Any
 
 import frappe
 
+from frappe.friday_core.llm.compression import SUMMARY_PREFIX, latest_summary
 from frappe.friday_core.skills.loader import (
     SkillDefinition,
     to_tool_definition,
@@ -154,31 +161,41 @@ def _build_system_prompt(profile) -> str:
 
 
 def _load_history(session_id: str, max_history_turns: int) -> list[dict[str, str]]:
-    """Load the last N Chat Message turns for a session.
+    """Load conversation context for a session: [summary?] + uncompacted tail.
 
-    Returns a flat list of messages in chronological order, ready to
-    append to the messages list. Each entry is `{"role": "user"|"assistant", "content": str}`.
+    Returns a flat list of messages in chronological order, ready to append
+    after the system prompt. If earlier turns were compacted (Feature C), the
+    list leads with a reference-only `system` message carrying the latest
+    summary; the summary covers everything before the uncompacted tail, so the
+    ordering [summary] → [recent turns] stays chronological.
 
     Single DB round-trip via `fields=` on get_all (no per-row get_doc).
-    On a 20-turn conversation this is 1 query instead of 41.
     """
     if max_history_turns <= 0:
         return []
 
+    messages: list[dict[str, str]] = []
+
+    # Lead with the latest compaction summary, if any (Feature C). It stands in
+    # for the compacted middle turns the query below deliberately skips.
+    summary = latest_summary(session_id)
+    if summary:
+        messages.append({"role": "system", "content": f"{SUMMARY_PREFIX}\n{summary}"})
+
+    # Only the UNCOMPACTED tail is loaded verbatim — compacted rows are
+    # represented by the summary above.
     rows = frappe.get_all(
         "Chat Message",
         filters={
             "session_id": session_id,
             "direction": ("in", ["inbound", "outbound"]),
+            "compacted": 0,
         },
         fields=["direction", "content"],
         order_by="creation asc",
         limit=max_history_turns * 2,  # ×2 because each turn has 2 rows
     )
-    if not rows:
-        return []
 
-    messages: list[dict[str, str]] = []
     for row in rows:
         direction = row.get("direction")
         if direction == "inbound":

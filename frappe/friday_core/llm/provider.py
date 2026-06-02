@@ -651,7 +651,34 @@ def get_provider_for_profile(profile_name: str) -> LLMProvider:
             f"and no default in Agent Settings. Add at least one active "
             f"LLM Provider row in Desk."
         )
+    return _build_provider(provider_row)
 
+
+def get_provider_by_name(provider_name: str) -> LLMProvider:
+    """Build a provider from a specific LLM Provider row name.
+
+    Unlike `get_provider_for_profile` (which runs the profile → settings →
+    first-active resolution chain), this targets one named row directly. Used
+    for the compression aux-model override (`Agent Settings.compression_model`,
+    Feature C.4). Raises `LLMError` if the row is missing or inactive.
+    """
+    if not frappe.db.exists("LLM Provider", provider_name):
+        raise LLMError(f"LLM Provider {provider_name!r} not found.")
+    row = frappe.get_doc("LLM Provider", provider_name)
+    if not row.is_active:
+        raise LLMError(f"LLM Provider {provider_name!r} is inactive.")
+    return _build_provider(row.as_dict())
+
+
+def _build_provider(provider_row: dict) -> LLMProvider:
+    """Construct a provider instance from an LLM Provider row dict.
+
+    The `provider_type` → adapter-class mapping lives here, in one place, so
+    both the profile resolver and the by-name lookup share it. A new *native*
+    API adds one branch here and one subclass; the DocType's `provider_type`
+    Select must list it too. (An OpenRouter / Azure endpoint needs no new
+    class — use `openai` with `base_url` set.)
+    """
     api_key = _get_api_key(provider_row)
     provider_type = provider_row.get("provider_type") or "minimax"
     default_model = provider_row.get("default_model") or "MiniMax-Standard"
@@ -686,9 +713,6 @@ def get_provider_for_profile(profile_name: str) -> LLMProvider:
             default_temperature=default_temperature,
         )
 
-    # An OpenRouter / Azure endpoint needs no new class — use `openai` with
-    # `base_url` set. Each new *native* API adds one branch here and one
-    # subclass; the DocType's `provider_type` Select must list it too.
     raise LLMError(f"Unsupported provider_type {provider_type!r}")
 
 

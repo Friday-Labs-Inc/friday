@@ -12,7 +12,8 @@
   "timestamp",
   "processed",
   "retry_count",
-  "failure_reason"
+  "failure_reason",
+  "compacted"
  ],
  "fields": [
   {"fieldname": "session_id", "fieldtype": "Data", "in_list_view": 1, "label": "Session ID", "reqd": 1},
@@ -24,7 +25,8 @@
   {"fieldname": "timestamp", "fieldtype": "Datetime", "in_list_view": 1, "label": "Timestamp", "reqd": 1},
   {"default": "0", "fieldname": "processed", "fieldtype": "Check", "label": "Processed"},
   {"default": "0", "description": "Number of times the recovery sweeper has re-enqueued this inbound row. Capped at 3.", "fieldname": "retry_count", "fieldtype": "Int", "label": "Retry Count"},
-  {"description": "Populated by the recovery sweeper after 3 failed retries. Empty means the row either succeeded (processed=1) or has not yet exhausted retries.", "fieldname": "failure_reason", "fieldtype": "Small Text", "label": "Failure Reason"}
+  {"description": "Populated by the recovery sweeper after 3 failed retries. Empty means the row either succeeded (processed=1) or has not yet exhausted retries.", "fieldname": "failure_reason", "fieldtype": "Small Text", "label": "Failure Reason"},
+  {"default": "0", "description": "Set to 1 once this turn has been folded into a Compaction Summary (Feature C). prompt_builder excludes compacted rows from the tail and uses the summary instead.", "fieldname": "compacted", "fieldtype": "Check", "label": "Compacted"}
  ],
  "links": [],
  "module": "Friday Core",

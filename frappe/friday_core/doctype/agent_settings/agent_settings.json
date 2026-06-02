@@ -7,7 +7,8 @@
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
-        "default_provider"
+        "default_provider",
+        "compression_model"
     ],
     "fields": [
         {
@@ -23,6 +24,13 @@
             "label": "Default LLM Provider",
             "options": "LLM Provider",
             "description": "Fallback provider used when an Agent Profile has no model_provider set. Leave blank if you always set model_provider explicitly on each profile."
+        },
+        {
+            "fieldname": "compression_model",
+            "fieldtype": "Link",
+            "label": "Compression (Aux) Model Provider",
+            "options": "LLM Provider",
+            "description": "Optional cheap/fast provider used to summarise old turns when a conversation is compressed (Feature C). Leave blank to reuse the agent's own provider. If neither resolves, compression is skipped with a logged warning (turns are never silently dropped)."
         }
     ],
     "links": [],

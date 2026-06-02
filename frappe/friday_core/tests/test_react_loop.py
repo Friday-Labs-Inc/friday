@@ -70,7 +70,8 @@ def _run(provider, dispatch_results=None, denial=False, messages=None):
 		"tools": [],
 		"model": "m",
 	}
-	with patch(f"{_R}.load_for_profile", return_value=[]), \
+	with patch(f"{_R}.maybe_compress_session"), \
+	     patch(f"{_R}.load_for_profile", return_value=[]), \
 	     patch(f"{_R}.build", return_value=prompt), \
 	     patch(f"{_R}.get_provider_for_profile", return_value=provider), \
 	     patch(f"{_R}.dispatch", side_effect=dispatch_results) as md, \
