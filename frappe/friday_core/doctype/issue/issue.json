@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "subject",
+  "source",
+  "reason",
+  "status",
+  "priority",
+  "raised_by",
+  "assigned_to",
+  "project",
+  "related_task",
+  "waiting_on",
+  "description",
+  "resolution_details",
+  "execution_log"
+ ],
+ "fields": [
+  {"fieldname": "subject", "fieldtype": "Data", "in_list_view": 1, "label": "Subject", "reqd": 1},
+  {"default": "Human-raised", "fieldname": "source", "fieldtype": "Select", "in_list_view": 1, "label": "Source", "options": "Human-raised\nAgent-raised", "reqd": 1},
+  {"fieldname": "reason", "fieldtype": "Select", "label": "Reason", "options": "\nFailure\nDependency-Wait\nQuestion\nBug\nOther"},
+  {"default": "Open", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "Open\nIn Progress\nResolved\nClosed\nReopened", "reqd": 1},
+  {"default": "normal", "fieldname": "priority", "fieldtype": "Select", "label": "Priority", "options": "low\nnormal\nhigh\nurgent"},
+  {"fieldname": "raised_by", "fieldtype": "Link", "label": "Raised By", "options": "User"},
+  {"fieldname": "assigned_to", "fieldtype": "Link", "label": "Assigned To", "options": "User"},
+  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Agent Project"},
+  {"fieldname": "related_task", "fieldtype": "Link", "label": "Related Task", "options": "Agent Task"},
+  {"fieldname": "waiting_on", "fieldtype": "Link", "label": "Waiting On (Task)", "options": "Agent Task"},
+  {"fieldname": "description", "fieldtype": "Long Text", "label": "Description"},
+  {"fieldname": "resolution_details", "fieldtype": "Long Text", "label": "Resolution Details"},
+  {"fieldname": "execution_log", "fieldtype": "Link", "label": "Execution Log", "options": "Execution Log"}
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Issue",
+ "naming_rule": "Autoincrement",
+ "permissions": [
+  {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},
+  {"create": 1, "read": 1, "role": "Agent Supervisor", "write": 1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
