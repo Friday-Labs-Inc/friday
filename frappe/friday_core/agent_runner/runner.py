@@ -41,6 +41,7 @@ REFERENCED DESIGN
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import frappe
@@ -111,6 +112,17 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 			# Plain-text reply — the agent is done.
 			return content
 
+		# D (doc 51 §4.D) — drop duplicate (name, arguments) calls in this
+		# response, then give every call a stable id (deterministic when the
+		# provider omitted one) so the wire's assistant<->tool links hold and
+		# identical calls don't churn ids across re-serialisation.
+		tool_calls = _deduplicate_tool_calls(tool_calls)
+		for _index, _call in enumerate(tool_calls):
+			if not _call.get("id"):
+				_call["id"] = _deterministic_call_id(
+					_call.get("name", ""), _call.get("arguments", ""), _index
+				)
+
 		last_assistant_content = content
 		# Put the assistant's turn (with its tool calls) back into the
 		# conversation so the next call shows the model what it asked for.
@@ -180,3 +192,54 @@ def _is_permission_denial(result: DispatchResult) -> bool:
 		return False
 	status = frappe.db.get_value("Execution Log", result.execution_log_name, "status")
 	return status == "rejected"
+
+
+def _deduplicate_tool_calls(tool_calls: list[dict]) -> list[dict]:
+	"""D.1 — drop tool calls whose (name, arguments) match an earlier call in the
+	SAME response; keep the first. Ported from Hermes `_deduplicate_tool_calls`.
+	Logs each drop so a model that repeats itself is visible. Within-response
+	only (D.3) — cross-turn idempotency is explicitly deferred.
+	"""
+	seen: set[tuple[str, str]] = set()
+	deduped: list[dict] = []
+	for tc in tool_calls:
+		key = (tc.get("name", ""), _arguments_key(tc.get("arguments", "")))
+		if key in seen:
+			frappe.logger("friday.agent_runner.runner").info(
+				f"dropped duplicate tool call {tc.get('name', '')!r} "
+				f"(identical name+arguments repeated in one response)"
+			)
+			continue
+		seen.add(key)
+		deduped.append(tc)
+	return deduped
+
+
+def _deterministic_call_id(name: str, arguments, index: int) -> str:
+	"""D.2 — a stable id for a tool call the provider left id-less, derived from
+	(name, arguments, index). Ported from Hermes `_deterministic_call_id`.
+	Identical content yields an identical id (so re-serialising the same
+	conversation doesn't churn ids and bust prompt caching); the index keeps two
+	*different* calls in one response distinct.
+	"""
+	digest = hashlib.sha1(
+		f"{name}:{_arguments_key(arguments)}:{index}".encode("utf-8")
+	).hexdigest()[:12]
+	return f"call_{digest}"
+
+
+def _arguments_key(arguments) -> str:
+	"""Normalise a tool call's arguments to a stable string for comparison and
+	hashing. Arguments arrive as a JSON string (OpenAI-shaped providers) or a
+	dict; either way the same content yields the same key (sorted keys), so
+	dedup and the deterministic id are independent of key order.
+	"""
+	if isinstance(arguments, str):
+		try:
+			arguments = json.loads(arguments)
+		except (json.JSONDecodeError, TypeError):
+			return arguments  # not JSON — compare/hash verbatim
+	try:
+		return json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+	except (TypeError, ValueError):
+		return str(arguments)

@@ -31,14 +31,13 @@ we deleted work Hermes had to build itself.
 Today, Friday can do this end-to-end, with a full audit trail:
 
 > A message arrives → Friday checks the agent is **allowed** (Frappe roles) →
-> calls the **Minimax** AI model once → runs **one skill** inside a **Docker
-> sandbox** → writes the reply back → logs every step (Execution Log +
-> Permission Decision Log).
+> runs a **multi-step loop** (call the **Minimax** model → run a skill in a
+> **Docker sandbox** → observe → repeat, up to 15 steps) → writes the reply
+> back → logs every step (Execution Log + Permission Decision Log).
 
-That is the working core. What it can't do **yet**: think in multiple steps
-(call a tool, see the result, think again), use OpenAI/Anthropic, shorten long
-conversations, or learn/create its own skills. Those are the planned features
-below (A, B, C, D, F + the learning loop).
+That is the working core. What it can't do **yet**: use **OpenAI/Anthropic**
+(only Minimax today), shorten very long conversations, or learn/create its own
+skills. Those are the remaining planned features below (B, C + the learning loop).
 
 ---
 
@@ -46,8 +45,8 @@ below (A, B, C, D, F + the learning loop).
 
 | In Hermes | In Friday | Status | How it changes for Frappe |
 |---|---|---|---|
-| ReAct loop: call model → run tool → feed result back → repeat, up to **90 steps** (`run_agent.py`) | `agent_runner/runner.py` `run_turn()` — calls the model **once**, runs the **first** tool only | 🟡 → 🔨 **Feature A** | Same loop, capped at **15 steps** (one company, not a research playground). Each step still flows through the one dispatcher chokepoint. |
-| De-duplicates identical tool calls in a turn; gives each a deterministic ID (`_deduplicate_tool_calls`) | — | 🔨 **Feature D** | Ported as-is (within-turn only). |
+| ReAct loop: call model → run tool → feed result back → repeat, up to **90 steps** (`run_agent.py`) | `agent_runner/runner.py` `run_turn()` — **full multi-step loop** | ✅ **Built** (Feature A) | Same loop, capped at **15 steps** (one company, not a research playground). Each step flows through the one dispatcher chokepoint. |
+| De-duplicates identical tool calls in a turn; gives each a deterministic ID | `runner.py` `_deduplicate_tool_calls` / `_deterministic_call_id` | ✅ **Built** (Feature D) | Ported (within-response; cross-turn idempotency deferred). |
 | Stops/interrupts, token budget, "grace call" | basic per-turn run | 🟡 | Frappe RQ job timeout + per-session lock replace the in-process budget. |
 
 ## 2. Talking to AI models (providers)
@@ -129,7 +128,7 @@ below (A, B, C, D, F + the learning loop).
 | **SQLite SessionDB** — sessions + messages tables, on disk (`hermes_state.py`) | **Chat Message** DocType rows in Frappe's database | ✅ | Conversation history is just database rows now — backed up, searchable, admin-visible for free. |
 | Profile-aware paths, `~/.hermes/config.yaml`, `.env` | **Agent Settings** + **LLM Provider** DocTypes | ✅ | All config lives in the database, edited in the admin screen. |
 | Long conversations get **compressed** (protect head+tail, summarize the middle, mark "reference only") | — | 🔨 **Feature C** | Ported; summary likely stored as its own DocType. |
-| Smart **error classification / failover** (retryable? compress? rotate key? fall back?) | Minimax has basic inline retry (429/5xx/timeout) | 🟡 → 🔨 **Feature F** | One shared classifier; no key-rotation (single tenant). |
+| Smart **error classification / failover** (retryable? compress? fall back?) | `llm/error_classifier.py` — one shared classifier; `MinimaxProvider` routes through it | ✅ **Built** (Feature F) | One shared classifier; no key-rotation (single tenant). |
 
 ## 11. Where it runs (deployment)
 
@@ -145,6 +144,7 @@ below (A, B, C, D, F + the learning loop).
 | **War Room** (`warroom/publisher.py`) | Posts every Agent Task status change into a Raven chat channel so a human team watches the agents work | ✅ (activates when Raven is installed) |
 | **Everything-is-a-DocType** | Agents, skills, providers, messages, logs are all Frappe records — editable, permissioned, audited, backed-up natively | ✅ |
 | **Immutable audit logs** | Execution Log + Permission Decision Log are first-class, not an afterthought | ✅ |
+| **Project / Issue tracker** (`doctype/issue`, `issues/raise_issue.py`) | Generic Project/Task/Issue work objects + an *agent* issue tracker that auto-raises an Issue on a task failure or cross-agent dependency-wait. Ported from ERPNext (port, not depend) — doc 53. | 🟡 (Issue + auto-raise built; the rename + dependency wiring are next) |
 
 ---
 
@@ -152,12 +152,12 @@ below (A, B, C, D, F + the learning loop).
 
 In order, each already has a locked design:
 
-1. **Feature A** — multi-step thinking loop (§1) — the single biggest unlock.
-2. **Feature F** — error classifier (§10).
-3. **Feature D** — tool-call de-dup + IDs (§1).
-4. **Feature B1 / B2** — OpenAI + Anthropic providers (§2).
+1. ✅ **Feature A** — multi-step thinking loop (§1) — *done*.
+2. ✅ **Feature F** — error classifier (§10) — *done*.
+3. ✅ **Feature D** — tool-call de-dup + IDs (§1) — *done*.
+4. **Feature B1 / B2** — OpenAI + Anthropic providers (§2). ← **next**
 5. **Feature C** — conversation compression (§10).
-6. Wire the **Agent Task** auto-trigger (§8).
+6. Wire the **Agent Task** auto-trigger (§8) / finish the Project/Issue tracker.
 7. **H2/H3** — approval workflow + scoped-token polish (§5).
 
 Further out (currently ❌): the **learning loop** (§9) — memory, recall, and
