@@ -2,128 +2,181 @@
 # For license information, please see license.txt
 
 """
-The agent runner — produces a reply for one chat turn.
+The agent runner — the ReAct loop that produces a reply for one chat turn.
 
 PLAIN ENGLISH
 =============
 
-Given an Agent Profile, a session ID, and the user's message, this
-function returns the agent's reply text. The reply is produced by calling
-the LLM configured for that profile, with:
+Given an Agent Profile, a session ID, and the user's message, this function
+returns the agent's reply text. It runs a **ReAct loop**: call the model, and
+while the model keeps asking for tools, dispatch them, feed the results back,
+and let the model observe and decide its next step — up to
+MAX_REACT_ITERATIONS (15) cycles. The turn ends when:
 
-  - The agent's system prompt + conversation history (built by prompt_builder)
-  - The list of permitted tools (loaded by the Slice 3 skill loader)
+  - the model returns a plain-text answer (no tool calls), or
+  - a tool call is **denied** by the permission engine (a governance signal —
+    we surface it, we don't let the model route around it), or
+  - the iteration budget is exhausted.
 
-If the LLM returns a tool call, the runner dispatches it via the
-Slice 6 dispatcher and returns the skill result as the reply text.
-
-Errors that occur during dispatch are caught and returned as part of
-the reply text — the runner never crashes.
+The prompt the loop starts from is:
+  - the agent's system prompt + conversation history (built by prompt_builder),
+  - the list of permitted tools (loaded by the skill loader).
 
 WHAT THIS MODULE DOES NOT DO
 ============================
 
-- Does not write Chat Message rows. The gateway does that.
-- Does not check permissions. The dispatcher calls `permissions.matrix.check`
-  before executing any skill.
-- Does not run in a Docker sandbox. That's Slice 7's Docker wrapper.
-- Does not stream tokens. Deferred to when a real-time surface lands.
+- Does not write Chat Message rows. The gateway does that — **one inbound +
+  one outbound row per turn**, regardless of how many loop iterations run.
+- Does not check permissions itself. The dispatcher calls
+  `permissions.matrix.check` before executing any skill; a *denial* breaks
+  this loop (doc 48 §1 A.4).
+- Does not run skills in a sandbox. That's the dispatcher's sandbox wrapper.
+- Does not stream tokens. Deferred until a real-time surface needs it.
+
+REFERENCED DESIGN
+=================
+- `docs/design/48-hermes-port-decisions.md` §1 — Feature A, the locked ReAct
+  loop contract (decisions A.1–A.6).
 """
 
 from __future__ import annotations
 
 import json
+
 import frappe
 
+from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.prompt_builder import build
-from frappe.friday_core.llm.provider import LLMError
 from frappe.friday_core.skills.loader import load_for_profile
+
+# A.1 — the loop is capped at 15 think/act cycles per turn. A module constant
+# (not a per-profile field for v0.1, to avoid premature config surface) so
+# tests can patch it.
+MAX_REACT_ITERATIONS = 15
+
+# A.2 — what the user sees when the loop runs out of budget.
+_BUDGET_EXHAUSTED_SUFFIX = "\n\n[loop budget exhausted after {n} iterations]"
+_EMPTY_REPLY_FALLBACK = "I'm unable to complete this in the time allotted."
 
 
 def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
-	"""Produce one agent reply for one user message.
+	"""Produce one agent reply for one user message via the ReAct loop.
 
 	Arguments:
 	  - `profile_name`: the Agent Profile name (Frappe primary key).
 	  - `session_id`: the conversation's session UUID.
 	  - `inbound_content`: the user's message text.
 
-	Returns the reply text the gateway will write to the outbound
-	Chat Message row.
+	Returns the reply text the gateway writes to the single outbound Chat
+	Message row for this turn.
 
-	Dispatch flow:
-	  1. Load the tool menu (permitted + active + matrix-allowed).
-	  2. Build the full prompt (system prompt + history + current message).
-	  3. Call the LLM.
-	  4. If the LLM returns a tool call → dispatch it and return the result.
-	     If the LLM returns plain text → return it directly.
+	The loop (doc 48 §1):
+	  1. Call the LLM with the running conversation.
+	  2. No tool calls → that's the final answer; return it.
+	  3. Tool calls → dispatch each in order; feed every result back as a
+	     `{role:"tool", ...}` message; then re-prompt so the model observes
+	     the results and decides the next step.
+	  4. A permission *denial* breaks the loop and is surfaced to the user.
+	  5. After MAX_REACT_ITERATIONS without a plain-text reply, return the last
+	     assistant text with a budget-exhausted suffix.
 
-	Errors are caught and returned as part of the reply text — this
-	function does not write any DB rows of its own (the gateway owns
-	all Chat Message writes).
+	Tool problems never raise here — a tool *error* is fed back to the model so
+	it can adapt (A.3). LLM transport errors propagate to the gateway, which is
+	the last error catcher.
 	"""
-	# 1. Load the tool menu (permitted + active + matrix-allowed).
 	skill_definitions = load_for_profile(profile_name)
-
-	# 2. Build the full prompt (system prompt + history + current message).
 	prompt = build(
 		profile_name=profile_name,
 		session_id=session_id,
 		inbound_content=inbound_content,
 		tools=skill_definitions,
 	)
-
-	# 3. Resolve the provider and call the LLM.
 	provider = get_provider_for_profile(profile_name)
-	response = provider.chat(
-		messages=prompt["messages"],
-		tools=prompt["tools"],
-		model=prompt["model"],
-	)
 
-	# 4. Check for tool calls.
-	tool_calls = response.get("tool_calls")
-	if not tool_calls:
-		# Plain text reply — no tool execution needed.
-		return response["content"]
+	# A working copy of the conversation that the loop appends to.
+	messages: list[dict] = list(prompt["messages"])
+	tools = prompt["tools"]
+	model = prompt["model"]
 
-	# 5. Dispatch the tool call. We take the first tool call only
-	# (Slice 6 is single-dispatch; multi-step loop is Slice 8).
-	if len(tool_calls) > 1:
-		# Future: support multi-call. For now, just take the first.
-		frappe.logger().warning(
-			f"friday.agent_runner.runner: received {len(tool_calls)} tool calls "
-			f"in one response — only the first will be dispatched"
+	last_assistant_content = ""
+
+	for _iteration in range(MAX_REACT_ITERATIONS):
+		response = provider.chat(messages=messages, tools=tools, model=model)
+		content = response.get("content") or ""
+		tool_calls = response.get("tool_calls")
+		tokens_used = (response.get("usage") or {}).get("total_tokens", 0)
+
+		if not tool_calls:
+			# Plain-text reply — the agent is done.
+			return content
+
+		last_assistant_content = content
+		# Put the assistant's turn (with its tool calls) back into the
+		# conversation so the next call shows the model what it asked for.
+		messages.append(_assistant_message(content, tool_calls))
+
+		for tool_call in tool_calls:  # sequential, in order (A.6)
+			result = dispatch(
+				tool_call=tool_call,
+				agent_profile=profile_name,
+				session_id=session_id,
+				tokens_used=tokens_used,
+			)
+			if _is_permission_denial(result):
+				# A.4 — the operator said NO. Break the loop and surface it;
+				# letting the model silently route around it is a governance hole.
+				return result.content
+
+			# A.3 — feed the tool result (success or error) back verbatim so
+			# the model can observe it and adapt. The loop then continues.
+			messages.append(
+				{
+					"role": "tool",
+					"tool_call_id": result.tool_call_id or tool_call.get("id", ""),
+					"content": result.content,
+				}
+			)
+		# Loop continues: re-prompt so the model observes the tool results.
+
+	# A.2 — hit the iteration cap without a clean plain-text reply.
+	final = last_assistant_content or _EMPTY_REPLY_FALLBACK
+	return final + _BUDGET_EXHAUSTED_SUFFIX.format(n=MAX_REACT_ITERATIONS)
+
+
+def _assistant_message(content: str, tool_calls: list[dict]) -> dict:
+	"""Rebuild the assistant turn in OpenAI wire shape for re-sending.
+
+	The provider hands tool calls to the runner in Friday's flat canonical form
+	(`{id, name, arguments}`, which the dispatcher consumes). To put that turn
+	*back* into the conversation for the next API call, expand it to the OpenAI
+	`{id, type:"function", function:{name, arguments}}` shape. `arguments` must
+	be a JSON string on the wire.
+	"""
+	wire_calls = []
+	for tc in tool_calls:
+		args = tc.get("arguments", "{}")
+		if not isinstance(args, str):
+			args = json.dumps(args)
+		wire_calls.append(
+			{
+				"id": tc.get("id", ""),
+				"type": "function",
+				"function": {"name": tc.get("name", ""), "arguments": args},
+			}
 		)
+	return {"role": "assistant", "content": content or "", "tool_calls": wire_calls}
 
-	tool_call = tool_calls[0]
-	skill_name = tool_call.get("name", "")
 
-	# Parse the tool call arguments.
-	raw_args = tool_call.get("arguments", "{}")
-	try:
-		parameters = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-	except json.JSONDecodeError:
-		return (
-			f"I tried to use the '{skill_name}' tool but its arguments were "
-			f"malformed. Please try rephrasing your request."
-		)
+def _is_permission_denial(result: DispatchResult) -> bool:
+	"""True only when a dispatch failed *because the operator denied it* (A.4).
 
-	# 6. Dispatch via the Slice 6 dispatcher.
-	from frappe.friday_core.agent_runner.dispatcher import dispatch
-
-	tokens_used = None
-	usage = response.get("usage", {})
-	if usage:
-		tokens_used = usage.get("total_tokens", 0)
-
-	result = dispatch(
-		tool_call=tool_call,
-		agent_profile=profile_name,
-		session_id=session_id,
-		tokens_used=tokens_used,
-	)
-
-	# 7. Return the human-readable content from the dispatch result.
-	return result.content
+	A denial is `success == False` AND the linked Execution Log row is
+	`status == "rejected"`. A plain tool *error* (status "error") is NOT a
+	denial — it gets fed back to the model instead of breaking the loop.
+	Keeping this distinction in one helper keeps the loop readable.
+	"""
+	if result.success or not result.execution_log_name:
+		return False
+	status = frappe.db.get_value("Execution Log", result.execution_log_name, "status")
+	return status == "rejected"
