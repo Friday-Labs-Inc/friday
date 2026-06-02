@@ -127,41 +127,30 @@ class LLMProvider(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Minimax M2 implementation
+# OpenAI-compatible providers (Minimax, OpenAI, …)
 # ---------------------------------------------------------------------------
 
 
-class MinimaxProvider(LLMProvider):
-    """Minimax M2 chat completions adapter.
+class _OpenAICompatibleProvider(LLMProvider):
+    """Shared adapter for providers that speak the OpenAI `chat_completions`
+    shape — same request payload (`model` / `messages` / `tools`), Bearer auth,
+    and `choices[0].message` response. Concrete providers differ only in three
+    class attributes:
 
-    API reference:
-    https://www.minimaxi.com/document/Guides/Chat Completion/V2/text/chat
+      - `PROVIDER_NAME` — used for error classification + messages.
+      - `DEFAULT_BASE_URL` — the API host when the row doesn't override it.
+      - `CHAT_PATH` — the chat-completions endpoint path.
 
-    The API is OpenAI-compatible with minor differences:
-      - Auth: Bearer token in Authorization header.
-      - Endpoint: https://api.minimax.io/v1/text/chatcompletion_v2
-        (international OpenAI-compat endpoint; matches Hermes' choice.
-        Override via `LLM Provider.base_url` for region-specific endpoints
-        e.g. https://api.minimaxi.com for China.)
-      - Tool calling: supported via the `tools` parameter.
-      - Response: similar shape to OpenAI but model_name in response differs.
-
-    RETRY BUDGET CAVEAT (per design doc §11):
-      With MAX_RETRIES=3 and exponential sleeps (1+2+4s = 7s) plus 30s per
-      request, total wall-clock can reach ~97s before giving up. **This is
-      safe for sync dispatch (CLI) but exceeds the 10s webhook deadline of
-      Telegram/Slack.** When async surfaces land, either the retry policy
-      needs to be dispatch-mode-aware OR the gateway needs to fire the
-      webhook 200 OK before this retry loop begins (the current async-via-RQ
-      design does the latter — the gateway already returns to the webhook
-      before queueing the job — so this is documented but not blocking).
+    All recovery (retry, redaction) goes through the shared error classifier
+    (`error_classifier.py`, Feature F).
     """
+
+    PROVIDER_NAME = "openai-compatible"
+    DEFAULT_BASE_URL = ""
+    CHAT_PATH = "/v1/chat/completions"
 
     TIMEOUT_SECONDS = 30
     MAX_RETRIES = 3
-    # International OpenAI-compatible endpoint. Hermes uses the same.
-    # Override per row via `LLM Provider.base_url` for region-specific endpoints.
-    DEFAULT_BASE_URL = "https://api.minimax.io"
 
     def __init__(
         self,
@@ -186,7 +175,7 @@ class MinimaxProvider(LLMProvider):
         model: str | None = None,
     ) -> LLMResponse:
         model = model or self.default_model
-        url = f"{self.base_url}/v1/text/chatcompletion_v2"
+        url = f"{self.base_url}{self.CHAT_PATH}"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -220,7 +209,7 @@ class MinimaxProvider(LLMProvider):
                 # or Connection error can carry a URL with a query string, and we
                 # don't want secrets sneaking into the audit log.
                 last_exc = exc
-                classified = classify_api_error(exc, provider="minimax", model=model)
+                classified = classify_api_error(exc, provider=self.PROVIDER_NAME, model=model)
                 if classified.retryable and attempt < self.MAX_RETRIES - 1:
                     time.sleep(2 ** attempt)
                     continue
@@ -236,14 +225,14 @@ class MinimaxProvider(LLMProvider):
             body = response.text[:500] if isinstance(getattr(response, "text", None), str) else ""
             classified = classify_api_error(
                 status_code=response.status_code,
-                provider="minimax",
+                provider=self.PROVIDER_NAME,
                 model=model,
                 message=body,
             )
             if classified.is_auth:
                 raise LLMAuthError(
-                    f"Minimax auth failed (HTTP {response.status_code}). Check the "
-                    f"API key in the LLM Provider DocType."
+                    f"{self.PROVIDER_NAME} auth failed (HTTP {response.status_code}). "
+                    f"Check the API key in the LLM Provider DocType."
                 )
             if classified.retryable and attempt < self.MAX_RETRIES - 1:
                 time.sleep(2 ** attempt)
@@ -251,14 +240,14 @@ class MinimaxProvider(LLMProvider):
             # Not retryable, or retries exhausted — raise a clean, reason-based
             # error (no raw body — it can carry PII / partial content).
             raise LLMError(
-                f"Minimax call failed: {classified.reason.value} "
+                f"{self.PROVIDER_NAME} call failed: {classified.reason.value} "
                 f"(HTTP {response.status_code}) after {attempt + 1} attempt(s)."
             )
 
         # Transport retries exhausted. Type name only (redaction policy).
         last_exc_type = type(last_exc).__name__ if last_exc else "Unknown"
         raise LLMError(
-            f"Minimax call failed after {self.MAX_RETRIES} retries. "
+            f"{self.PROVIDER_NAME} call failed after {self.MAX_RETRIES} retries. "
             f"Last error type: {last_exc_type}"
         )
 
@@ -270,27 +259,25 @@ class MinimaxProvider(LLMProvider):
     # -------------------------------------------------------------------------
 
     def _parse_response(self, data: dict) -> LLMResponse:
-        """Extract the assistant's text from a Minimax V2 response dict."""
+        """Extract the assistant turn from an OpenAI-shaped response dict."""
         choices = data.get("choices", [])
         if not choices:
             # Redact: include structural keys only, not values. The response
             # body can carry partial content / tokens / user PII which we
             # never want in the Frappe Error Log.
             raise LLMError(
-                f"Minimax response has no choices. response_keys={sorted(data.keys())}"
+                f"{self.PROVIDER_NAME} response has no choices. "
+                f"response_keys={sorted(data.keys())}"
             )
 
         choice = choices[0]
         finish_reason = choice.get("finish_reason", "stop")
 
-        # Minimax returns message.content directly.
         message = choice.get("message", {})
         content = message.get("content", "")
-
-        # Tool calls (Minimax uses the same OpenAI-style tool_calls field).
+        # OpenAI-style `tool_calls` field (Minimax uses the same).
         tool_calls = message.get("tool_calls") or None
 
-        # Usage block.
         usage = data.get("usage", {})
         return LLMResponse(
             content=content or "",
@@ -302,6 +289,37 @@ class MinimaxProvider(LLMProvider):
             },
             tool_calls=tool_calls,
         )
+
+
+class MinimaxProvider(_OpenAICompatibleProvider):
+    """Minimax M2 — OpenAI-compatible, with a non-standard chat path.
+
+    Endpoint https://api.minimax.io/v1/text/chatcompletion_v2 (international
+    OpenAI-compat; override via `LLM Provider.base_url`, e.g.
+    https://api.minimaxi.com for China). Bearer auth; OpenAI-style `tool_calls`.
+
+    RETRY BUDGET CAVEAT (design §11): MAX_RETRIES=3 + exponential backoff + 30s
+    per request can reach ~97s. Safe for sync (CLI) dispatch; the async-via-RQ
+    gateway returns the webhook 200 OK before queueing, so the long retry runs
+    off the webhook deadline.
+    """
+
+    PROVIDER_NAME = "minimax"
+    DEFAULT_BASE_URL = "https://api.minimax.io"
+    CHAT_PATH = "/v1/text/chatcompletion_v2"
+
+
+class OpenAIProvider(_OpenAICompatibleProvider):
+    """OpenAI Chat Completions adapter (Feature B1).
+
+    The canonical OpenAI-compatible transport. The same class serves any
+    drop-in-compatible endpoint (Azure OpenAI, OpenRouter, a local proxy) by
+    setting `LLM Provider.base_url` — only the host changes; path + auth match.
+    """
+
+    PROVIDER_NAME = "openai"
+    DEFAULT_BASE_URL = "https://api.openai.com"
+    CHAT_PATH = "/v1/chat/completions"
 
 
 # ---------------------------------------------------------------------------
@@ -345,10 +363,19 @@ def get_provider_for_profile(profile_name: str) -> LLMProvider:
             default_temperature=default_temperature,
         )
 
-    # Future: openai → OpenAIProvider(...), anthropic → AnthropicProvider(...),
-    # openrouter → OpenRouterProvider(...). Each adds one branch here and one
-    # subclass file. The DocType's `provider_type` Select field must be
-    # extended in lockstep (frappe/friday_core/doctype/llm_provider/llm_provider.json).
+    if provider_type == "openai":
+        return OpenAIProvider(
+            api_key=api_key,
+            default_model=default_model,
+            base_url=base_url,
+            default_max_tokens=default_max_tokens,
+            default_temperature=default_temperature,
+        )
+
+    # Future: anthropic → AnthropicProvider(...) (Feature B2). An OpenRouter /
+    # Azure endpoint needs no new class — use `openai` with `base_url` set. Each
+    # new *native* API adds one branch here and one subclass; the DocType's
+    # `provider_type` Select must list it too.
     raise LLMError(f"Unsupported provider_type {provider_type!r}")
 
 
