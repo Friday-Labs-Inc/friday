@@ -1858,10 +1858,10 @@ kind-of@^3.0.2:
   dependencies:
     is-buffer "^1.1.5"
 
-launch-editor@^2.2.1:
-  version "2.6.1"
-  resolved "https://registry.yarnpkg.com/launch-editor/-/launch-editor-2.6.1.tgz#f259c9ef95cbc9425620bbbd14b468fcdb4ffe3c"
-  integrity sha512-eB/uXmFVpY4zezmGp5XtU21kwo7GBbKB+EQ+UZeWtGb9yAM5xt/Evk+lYH3eRNAtId+ej4u7TYPFZ07w4s7rRw==
+launch-editor@^2.9.0:
+  version "2.9.0"
+  resolved "https://registry.yarnpkg.com/launch-editor/-/launch-editor-2.9.0.tgz#cdb5b90af46c7375661f12c49354f2289fd10afb"
+  integrity sha512-2fC2VVHR6j4vPp+WAjGmZzuThaKxBe5kq1/zV1E6Cd993hwUj73TmHSHTbEZGDeUILG3s1xkjpHTTZoNnJQA3g==
   dependencies:
     picocolors "^1.0.0"
     shell-quote "^1.8.1"
