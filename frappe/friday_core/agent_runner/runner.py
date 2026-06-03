@@ -154,6 +154,11 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 				# letting the model silently route around it is a governance hole.
 				return result.content
 
+			if result.pending_approval:
+				# H2 — the skill needs human approval. Pause the turn and
+				# surface the request; a human resumes it later via approve().
+				return result.content
+
 			# A.3 — feed the tool result (success or error) back verbatim so
 			# the model can observe it and adapt. The loop then continues.
 			messages.append(

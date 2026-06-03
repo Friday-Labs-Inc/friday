@@ -149,6 +149,21 @@ class TestPermissionDenialBreaks(unittest.TestCase):
 		self.assertEqual(prov.chat.call_count, 1)  # never re-prompted after denial
 
 
+class TestApprovalPauseBreaks(unittest.TestCase):
+	def test_pending_approval_breaks_loop(self):
+		# H2 — a skill needing human approval pauses the turn, like a denial.
+		prov = _provider(_resp(tool_calls=[_tc("c1")]))  # would loop if not broken
+		pending = DispatchResult(
+			success=False,
+			content="This action needs human approval (Workflow Request WR-1).",
+			pending_approval=True, tool_call_id="c1",
+		)
+		result, md, _ = _run(prov, dispatch_results=[pending], denial=False)
+		self.assertIn("approval", result.lower())
+		self.assertEqual(md.call_count, 1)
+		self.assertEqual(prov.chat.call_count, 1)  # never re-prompted after pause
+
+
 class TestToolErrorContinues(unittest.TestCase):
 	def test_tool_error_is_fed_back_and_loop_continues(self):
 		prov = _provider(_resp(tool_calls=[_tc("c1")]), _resp(content="recovered"))
