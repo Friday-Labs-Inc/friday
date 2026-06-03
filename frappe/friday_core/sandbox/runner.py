@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any
 
 import frappe
 
+from frappe.friday_core.sandbox.credentials import generate_scoped_token
+
 if TYPE_CHECKING:
     pass  # docker imported lazily inside _get_client; forward refs used below
 
@@ -202,21 +204,6 @@ def _resolve_limits(
 
 
 # ---------------------------------------------------------------------------
-# Scoped API token
-# ---------------------------------------------------------------------------
-
-def _generate_scoped_token(agent_profile: str, execution_id: str) -> str:
-    """
-    Generate a short-lived scoped API token for one execution.
-    The token is tied to the agent profile and expires when the container exits.
-    Phase 1: this is a stub that returns a uuid; wiring to Frappe API keys
-    (per 23-secrets-credentials-management.md) is Phase 1.5.
-    """
-    # TODO Phase 1.5: wire to frappe.api.add_api_key or similar
-    return str(uuid.uuid4())
-
-
-# ---------------------------------------------------------------------------
 # Result parsing
 # ---------------------------------------------------------------------------
 
@@ -299,8 +286,8 @@ def execute(
     frappe_host, extra_allowlist = _get_egress_config(agent_profile)
     etc_hosts_content = _build_etc_hosts(frappe_host, extra_allowlist)
 
-    # Generate scoped credential token
-    api_token = _generate_scoped_token(agent_profile, execution_id)
+    # Generate scoped credential token (single source: sandbox/credentials.py — H3)
+    api_token = generate_scoped_token(agent_profile, execution_id)
 
     # Ensure network exists
     network = ensure_network()
