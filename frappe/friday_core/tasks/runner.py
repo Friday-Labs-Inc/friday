@@ -27,6 +27,8 @@ runner (``friday_core.sandbox.runner``) but differ in lifecycle:
 import frappe
 from frappe.utils import now_datetime
 
+from frappe.friday_core.issues.raise_issue import raise_failure_issue
+
 # Lazy import to avoid circular dependency with the warroom module.
 _warroom = None
 
@@ -98,19 +100,21 @@ def on_agent_task_assigned(message: dict) -> None:
 
 	try:
 		_run_task(task_name, profile_name)
-	except frappe.friday_core.sandbox.runner.SandboxOutOfMemory:
-		_logger.exception("Task runner OOM for task %s on profile %s", task_name, profile_name)
-		_post_warroom(task_name, "oom", {"profile": profile_name})
-	except frappe.friday_core.sandbox.runner.SandboxTimeout:
-		_logger.exception("Task runner timed out for task %s on profile %s", task_name, profile_name)
-		_post_warroom(task_name, "timeout", {"profile": profile_name})
 	except Exception:
+		# An unexpected crash in the runner itself — NOT a skill-level failure
+		# (those land in _block_task via SandboxResult.status). Auto-raise a
+		# Failure Issue and surface it (D6).
+		#
+		# This previously had `except frappe.friday_core.sandbox.runner.
+		# SandboxOutOfMemory / SandboxTimeout` clauses, but those classes don't
+		# exist (the sandbox signals oom/timeout via `status`, handled in
+		# _block_task). Evaluating the missing name raised AttributeError and
+		# MASKED the real error. Collapsed to one correct handler.
 		_logger.exception(
-			"Task runner failed for task %s on profile %s",
-			task_name,
-			profile_name,
+			"Task runner crashed for task %s on profile %s", task_name, profile_name
 		)
-		_post_warroom(task_name, "error", {"profile": profile_name})
+		issue_name = _raise_failure_issue(task_name, "error")
+		_post_warroom(task_name, "error", {"profile": profile_name, "issue": issue_name})
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +140,30 @@ def _post_warroom(task_name: str, event: str, details: dict = None) -> None:
 		warroom.post_task_update(task_name, event, details)
 	except Exception:
 		pass
+
+
+def _raise_failure_issue(
+	task_name: str,
+	error_type: str,
+	details: "str | None" = None,
+	execution_log: "str | None" = None,
+) -> "str | None":
+	"""File an Agent-raised Failure Issue for a failed task (doc 53 D6).
+
+	Best-effort and never raises — mirrors `_post_warroom`'s defensiveness. A
+	hiccup in the issue-raising path must not mask the original task failure.
+	Returns the new Issue name, or None if it could not be raised.
+	"""
+	try:
+		return raise_failure_issue(
+			task_name,
+			error_type=error_type,
+			details=details,
+			execution_log=execution_log,
+		)
+	except Exception:
+		_logger.exception("Could not raise a Failure Issue for task %s", task_name)
+		return None
 
 
 def _run_task(task_name: str, profile_name: str) -> None:
@@ -258,12 +286,24 @@ def _block_task(task: "AgentTask", results: list) -> None:
 	task.save(ignore_permissions=True)
 	frappe.db.commit()
 
-	# Post "blocked" to War Room.
-	failed_skill = results[-1].skill if results else None
+	# D6 — a blocked task auto-raises a Failure Issue, so a supervisor sees the
+	# holdup as a ticket without reading logs.
+	failed = results[-1] if results else None
+	issue_name = _raise_failure_issue(
+		task.name,
+		error_type=(failed.status if failed else "failed"),
+		details=frappe.as_json(failed.result) if (failed and failed.result) else None,
+	)
+
+	# Post "blocked" to War Room, referencing the Issue.
 	_post_warroom(
 		task.name,
 		"blocked",
-		{"error_message": results[-1].result if results else None, "profile": None},
+		{
+			"error_message": results[-1].result if results else None,
+			"issue": issue_name,
+			"profile": None,
+		},
 	)
 
 
