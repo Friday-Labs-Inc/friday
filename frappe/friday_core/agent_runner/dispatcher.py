@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 
 import frappe
 
+from frappe.friday_core.approvals.workflow import create_request, requires_approval
 from frappe.friday_core.permissions.matrix import Decision, check as matrix_check
 
 
@@ -87,6 +88,9 @@ class DispatchResult:
       - `tokens_used` — LLM token count from the call, if available.
       - `tool_call_name` — The skill name that was dispatched.
       - `tool_call_id` — The LLM's call ID for this tool invocation.
+      - `pending_approval` — True when the skill did NOT run because it needs
+        human approval (H2): a Workflow Request was created and the loop must
+        pause. Distinct from a permission denial.
     """
 
     success: bool
@@ -95,6 +99,7 @@ class DispatchResult:
     tokens_used: int | None = None
     tool_call_name: str | None = None
     tool_call_id: str | None = None
+    pending_approval: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +143,7 @@ def dispatch(
     agent_profile: str,
     session_id: str,
     tokens_used: int | None = None,
+    skip_approval: bool = False,
 ) -> DispatchResult:
     """Resolve, validate, and execute one tool call from the LLM.
 
@@ -253,6 +259,29 @@ def dispatch(
             content=f"I don't have permission to do that: {decision.reason}",
             execution_log_name=log_name,
             tokens_used=tokens_used,
+            tool_call_name=skill_name,
+            tool_call_id=tool_call_id,
+        )
+
+    # H2 — human-approval gate. Permission says the agent *may* run this skill;
+    # but if the skill is flagged `requires_approval` it must pause for a human.
+    # Create a Pending Workflow Request and return WITHOUT executing. An approval
+    # later re-dispatches with skip_approval=True to actually run it.
+    if not skip_approval and requires_approval(skill_name):
+        request_name = create_request(
+            agent_profile=agent_profile,
+            skill_name=skill_name,
+            parameters=parameters,
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+        )
+        return DispatchResult(
+            success=False,
+            content=(
+                f"This action needs human approval before it can run "
+                f"(Workflow Request {request_name})."
+            ),
+            pending_approval=True,
             tool_call_name=skill_name,
             tool_call_id=tool_call_id,
         )

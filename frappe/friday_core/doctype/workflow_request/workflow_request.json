@@ -1,0 +1,118 @@
+{
+    "actions": [],
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "agent_profile",
+        "skill",
+        "risk_level",
+        "status",
+        "parameters",
+        "session_id",
+        "tool_call_id",
+        "requested_at",
+        "approved_by",
+        "decision_reason",
+        "execution_log"
+    ],
+    "fields": [
+        {
+            "fieldname": "agent_profile",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Agent Profile",
+            "options": "Agent Profile",
+            "reqd": 1
+        },
+        {
+            "fieldname": "skill",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Skill",
+            "options": "Skill",
+            "reqd": 1
+        },
+        {
+            "description": "Copied from the Skill at request time (audit).",
+            "fieldname": "risk_level",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Risk Level",
+            "options": "low\nmedium\nhigh"
+        },
+        {
+            "default": "Pending",
+            "description": "The approval state. A human moves it to Approved/Rejected; on Approved the skill executes. (A Frappe Workflow with role-gated transitions is layered on top in Desk.)",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Pending\nApproved\nRejected\nExpired",
+            "reqd": 1
+        },
+        {
+            "description": "The tool-call arguments to execute once approved.",
+            "fieldname": "parameters",
+            "fieldtype": "JSON",
+            "label": "Parameters (JSON)"
+        },
+        {
+            "fieldname": "session_id",
+            "fieldtype": "Data",
+            "label": "Session ID"
+        },
+        {
+            "fieldname": "tool_call_id",
+            "fieldtype": "Data",
+            "label": "Tool Call ID"
+        },
+        {
+            "fieldname": "requested_at",
+            "fieldtype": "Datetime",
+            "label": "Requested At"
+        },
+        {
+            "fieldname": "approved_by",
+            "fieldtype": "Link",
+            "label": "Decided By",
+            "options": "User",
+            "read_only": 1
+        },
+        {
+            "fieldname": "decision_reason",
+            "fieldtype": "Small Text",
+            "label": "Decision Reason"
+        },
+        {
+            "description": "The Execution Log row produced when the approved skill ran (audit link).",
+            "fieldname": "execution_log",
+            "fieldtype": "Link",
+            "label": "Execution Log",
+            "options": "Execution Log",
+            "read_only": 1
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Workflow Request",
+    "naming_rule": "Autoincrement",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}
