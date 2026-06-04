@@ -2,9 +2,9 @@
 # License: MIT. See license.txt
 
 """
-Task workflow state-machine hook for Agent Task documents.
+Task workflow state-machine hook for Task documents.
 
-Registered as ``doc_events["Agent Task"]["on_update"]`` in ``hooks.py``.
+Registered as ``doc_events["Task"]["on_update"]`` in ``hooks.py``.
 
 Responsibilities
 ----------------
@@ -41,16 +41,16 @@ def _get_warroom():
 DISPATCHABLE_STATES = frozenset({"Pending", "Assigned"})
 
 
-def on_state_change(doc: "AgentTask", method: str) -> None:
+def on_state_change(doc: "Task", method: str) -> None:
 	"""
 	Recompute dispatchable; record timestamps; emit Redis event.
 
 	Called by Frappe's doc_events system after every save of an
-	Agent Task document.  Runs inside the same transaction as the
+	Task document.  Runs inside the same transaction as the
 	save, so all DB writes are atomic with it.
 
 	Args:
-		doc: The saved Agent Task document.
+		doc: The saved Task document.
 		method: The Frappe hook method name (``"on_update"``).
 	"""
 	# 1. dispatchable is a derived field — always recompute from live state.
@@ -64,7 +64,7 @@ def on_state_change(doc: "AgentTask", method: str) -> None:
 	doc.save(ignore_permissions=True)
 
 
-def _watch_transition(doc: "AgentTask") -> None:
+def _watch_transition(doc: "Task") -> None:
 	"""
 	Handle side-effects that depend on the specific state transition.
 
@@ -95,12 +95,12 @@ def _watch_transition(doc: "AgentTask") -> None:
 		_emit_assigned_event(doc.name, doc.assigned_to_profile)
 
 
-def _post_warroom_update(doc: "AgentTask", state: str) -> None:
+def _post_warroom_update(doc: "Task", state: str) -> None:
 	"""
 	Post a status update to the Raven War Room channel.
 
 	Args:
-		doc: The Agent Task document.
+		doc: The Task document.
 		state: The new workflow_state.
 	"""
 	warroom = _get_warroom()
@@ -124,7 +124,7 @@ def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
 	commits via ``doctype=True`` so it is outside the DB write path.
 
 	Args:
-		task_name: Agent Task document name (e.g. ``AT-000042``).
+		task_name: Task document name (e.g. ``AT-000042``).
 		assigned_to_profile: The agent profile assigned to the task.
 	"""
 	message = {
@@ -135,6 +135,6 @@ def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
 	frappe.publish_realtime(
 		event="agent_task.assigned",
 		message=message,
-		doctype="Agent Task",
+		doctype="Task",
 		after_commit=True,
 	)

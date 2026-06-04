@@ -30,11 +30,10 @@ from __future__ import annotations
 
 import frappe
 
-# The Task DocType these Issues point at. It is currently named "Agent Task";
-# it becomes "Task" when the rename/fold lands (doc 53 §7). Kept as a single
-# constant so that rename is a one-line change here (and two `options` edits
-# in issue.json).
-TASK_DOCTYPE = "Agent Task"
+# The Task DocType these Issues point at — renamed from "Agent Task" to "Task"
+# in Phase B (doc 53 §7). Kept as a single constant for the dependency lookups
+# below; the Link `options` live in issue.json (related_task, waiting_on).
+TASK_DOCTYPE = "Task"
 
 # A dependency stops blocking once it reaches one of these terminal states.
 # Ported from ERPNext Task.validate_status, which refuses to complete a task

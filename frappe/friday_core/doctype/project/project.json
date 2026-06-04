@@ -12,7 +12,7 @@
  ],
  "links": [],
  "module": "Friday Core",
- "name": "Agent Project",
+ "name": "Project",
  "naming_rule": "Set by user",
  "permissions": [
   {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},

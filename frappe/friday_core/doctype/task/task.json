@@ -18,9 +18,9 @@
  "fields": [
   {"fieldname": "title", "fieldtype": "Data", "in_list_view": 1, "label": "Title", "reqd": 1},
   {"fieldname": "description", "fieldtype": "Long Text", "label": "Description"},
-  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Agent Project"},
+  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Project"},
   {"fieldname": "assigned_to_profile", "fieldtype": "Link", "label": "Assigned To Profile", "options": "Agent Profile"},
-  {"fieldname": "required_skills", "fieldtype": "Table", "label": "Required Skills", "options": "Agent Task Skill"},
+  {"fieldname": "required_skills", "fieldtype": "Table", "label": "Required Skills", "options": "Task Skill"},
   {"fieldname": "workflow_state", "fieldtype": "Data", "label": "Workflow State"},
   {"default": "0", "fieldname": "dispatchable", "fieldtype": "Check", "label": "Dispatchable"},
   {"fieldname": "priority", "fieldtype": "Select", "in_list_view": 1, "label": "Priority", "options": "low\nnormal\nhigh\nurgent", "reqd": 1},
@@ -30,7 +30,7 @@
  ],
  "links": [],
  "module": "Friday Core",
- "name": "Agent Task",
+ "name": "Task",
  "naming_rule": "Autoincrement",
  "permissions": [
   {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},

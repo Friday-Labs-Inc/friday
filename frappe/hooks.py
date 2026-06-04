@@ -222,7 +222,7 @@ doc_events = {
 		# See docs/design/47-gateway-design-decisions.md.
 		"after_insert": "frappe.friday_core.gateway.service.handle_inbound",
 	},
-	"Agent Task": {
+	"Task": {
 		# Slice 8 — task workflow state machine.  Derives dispatchable,
 		# records timestamps, emits agent_task.assigned Redis pub/sub.
 		"on_update": "frappe.friday_core.tasks.workflow.on_state_change",
