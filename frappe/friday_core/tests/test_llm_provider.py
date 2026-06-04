@@ -337,6 +337,29 @@ class TestMinimaxProviderChat(unittest.TestCase):
         self.assertIn("no choices", str(ctx.exception))
 
     @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_minimax_base_resp_error(self, mock_post: MagicMock):
+        """Minimax returns HTTP 200 with a failure tucked in base_resp.
+
+        e.g. {"status_code": 1008, "status_msg": "insufficient balance"} —
+        the real cause must surface in the LLMError, not the vague
+        "no choices" message that hides it.
+        """
+        mock_post.return_value = MagicMock(status_code=200, json=lambda: {
+            "base_resp": {"status_code": 1008, "status_msg": "insufficient balance"},
+            "choices": [],
+        })
+
+        p = self._make_provider()
+        with self.assertRaises(LLMError) as ctx:
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+
+        msg = str(ctx.exception)
+        self.assertIn("insufficient balance", msg)
+        self.assertIn("1008", msg)
+        # The real cause must surface — not the misleading "no choices" path.
+        self.assertNotIn("no choices", msg)
+
+    @patch("frappe.friday_core.llm.provider.requests.post")
     def test_chat_uses_correct_timeout(self, mock_post: MagicMock):
         """requests.post is called with timeout=30."""
         mock_post.return_value = MagicMock(status_code=200, json=lambda: {

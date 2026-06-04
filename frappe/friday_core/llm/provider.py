@@ -371,6 +371,19 @@ class MinimaxProvider(_OpenAICompatibleProvider):
     DEFAULT_BASE_URL = "https://api.minimax.io"
     CHAT_PATH = "/v1/text/chatcompletion_v2"
 
+    def _parse_response(self, data: dict) -> LLMResponse:
+        # Minimax tucks failures in `base_resp` on a HTTP 200 (e.g. 1008
+        # insufficient balance, 2013 unknown model). Surface the real cause
+        # before the generic "no choices" path hides it. status_code 0 = OK.
+        base = data.get("base_resp") or {}
+        code = base.get("status_code", 0)
+        if code:
+            raise LLMError(
+                f"minimax API error status_code={code}: "
+                f"{base.get('status_msg') or 'unknown'}"
+            )
+        return super()._parse_response(data)
+
 
 class OpenAIProvider(_OpenAICompatibleProvider):
     """OpenAI Chat Completions adapter (Feature B1).
