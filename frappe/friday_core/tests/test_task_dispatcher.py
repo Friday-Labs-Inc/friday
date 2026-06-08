@@ -132,7 +132,7 @@ class TestClaimAndDispatchWithProfile(unittest.TestCase):
 				"assigned_to_profile": "note_taker",
 				"workflow_state": "Assigned",
 			},
-			doctype="Agent Task",
+			doctype="Task",
 			after_commit=True,
 		)
 

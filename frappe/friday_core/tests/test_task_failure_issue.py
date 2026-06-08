@@ -4,7 +4,7 @@
 """
 Unit tests for the task-failure -> Issue auto-raise (Feature D6, doc 53).
 
-Mock-based — no DB. When an Agent Task fails, the task runner files an
+Mock-based — no DB. When an Task fails, the task runner files an
 Agent-raised `Failure` Issue so a supervisor sees the holdup as a ticket. Two
 paths:
   - a skill-level failure (SandboxResult.status != success) -> `_block_task`,

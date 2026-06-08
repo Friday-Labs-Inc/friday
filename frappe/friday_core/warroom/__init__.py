@@ -4,7 +4,7 @@
 """
 Friday War Room Bridge
 
-Posts Agent Task status transitions to the Raven FRIDAY_WAR_ROOM channel.
+Posts Task status transitions to the Raven FRIDAY_WAR_ROOM channel.
 Designed for graceful degradation — logs a warning if Raven is not installed,
 raises no exceptions, and never blocks the task pipeline.
 """

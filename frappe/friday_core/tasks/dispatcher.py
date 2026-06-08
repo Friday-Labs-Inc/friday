@@ -37,7 +37,7 @@ def tick() -> None:
 		_claim_and_dispatch(task_doc)
 
 
-def _fetch_dispatchable_tasks(limit: int = 5) -> list["AgentTask"]:
+def _fetch_dispatchable_tasks(limit: int = 5) -> list["Task"]:
 	"""
 	Fetch tasks that are dispatchable, unclaimed, and in Pending state.
 
@@ -49,7 +49,7 @@ def _fetch_dispatchable_tasks(limit: int = 5) -> list["AgentTask"]:
 		limit: Maximum number of tasks to claim in one cycle.
 
 	Returns:
-		List of ``AgentTask`` documents (already locked for update).
+		List of ``Task`` documents (already locked for update).
 	"""
 	# Frappe's ORM doesn't support FOR UPDATE SKIP LOCKED directly,
 	# so we use raw SQL.  The query selects the document names; we then
@@ -57,7 +57,7 @@ def _fetch_dispatchable_tasks(limit: int = 5) -> list["AgentTask"]:
 	rows = frappe.db.sql(
 		"""
 		SELECT name
-		FROM `tabAgent Task`
+		FROM `tabTask`
 		WHERE dispatchable = 1
 		  AND assigned_to_profile IS NULL
 		  AND workflow_state = 'Pending'
@@ -77,15 +77,15 @@ def _fetch_dispatchable_tasks(limit: int = 5) -> list["AgentTask"]:
 		as_dict=True,
 	)
 
-	return [frappe.get_doc("Agent Task", row.name) for row in rows]
+	return [frappe.get_doc("Task", row.name) for row in rows]
 
 
-def _claim_and_dispatch(task_doc: "AgentTask") -> None:
+def _claim_and_dispatch(task_doc: "Task") -> None:
 	"""
 	Match an eligible profile, atomically assign the task, and emit event.
 
 	Args:
-		task_doc: The claimed ``Agent Task`` document (row-locked).
+		task_doc: The claimed ``Task`` document (row-locked).
 	"""
 	eligible = _match_profiles(task_doc)
 
@@ -111,12 +111,12 @@ def _claim_and_dispatch(task_doc: "AgentTask") -> None:
 			"assigned_to_profile": chosen_profile,
 			"workflow_state": "Assigned",
 		},
-		doctype="Agent Task",
+		doctype="Task",
 		after_commit=True,
 	)
 
 
-def _match_profiles(task_doc: "AgentTask") -> list[str]:
+def _match_profiles(task_doc: "Task") -> list[str]:
 	"""
 	Return Agent Profile names whose permitted skills cover all required skills.
 
@@ -125,7 +125,7 @@ def _match_profiles(task_doc: "AgentTask") -> list[str]:
 	profile.  Profiles with no required skills can handle any task.
 
 	Args:
-		task_doc: The ``Agent Task`` document.
+		task_doc: The ``Task`` document.
 
 	Returns:
 		List of matching ``Agent Profile`` names, in creation order.

@@ -2,7 +2,7 @@
 # License: MIT. See license.txt
 
 """
-War Room publisher — posts Agent Task status updates to the Raven FRIDAY_WAR_ROOM channel.
+War Room publisher — posts Task status updates to the Raven FRIDAY_WAR_ROOM channel.
 
 Graceful degradation
 ------------------
@@ -41,7 +41,7 @@ def post_task_update(
 	Post a task status update to the Raven War Room channel.
 
 	Args:
-		task_name: The ``Agent Task`` document name (e.g. ``AT-000042``).
+		task_name: The ``Task`` document name (e.g. ``AT-000042``).
 		event: One of the state-transition event strings:
 		       ``assigned``, ``executing``, ``completed``, ``blocked``,
 		       ``cancelled``, ``error``, ``oom``, ``timeout``.
@@ -120,7 +120,7 @@ def _build_payload(task_name: str, event: str, details: Optional[dict]) -> dict:
 	Assemble the message dict posted to Raven.
 
 	Args:
-		task_name: Agent Task document name.
+		task_name: Task document name.
 		event: Transition event string.
 		details: Optional supplementary data.
 

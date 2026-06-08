@@ -2,7 +2,7 @@
 # License: MIT. See license.txt
 
 """
-Task runner — executes assigned Agent Tasks inside Docker sandboxes.
+Task runner — executes assigned Tasks inside Docker sandboxes.
 
 Consumes ``agent_task.assigned`` real-time events emitted by the
 workflow hook and the task dispatcher.  Transitions task state through
@@ -64,7 +64,7 @@ def register_task_runner() -> None:
 	The real handler ``on_agent_task_assigned()`` remains usable — it
 	just needs a different trigger. Options for the actual subscription:
 
-	  - A ``doc_events["Agent Task"]["on_update"]`` hook that calls it
+	  - A ``doc_events["Task"]["on_update"]`` hook that calls it
 	    when the workflow_state transitions to "Assigned".
 	  - An RQ job enqueued by ``tasks.workflow.on_state_change`` when
 	    the assignment happens.
@@ -128,7 +128,7 @@ def _post_warroom(task_name: str, event: str, details: dict = None) -> None:
 	Never raises — degrades gracefully on any error.
 
 	Args:
-		task_name: Agent Task document name.
+		task_name: Task document name.
 		event: One of ``executing``, ``completed``, ``blocked``,
 		       ``error``, ``oom``, ``timeout``.
 		details: Optional extra data.
@@ -171,10 +171,10 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	Load a task, execute its required skills, and update the task state.
 
 	Args:
-		task_name: ``Agent Task`` document name.
+		task_name: ``Task`` document name.
 		profile_name: ``Agent Profile`` name to execute the task under.
 	"""
-	task = frappe.get_doc("Agent Task", task_name)
+	task = frappe.get_doc("Task", task_name)
 
 	# Record start time for duration calculation.
 	started_at = now_datetime()
@@ -219,7 +219,7 @@ def _run_task(task_name: str, profile_name: str) -> None:
 
 
 def _execute_skill_in_sandbox(
-	skill_name: str, task: "AgentTask", profile_name: str
+	skill_name: str, task: "Task", profile_name: str
 ) -> "SandboxResult":
 	"""
 	Execute one skill from a task's required_skills in a Docker sandbox.
@@ -229,7 +229,7 @@ def _execute_skill_in_sandbox(
 
 	Args:
 		skill_name: Name of the skill to execute.
-		task: The ``Agent Task`` document.
+		task: The ``Task`` document.
 		profile_name: The executing ``Agent Profile`` name.
 
 	Returns:
@@ -253,7 +253,7 @@ def _execute_skill_in_sandbox(
 	)
 
 
-def _parse_task_parameters(task: "AgentTask", skill_name: str) -> dict:
+def _parse_task_parameters(task: "Task", skill_name: str) -> dict:
 	"""
 	Extract parameters for ``skill_name`` from the task document.
 
@@ -262,7 +262,7 @@ def _parse_task_parameters(task: "AgentTask", skill_name: str) -> dict:
 	parameters stored in a child table.
 
 	Args:
-		task: The ``Agent Task`` document.
+		task: The ``Task`` document.
 		skill_name: Name of the skill whose parameters are needed.
 
 	Returns:
@@ -273,12 +273,12 @@ def _parse_task_parameters(task: "AgentTask", skill_name: str) -> dict:
 	return {"description": task.description or ""}
 
 
-def _block_task(task: "AgentTask", results: list) -> None:
+def _block_task(task: "Task", results: list) -> None:
 	"""
 	Mark a task as blocked after a skill execution failure.
 
 	Args:
-		task: The ``Agent Task`` document.
+		task: The ``Task`` document.
 		results: List of ``SandboxResult`` from executed skills.
 	"""
 	task.result = frappe.as_json(_build_result_envelope(results, "failed"))
@@ -309,7 +309,7 @@ def _block_task(task: "AgentTask", results: list) -> None:
 
 def _build_result_envelope(results: list, status: str) -> dict:
 	"""
-	Build the JSON result envelope written to ``Agent Task.result``.
+	Build the JSON result envelope written to ``Task.result``.
 
 	Args:
 		results: List of ``SandboxResult`` from skill executions.
@@ -334,9 +334,9 @@ def _build_result_envelope(results: list, status: str) -> dict:
 	}
 
 
-def _task_transition(task: "AgentTask", target_state: str) -> None:
+def _task_transition(task: "Task", target_state: str) -> None:
 	"""
-	Transition an Agent Task to a new workflow state.
+	Transition an Task to a new workflow state.
 
 	Calls the Frappe Workflow action if the workflow document defines
 	a valid transition.  Silently no-ops if no workflow is configured
@@ -344,7 +344,7 @@ def _task_transition(task: "AgentTask", target_state: str) -> None:
 	both with and without a Frappe Workflow on the DocType.
 
 	Args:
-		task: The ``Agent Task`` document.
+		task: The ``Task`` document.
 		target_state: The target state name string.
 	"""
 	try:

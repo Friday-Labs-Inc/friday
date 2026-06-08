@@ -25,9 +25,9 @@
   {"default": "normal", "fieldname": "priority", "fieldtype": "Select", "label": "Priority", "options": "low\nnormal\nhigh\nurgent"},
   {"fieldname": "raised_by", "fieldtype": "Link", "label": "Raised By", "options": "User"},
   {"fieldname": "assigned_to", "fieldtype": "Link", "label": "Assigned To", "options": "User"},
-  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Agent Project"},
-  {"fieldname": "related_task", "fieldtype": "Link", "label": "Related Task", "options": "Agent Task"},
-  {"fieldname": "waiting_on", "fieldtype": "Link", "label": "Waiting On (Task)", "options": "Agent Task"},
+  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Project"},
+  {"fieldname": "related_task", "fieldtype": "Link", "label": "Related Task", "options": "Task"},
+  {"fieldname": "waiting_on", "fieldtype": "Link", "label": "Waiting On (Task)", "options": "Task"},
   {"fieldname": "description", "fieldtype": "Long Text", "label": "Description"},
   {"fieldname": "resolution_details", "fieldtype": "Long Text", "label": "Resolution Details"},
   {"fieldname": "execution_log", "fieldtype": "Link", "label": "Execution Log", "options": "Execution Log"}

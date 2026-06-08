@@ -34,7 +34,7 @@
             "fieldname": "task",
             "fieldtype": "Link",
             "label": "Task",
-            "options": "Agent Task"
+            "options": "Task"
         },
         {
             "fieldname": "parameters",
