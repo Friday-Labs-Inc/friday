@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 
 import frappe
 
+from frappe.friday_core.agent_runner.sanitize import repair_tool_arguments
 from frappe.friday_core.approvals.workflow import create_request, requires_approval
 from frappe.friday_core.permissions.matrix import Decision, check as matrix_check
 
@@ -179,8 +180,12 @@ def dispatch(
             tool_call_id=tool_call_id,
         )
 
-    # Parse arguments.
+    # Parse arguments. Repair malformed JSON first — a trailing comma or an
+    # unclosed brace shouldn't kill the action (ported from Hermes). repair
+    # always yields valid JSON, so the `except` below is now a safety net.
     raw_args = tool_call.get("arguments", "{}")
+    if isinstance(raw_args, str):
+        raw_args = repair_tool_arguments(raw_args, skill_name)
     try:
         parameters = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
     except json.JSONDecodeError:
