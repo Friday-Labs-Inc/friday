@@ -4,9 +4,8 @@
 """
 Unit tests for reasoning-block scrubbing (llm/reasoning.py).
 
-Ported behaviour from Hermes `agent/think_scrubber.py` (complete-string form):
-closed pairs removed anywhere, unterminated opens removed only at a line
-boundary (so prose mentions survive), orphan close tags removed.
+Verbatim port of Hermes `strip_think_blocks` — per-variant closed pairs, inline
+tool-call XML stripping, boundary-gated unterminated opens, orphan tags.
 """
 
 import unittest
@@ -32,18 +31,32 @@ class TestStripReasoning(unittest.TestCase):
 		self.assertEqual(strip_reasoning("<think>a</think>X<think>b</think>Y"), "XY")
 
 	def test_unterminated_open_at_boundary_stripped_to_end(self):
-		# A model that opens a block and never closes it — strip from the tag on.
 		self.assertEqual(strip_reasoning("Answer.\n<think>leaking to the end..."), "Answer.")
 
 	def test_open_at_start_with_only_reasoning_becomes_empty(self):
 		self.assertEqual(strip_reasoning("<think>all reasoning, no answer"), "")
 
-	def test_prose_mention_is_NOT_stripped(self):
-		# Mid-line mention, not a real block opener → preserved (boundary gate).
-		self.assertEqual(strip_reasoning("use <think> tags carefully"), "use <think> tags carefully")
+	def test_orphan_open_tag_is_stripped_but_prose_survives(self):
+		# Hermes' orphan pass removes a bare <think> tag (it's not at a boundary,
+		# so case 2 leaves the rest of the line) — the prose around it survives.
+		self.assertEqual(strip_reasoning("use <think> tags carefully"), "use tags carefully")
 
 	def test_orphan_close_removed(self):
 		self.assertEqual(strip_reasoning("Answer</think>"), "Answer")
+
+	def test_mismatched_tags_keep_inner_content(self):
+		# Per-variant (not combined): <think>...</thinking> is NOT a pair, so the
+		# inner text is kept and only the orphan tags are stripped. (A combined
+		# alternation would treat it as a pair and delete "keep".)
+		self.assertEqual(strip_reasoning("answer <think>keep</thinking>."), "answer keep.")
+
+	def test_inline_tool_call_xml_stripped(self):
+		self.assertEqual(strip_reasoning('before<tool_call>{"n":1}</tool_call>after'), "beforeafter")
+
+	def test_function_call_xml_at_boundary_stripped(self):
+		self.assertEqual(
+			strip_reasoning('\n<function name="f">args</function>\nReply'), "Reply"
+		)
 
 	def test_plain_text_unchanged(self):
 		self.assertEqual(strip_reasoning("Just a normal reply."), "Just a normal reply.")
