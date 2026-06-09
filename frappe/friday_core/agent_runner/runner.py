@@ -66,6 +66,15 @@ MAX_REACT_ITERATIONS = 15
 _BUDGET_EXHAUSTED_SUFFIX = "\n\n[loop budget exhausted after {n} iterations]"
 _EMPTY_REPLY_FALLBACK = "I'm unable to complete this in the time allotted."
 
+# Port from Hermes (conversation_loop §"Empty response retry"): a model can
+# return nothing usable — no content AND no tool call. Retry up to 3 times
+# before giving up, instead of handing the user a blank turn.
+MAX_EMPTY_RETRIES = 3
+_EMPTY_RESPONSE_FALLBACK = (
+	"The model returned an empty response after several retries. "
+	"Please try rephrasing your request."
+)
+
 
 def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	"""Produce one agent reply for one user message via the ReAct loop.
@@ -126,6 +135,7 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	model = prompt["model"]
 
 	last_assistant_content = ""
+	empty_retries = 0
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
 		# Scrub surrogates from the whole message list before the API call —
@@ -140,8 +150,28 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 		tokens_used = (response.get("usage") or {}).get("total_tokens", 0)
 
 		if not tool_calls:
+			# Empty-response retry — port from Hermes conversation_loop
+			# §"Empty response retry". A model can return nothing usable (no
+			# content, no tool call); retry up to MAX_EMPTY_RETRIES before
+			# giving up, instead of handing the user a blank turn. DISCLOSED
+			# divergences: Friday skips Hermes' fallback-provider switch
+			# (single provider) and the reasoning-prefill nuance (strip_reasoning
+			# already yields the "truly empty" check), and returns a friendly
+			# message in place of Hermes' "(empty)" sentinel.
+			if not content and empty_retries < MAX_EMPTY_RETRIES:
+				empty_retries += 1
+				frappe.logger("friday.runner").warning(
+					f"Empty model response — retry {empty_retries}/{MAX_EMPTY_RETRIES} "
+					f"(session {session_id!r})"
+				)
+				continue
+			if not content:
+				return _EMPTY_RESPONSE_FALLBACK
 			# Plain-text reply — the agent is done.
 			return content
+
+		# A usable (tool-calling) response resets the empty-response streak.
+		empty_retries = 0
 
 		# D (doc 51 §4.D) — drop duplicate (name, arguments) calls in this
 		# response, then give every call a stable id (deterministic when the

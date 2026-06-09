@@ -194,6 +194,42 @@ class TestMaxIterations(unittest.TestCase):
 		self.assertIn("loop budget exhausted after 2 iterations", result)
 
 
+class TestEmptyResponseRetry(unittest.TestCase):
+	"""Port from Hermes: a truly-empty model response is retried, not returned blank."""
+
+	def test_empty_then_content_retries_then_returns(self):
+		# First response empty (no content, no tools) → retry → second has content.
+		prov = _provider(_resp(content=""), _resp(content="here you go"))
+		result, md, _ = _run(prov, dispatch_results=[])
+		self.assertEqual(result, "here you go")
+		self.assertEqual(prov.chat.call_count, 2)  # one retry
+		md.assert_not_called()
+
+	def test_empty_exhausted_returns_fallback(self):
+		# Always empty → initial call + MAX_EMPTY_RETRIES retries → fallback.
+		from frappe.friday_core.agent_runner import runner
+		prov = _provider(_resp(content=""))  # single return_value, repeated
+		result, _, _ = _run(prov, dispatch_results=[])
+		self.assertEqual(result, runner._EMPTY_RESPONSE_FALLBACK)
+		self.assertEqual(prov.chat.call_count, 1 + runner.MAX_EMPTY_RETRIES)
+
+	def test_empty_streak_resets_after_a_usable_response(self):
+		# empty (retry) → tool call (resets streak) → empty×3 → exhausted fallback.
+		# Proves the counter resets on a usable response (Hermes resets on content).
+		from frappe.friday_core.agent_runner import runner
+		prov = _provider(
+			_resp(content=""),                          # retry 1
+			_resp(content="", tool_calls=[_tc("c1")]),  # usable → resets streak
+			_resp(content=""),                          # retry 1 again
+			_resp(content=""),                          # retry 2
+			_resp(content=""),                          # retry 3
+			_resp(content=""),                          # exhausted → fallback
+		)
+		result, md, _ = _run(prov, dispatch_results=[_ok(call_id="c1")])
+		self.assertEqual(result, runner._EMPTY_RESPONSE_FALLBACK)
+		self.assertEqual(md.call_count, 1)  # the single tool call still dispatched
+
+
 class TestIsPermissionDenial(unittest.TestCase):
 	"""The denial detector: success=False + a 'rejected' Execution Log row."""
 
