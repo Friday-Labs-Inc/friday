@@ -64,14 +64,14 @@ class TestShouldCompress(unittest.TestCase):
 		self.assertFalse(should_compress([{"content": "short"}], context_window=1000))
 
 	def test_over_threshold_is_true(self):
-		# window 1000 → threshold 600 tokens → need > 2400 chars.
+		# window 1000 → threshold 500 tokens → need > 2000 chars.
 		self.assertTrue(should_compress([{"content": "x" * 4000}], context_window=1000))
 
-	def test_threshold_is_sixty_percent(self):
-		# Exactly at 60% must NOT trigger (strictly greater).
-		# window 1000 → threshold 600 tokens → 2400 chars == 600 tokens.
-		self.assertFalse(should_compress([{"content": "x" * 2400}], context_window=1000))
-		self.assertTrue(should_compress([{"content": "x" * 2404}], context_window=1000))
+	def test_threshold_is_fifty_percent(self):
+		# Hermes' default threshold_percent is 0.50. Exactly at 50% must NOT
+		# trigger (strictly greater). window 1000 → 500 tokens → 2000 chars == 500.
+		self.assertFalse(should_compress([{"content": "x" * 2000}], context_window=1000))
+		self.assertTrue(should_compress([{"content": "x" * 2004}], context_window=1000))
 
 
 class TestSplitMiddleTail(unittest.TestCase):
@@ -115,6 +115,22 @@ class TestSummaryPrefix(unittest.TestCase):
 		self.assertIn("Do NOT answer", SUMMARY_PREFIX)
 		self.assertIn("## Active Task", SUMMARY_PREFIX)
 		self.assertIn("ONLY to the latest user message", SUMMARY_PREFIX)
+
+	def test_verbatim_to_hermes_wording(self):
+		# Faithful to Hermes' SUMMARY_PREFIX: US spelling + the parenthetical
+		# clause that earlier silently diverged. (The only intended divergence is
+		# the MEMORY.md→system-prompt sentence, asserted separately below.)
+		self.assertIn("fulfill requests", SUMMARY_PREFIX)
+		self.assertIn("deprioritize", SUMMARY_PREFIX)
+		self.assertIn("(files, config, etc.)", SUMMARY_PREFIX)
+		self.assertNotIn("fulfil ", SUMMARY_PREFIX)
+		self.assertNotIn("deprioritise", SUMMARY_PREFIX)
+
+	def test_discloses_the_one_frappe_adaptation(self):
+		# Friday has no MEMORY.md/USER.md; that one sentence points at the system
+		# prompt instead — the single, disclosed divergence from Hermes.
+		self.assertIn("system prompt (above) is ALWAYS authoritative", SUMMARY_PREFIX)
+		self.assertNotIn("MEMORY.md", SUMMARY_PREFIX)
 
 	def test_summariser_messages_shape(self):
 		msgs = _summariser_messages("transcript here")
