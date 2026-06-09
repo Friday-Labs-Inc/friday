@@ -33,4 +33,6 @@ def execute():
 		if frappe.db.exists("DocType", old) and not frappe.db.exists("DocType", new):
 			# force=True: rename even though the on-disk JSON already carries the
 			# new name (the schema files were renamed in the same change).
-			frappe.rename_doc("DocType", old, new, force=True, ignore_permissions=True)
+			# Runs as Administrator during migrate, so no ignore_permissions kwarg
+			# (this Frappe's rename_doc doesn't accept it — it raised TypeError).
+			frappe.rename_doc("DocType", old, new, force=True)
