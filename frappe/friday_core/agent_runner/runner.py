@@ -47,6 +47,10 @@ import json
 import frappe
 
 from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
+from frappe.friday_core.agent_runner.message_hygiene import (
+	sanitize_messages_surrogates,
+	sanitize_surrogates,
+)
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.prompt_builder import build
@@ -87,6 +91,12 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	it can adapt (A.3). LLM transport errors propagate to the gateway, which is
 	the last error catcher.
 	"""
+	# Sanitize lone surrogates from user input — clipboard pastes (Google Docs,
+	# Word) inject them and they crash json.dumps in the model SDK. Hermes does
+	# this at the top of run_conversation.
+	if isinstance(inbound_content, str):
+		inbound_content = sanitize_surrogates(inbound_content)
+
 	skill_definitions = load_for_profile(profile_name)
 
 	# Feature C: fold old turns into a summary if this session has grown large,
@@ -117,6 +127,9 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	last_assistant_content = ""
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
+		# Scrub surrogates from the whole message list before the API call —
+		# reasoning/tool fields can carry them too (Hermes sanitizes pre-call).
+		sanitize_messages_surrogates(messages)
 		response = provider.chat(messages=messages, tools=tools, model=model)
 		content = response.get("content") or ""
 		tool_calls = response.get("tool_calls")
