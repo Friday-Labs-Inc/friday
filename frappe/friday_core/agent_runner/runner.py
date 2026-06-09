@@ -50,6 +50,7 @@ from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.prompt_builder import build
+from frappe.friday_core.llm.reasoning import strip_reasoning
 from frappe.friday_core.skills.loader import load_for_profile
 
 # A.1 — the loop is capped at 15 think/act cycles per turn. A module constant
@@ -118,7 +119,10 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
 		response = provider.chat(messages=messages, tools=tools, model=model)
-		content = response.get("content") or ""
+		# Strip reasoning/<think> blocks before `content` is used as the reply
+		# OR appended to history — reasoning models (e.g. MiniMax-M2) leak their
+		# chain-of-thought, which must not reach the user or pollute context.
+		content = strip_reasoning(response.get("content"))
 		tool_calls = response.get("tool_calls")
 		tokens_used = (response.get("usage") or {}).get("total_tokens", 0)
 
