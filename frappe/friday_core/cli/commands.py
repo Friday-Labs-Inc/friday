@@ -71,6 +71,65 @@ def chat(context, profile):
 			frappe.destroy()
 
 
+@click.command("setup")
+@click.option(
+	"--provider-type",
+	default="minimax",
+	type=click.Choice(["minimax", "openai", "anthropic"]),
+	help="Which model API to configure.",
+)
+@click.option("--model", "default_model", default=None, help="Default model id (defaults per provider).")
+@click.option("--provider-name", default="Default Provider", help="Name for the LLM Provider record.")
+@click.option("--profile", "profile_name", default="Friday", help="Name for the Agent Profile to create.")
+@click.option(
+	"--api-key",
+	default=None,
+	help="API key. PREFER the FRIDAY_API_KEY env var or the hidden prompt so the key stays out of shell history.",
+)
+@click.option("--base-url", default=None, help="Override the provider base URL.")
+@click.option("--system-prompt", default=None, help="The agent's system prompt.")
+@pass_context
+def setup(context, provider_type, default_model, provider_name, profile_name, api_key, base_url, system_prompt):
+	"""Configure a model provider + agent profile in one step (the `hermes setup` twin).
+
+	Creates an LLM Provider (key stored ENCRYPTED) and an Agent Profile, then
+	tells you how to chat with it.
+
+	    bench --site friday.localhost friday setup            # interactive
+	    FRIDAY_API_KEY=sk-... bench --site friday.localhost friday setup --provider-type minimax
+	"""
+	import os
+
+	import frappe
+
+	from frappe.friday_core.cli.setup import DEFAULT_MODELS, run_setup
+
+	# Key precedence: --api-key > FRIDAY_API_KEY env > hidden prompt. Never logged.
+	key = api_key or os.environ.get("FRIDAY_API_KEY")
+	model = default_model or DEFAULT_MODELS.get(provider_type)
+
+	for site in context.sites:
+		try:
+			frappe.init(site=site)
+			frappe.connect()
+			if not key:
+				key = click.prompt(f"{provider_type} API key", hide_input=True)
+			result = run_setup(
+				provider_name=provider_name,
+				provider_type=provider_type,
+				api_key=key,
+				default_model=model,
+				profile_name=profile_name,
+				base_url=base_url,
+				system_prompt=system_prompt,
+			)
+			click.echo(f"✓ LLM Provider '{result['provider']}' ({provider_type}, {result['model']}) configured.")
+			click.echo(f"✓ Agent Profile '{result['profile']}' is Active.")
+			click.echo(f"\nTalk to it:\n  bench --site {site} friday chat --profile \"{result['profile']}\"")
+		finally:
+			frappe.destroy()
+
+
 @click.group("friday")
 def friday():
 	"""Friday agent framework — interactive and administrative commands."""
@@ -78,6 +137,7 @@ def friday():
 
 
 friday.add_command(chat)
+friday.add_command(setup)
 
 # Frappe's command loader reads this `commands` symbol from the module
 # named in `hooks.py`. Each item is a click Command or Group; we expose
