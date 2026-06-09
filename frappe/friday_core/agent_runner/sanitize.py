@@ -61,6 +61,43 @@ def _close_structures(text: str) -> str:
     return text + "".join("}" if c == "{" else "]" for c in reversed(stack))
 
 
+def _escape_invalid_chars_in_json_strings(raw: str) -> str:
+    """Escape unescaped control chars (0x00–0x1F) inside JSON string values.
+
+    Walks char-by-char tracking whether we're inside a double-quoted string;
+    replaces literal control chars that aren't already part of an escape
+    sequence with their `\\uXXXX` form. Ported verbatim from Hermes
+    `message_sanitization._escape_invalid_chars_in_json_strings` (repair pass-4)
+    — complements the lenient parse when control chars sit alongside other
+    malformations.
+    """
+    out: list[str] = []
+    in_string = False
+    i = 0
+    n = len(raw)
+    while i < n:
+        ch = raw[i]
+        if in_string:
+            if ch == "\\" and i + 1 < n:
+                out.append(ch)
+                out.append(raw[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+                out.append(ch)
+            elif ord(ch) < 0x20:
+                out.append(f"\\u{ord(ch):04x}")
+            else:
+                out.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def repair_tool_arguments(raw_args: str, tool_name: str = "?") -> str:
     """Return wire-valid JSON for a tool call's arguments, repairing if needed.
 
@@ -95,6 +132,17 @@ def repair_tool_arguments(raw_args: str, tool_name: str = "?") -> str:
                 fixed = fixed[:-1]
             else:
                 break
+
+    # Pass 3 — escape unescaped control chars inside strings, then retry
+    # (Hermes pass-4: catches cases where the lenient parse failed because other
+    # malformations were present alongside literal tabs/newlines).
+    try:
+        escaped = _escape_invalid_chars_in_json_strings(fixed)
+        if escaped != fixed:
+            json.loads(escaped)
+            return escaped
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
 
     # Last resort — empty object so the turn survives.
     return "{}"

@@ -43,6 +43,12 @@ class TestRepairToolArguments(unittest.TestCase):
 		# A real newline inside the JSON string value (strict=False handles it).
 		self.assertEqual(self._loads('{"msg": "line1\nline2"}'), {"msg": "line1\nline2"})
 
+	def test_control_chars_with_other_malformation_repaired_by_pass4(self):
+		# Literal tab inside a string AND a trailing comma: the lenient parse
+		# fails (trailing comma), structural repair leaves the raw tab, and
+		# Hermes' pass-4 escapes it to valid JSON.
+		self.assertEqual(self._loads('{"a": "x\ty",}'), {"a": "x\ty"})
+
 	def test_unrepairable_becomes_empty_object(self):
 		self.assertEqual(repair_tool_arguments("not json at all {{"), "{}")
 
