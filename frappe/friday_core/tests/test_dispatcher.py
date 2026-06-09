@@ -413,7 +413,11 @@ class TestDispatchMalformedArguments(unittest.TestCase):
         from frappe.friday_core.skills.loader import invalidate_for_profile
         invalidate_for_profile(PROFILE_ALLOWED)
 
-    def test_malformed_json_returns_error_result(self):
+    def test_malformed_json_is_repaired_then_validated_by_skill(self):
+        # H-class robustness: malformed argument JSON is now REPAIRED (an
+        # unrepairable string falls back to "{}") instead of hard-failing at
+        # parse. The skill's OWN validation then handles the empty params — so
+        # we get a skill error, not a raw JSON parse error.
         tool_call = {
             "id": "call_slice6_m001",
             "name": "slice6-create-note",
@@ -425,7 +429,8 @@ class TestDispatchMalformedArguments(unittest.TestCase):
             session_id="sess-malf-001",
         )
         self.assertFalse(result.success)
-        self.assertIn("Malformed JSON", result.content)
+        self.assertNotIn("Malformed JSON", result.content)
+        self.assertIn("Something went wrong", result.content)
 
     def test_non_dict_arguments_returns_error(self):
         tool_call = {
