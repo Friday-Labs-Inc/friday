@@ -43,9 +43,9 @@ yet.** Foundation: solid. Product: barely started.
 - ✅ MiniMax, OpenAI, Anthropic — Friday's own clean 3-provider build (audited: no false "matches Hermes" claims; not a copy *by design* — Hermes' 40-provider sprawl is correctly skipped)
 - ⬛ ~37 other model brands (Gemini, Bedrock, xAI…) — skip; add only if needed
 - ⬛ Key pool + rotation — skip (you use one key)
-- 🟡 Model info / pricing list
-- 🟡 Usage + cost tracking
-- ⬜ Rate-limit handling (slow down when the model says "too fast")
+- 🟡 Model info / pricing list — pricing is now operator-set rates on the provider row (#69); per-model context-window metadata still uses one default
+- ✅ Usage + cost tracking — one LLM Usage Log row per model call, tokens + estimated USD (#69, verified live)
+- ✅ Rate-limit handling — a 429's Retry-After header is honored, capped at 120s (#66)
 
 ## 3. Cleaning the model's output
 *Make raw model text safe and clean before it reaches anyone.*
@@ -121,9 +121,9 @@ yet.** Foundation: solid. Product: barely started.
 
 ## 12. Behind-the-scenes plumbing
 - ⬛ Credential pool / storage — skip (single key)
-- 🟡 Usage + cost accounting
-- ⬜ Rate-limit tracker
-- ⬜ Prompt caching (cuts the model bill on every turn)
+- ✅ Usage + cost accounting (#69 — see §2)
+- ✅ Rate-limit tracker (#66 — see §2)
+- ✅ Prompt caching — Anthropic system-prefix cache_control, ~75% input savings (#68)
 - ⬜ Conversation titles, onboarding, misc helpers
 
 ---
