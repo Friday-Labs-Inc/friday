@@ -12,9 +12,12 @@ agent work happens in the gateway (`friday_core.gateway.service`).
 The CLI's only jobs are:
 
   1. Read a line from the user.
-  2. Write an inbound Chat Message row (this synchronously triggers
-     the gateway via `doc_events.after_insert`).
-  3. Read the outbound Chat Message row the gateway just wrote.
+  2. Write an inbound Chat Message row (this triggers the gateway via
+     `doc_events.after_insert`).
+  3. Wait for the outbound Chat Message row — Gateway v2 (design 55)
+     runs the turn on the DEDICATED friday worker, so the reply lands
+     moments later; the CLI polls for it (inline-fallback replies are
+     found on the very first poll).
   4. Print it to stdout.
   5. Loop.
 
@@ -36,13 +39,16 @@ TWO PUBLIC FUNCTIONS
       `handle_user_message`, prints replies, exits on EOF/Ctrl+D/`exit`.
       The `bench friday chat` command calls this.
 
-WHY WE READ THE OUTBOUND ROW DIRECTLY (not via publish_realtime)
-================================================================
+WHY WE POLL THE OUTBOUND ROW (not subscribe via publish_realtime)
+=================================================================
 
-Per §4 Q2 of the design doc. The "cli" Chat Platform has
-`dispatch_mode="sync"`, so the gateway runs INSIDE the inbound row's
-insert() call. By the time insert() returns, the outbound row exists.
-A direct DB read finishes the round trip with zero extra moving parts.
+Gateway v2 (design 55, Q1): the "cli" Chat Platform dispatches to the
+dedicated friday worker like every other surface; when no worker is
+alive the gateway falls back to inline execution. Either way the reply
+IS a Chat Message row — so the CLI polls for that row (commit-per-poll
+to refresh the long-lived transaction's read snapshot). Inline replies
+appear on the first poll; worker replies a moment later. A socketio
+subscription would add a client dependency for zero UX gain here.
 
 The gateway still fires `publish_realtime("chat.outbound", ...)` so
 future Telegram/Slack/Raven adapters can subscribe to outbound events.
@@ -53,6 +59,7 @@ from __future__ import annotations
 
 import getpass
 import sys
+import time
 import uuid
 
 import frappe
@@ -62,6 +69,13 @@ import frappe
 # Just Works without manual setup.
 CLI_PLATFORM_NAME = "cli"
 CLI_ADAPTER_MODULE = "frappe.friday_core.cli.chat"
+
+# Gateway v2 (design 55): how long the REPL waits for the worker's reply
+# before pointing at the logs, and how often it polls. 180s = an LLM turn
+# with the full retry budget; the worker job itself may run up to 600s,
+# but a CLI user shouldn't sit past three minutes without feedback.
+_REPLY_TIMEOUT_SECONDS = 180
+_REPLY_POLL_INTERVAL_SECONDS = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +91,10 @@ def handle_user_message(profile_name: str, session_id: str, content: str) -> str
 
 	Returns the outbound reply text so the REPL can print it.
 
-	The actual agent work happens in `friday_core.gateway.service.handle_inbound`
-	(which fires synchronously via `doc_events.after_insert` while we're
-	inside `insert()` below). By the time `insert()` returns, the gateway
-	has already written the outbound row.
+	The actual agent work happens in `friday_core.gateway.service`:
+	the after_insert hook routes the row to the dedicated friday worker
+	(or runs it inline as the Q1 fallback). Either way the reply arrives
+	as an outbound Chat Message row, which we wait for below.
 	"""
 	_ensure_cli_platform_record()
 
@@ -90,21 +104,25 @@ def handle_user_message(profile_name: str, session_id: str, content: str) -> str
 		content=content,
 	)
 
-	# Commit so the gateway's outbound write and our subsequent read
-	# both see the consistent state. Frappe defers commits to request
-	# boundaries; in a long-lived CLI we have to commit explicitly.
+	# Commit: (a) makes the inbound row visible to the friday worker, and
+	# (b) fires the gateway's enqueue_after_commit job push. In a long-
+	# lived CLI we must commit explicitly (Frappe defers to request
+	# boundaries otherwise).
 	frappe.db.commit()
 
-	# The gateway ran sync during insert() above and wrote the outbound
-	# row. Read it back. Filter by session + direction + "created after
-	# our inbound" so we always pick THIS turn's outbound, not a prior
-	# one in the same session.
-	outbound_content = _read_latest_outbound(session_id, after_creation=inbound.creation)
+	# Wait for THIS turn's outbound row (created after our inbound).
+	# Inline-fallback replies exist already and are found on the first
+	# poll; worker replies land a moment later.
+	outbound_content = _wait_for_outbound(session_id, after_creation=inbound.creation)
 	if outbound_content is None:
-		# Shouldn't happen — the gateway always writes either a real
-		# reply or a system-error outbound. If we somehow got here,
-		# surface a clear error.
-		return "(no reply was produced — check the Frappe Error Log)"
+		# Timed out — the worker may be stuck or dead mid-turn. The
+		# recovery sweeper will retry the orphan row; tell the user
+		# where to look meanwhile.
+		return (
+			"(no reply after "
+			f"{_REPLY_TIMEOUT_SECONDS}s — the friday worker may be busy or down; "
+			"check `bench worker --queue friday` and the Frappe Error Log)"
+		)
 	return outbound_content
 
 
@@ -172,8 +190,11 @@ def _ensure_cli_platform_record() -> None:
 	require an install step, we check-and-create on the first chat
 	turn. Subsequent turns find it and skip.
 
-	The "cli" record has `dispatch_mode="sync"` so the gateway runs
-	in-line with the inbound row's insert() call.
+	Gateway v2 (design 55, Q1): the "cli" record dispatches "async" — the
+	turn runs on the dedicated friday worker like every other surface,
+	with the gateway's automatic inline fallback when no worker is alive.
+	("sync" remains available as an explicit operator/test override on
+	the Chat Platform row.)
 	"""
 	if frappe.db.exists("Chat Platform", CLI_PLATFORM_NAME):
 		return
@@ -183,7 +204,7 @@ def _ensure_cli_platform_record() -> None:
 			"platform_name": CLI_PLATFORM_NAME,
 			"adapter_module": CLI_ADAPTER_MODULE,
 			"enabled": 1,
-			"dispatch_mode": "sync",
+			"dispatch_mode": "async",
 			# CLI doesn't use the default — `--profile` is always provided.
 			"default_agent_profile": None,
 			# CLI doesn't batch — flush immediately. (Field unused by the
@@ -196,9 +217,9 @@ def _ensure_cli_platform_record() -> None:
 def _write_inbound(profile_name: str, session_id: str, content: str):
 	"""Insert one inbound Chat Message row. Returns the inserted doc.
 
-	The gateway's `doc_events.after_insert` hook fires synchronously
-	inside this call (because the platform's dispatch_mode is "sync").
-	By the time this returns, the outbound row already exists.
+	The gateway's `doc_events.after_insert` hook fires inside this call
+	and routes the row (friday worker, or inline fallback). The reply is
+	an outbound row that `_wait_for_outbound` picks up.
 
 	`ignore_permissions=True` for the same reason the gateway uses it:
 	this is system plumbing recording its own state.
@@ -218,6 +239,30 @@ def _write_inbound(profile_name: str, session_id: str, content: str):
 	)
 	doc.insert(ignore_permissions=True)
 	return doc
+
+
+def _wait_for_outbound(
+	session_id: str,
+	after_creation,
+	timeout: float = _REPLY_TIMEOUT_SECONDS,
+) -> str | None:
+	"""Poll for this turn's outbound row until it appears or `timeout` passes.
+
+	Gateway v2: the reply may be written by the dedicated friday worker in
+	a different process/transaction. Each poll COMMITS first — a long-lived
+	CLI transaction would otherwise keep reading a stale snapshot and never
+	see the worker's row. Inline-fallback replies are found on poll #1
+	(zero added latency vs the old sync read).
+	"""
+	deadline = time.monotonic() + timeout
+	while True:
+		frappe.db.commit()  # refresh this transaction's read snapshot
+		content = _read_latest_outbound(session_id, after_creation)
+		if content is not None:
+			return content
+		if time.monotonic() >= deadline:
+			return None
+		time.sleep(_REPLY_POLL_INTERVAL_SECONDS)
 
 
 def _read_latest_outbound(session_id: str, after_creation) -> str | None:

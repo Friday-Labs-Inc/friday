@@ -20,16 +20,20 @@ What it does, in order:
   2. Skip if `agent_profile` is empty (adapter contract violation —
      write a clean validation error rather than crash).
   3. Look up the `Chat Platform` row to read `dispatch_mode`.
-     - "sync" → run the pipeline in-line, this process (CLI path).
-     - "async" → enqueue an RQ job, return immediately (webhook path).
+     - "sync"  → run the pipeline in-line, this process (explicit
+       operator/test override — deterministic, no worker needed).
+     - "async" (the default) → Gateway v2 (design 55): enqueue to the
+       DEDICATED `friday` queue, processed by `bench worker --queue
+       friday`. If no friday worker is alive, fall back to inline
+       execution with a logged warning (Q1) so nothing ever hangs.
   4. The pipeline itself (`_run_pipeline`):
      a. dedup check (stub today — `is_duplicate` always returns False)
      b. acquire per-session Redis lock with 30s wait timeout
      c. flush_batch (stub today — returns [content] unchanged)
      d. permissions.matrix.check (Slice 2) — gates the action
-     e. skills.loader.load_for_profile (Slice 3) — built but currently
-        unused in the stub agent; ready for Slice 5/6
-     f. agent_runner.run_turn (stub: tool menu + echo)
+     e. skills.loader.load_for_profile (Slice 3) — loaded per-profile
+     f. agent_runner.run_turn — the full ReAct engine (loop → permission-
+        checked dispatch → audited skills; see agent_runner/runner.py)
      g. write outbound Chat Message row
      h. publish_realtime("chat.outbound", ...) for future subscribers
      i. mark inbound.processed = 1
@@ -64,8 +68,55 @@ _SESSION_LOCK_WAIT_SECONDS = 30  # max time a second inbound waits for the lock
 
 # The realtime event name. Future subscribers — Telegram adapter, Slack
 # adapter, Raven, etc. — subscribe to this. CLI does not subscribe; it
-# reads the outbound row directly after insert() returns.
+# polls for the outbound row (see cli/chat.py _wait_for_outbound).
 _OUTBOUND_REALTIME_EVENT = "chat.outbound"
+
+# Gateway v2 (design 55, LOCKED): the dedicated queue + its job timeout.
+# The timeout covers the engine's worst case — LLM retry budget (~97s),
+# sandbox runs, approval writes (Q2). The queue is defined bench-side in
+# common_site_config.json `workers.friday`; the worker is
+# `bench worker --queue friday` (one Procfile line in dev, N under
+# supervisor in production).
+FRIDAY_QUEUE = "friday"
+FRIDAY_JOB_TIMEOUT_SECONDS = 600
+
+
+def _friday_worker_alive() -> bool:
+	"""True when at least one worker is consuming the friday queue (Q1).
+
+	Any failure here (queue not configured on this bench, redis hiccup)
+	counts as "no worker" — the router then falls back to inline
+	execution, which always works. The fallback is what keeps
+	`friday chat` usable in a bare dev shell and tests deterministic in CI.
+	"""
+	try:
+		from frappe.utils.background_jobs import get_queue, get_workers
+
+		return len(get_workers(get_queue(FRIDAY_QUEUE))) > 0
+	except Exception:  # noqa: BLE001 — any infra failure means "use inline"
+		return False
+
+
+def _enqueue_pipeline(row_name: str, lock_retry: int) -> None:
+	"""Enqueue one pipeline run on the dedicated queue and stamp the row.
+
+	- `job_id` is deterministic (`friday-gw::<row>::lock<n>`) and written
+	  onto the Chat Message row, so any turn can be traced to the exact
+	  queue job that ran it (Q6).
+	- `enqueue_after_commit=True` closes the race where a worker grabs
+	  the job before the inserting transaction has committed the row.
+	"""
+	job_id = f"friday-gw::{row_name}::lock{lock_retry}"
+	frappe.enqueue(
+		"frappe.friday_core.gateway.service.run_pipeline_for_row",
+		row_name=row_name,
+		lock_retry=lock_retry,
+		queue=FRIDAY_QUEUE,
+		timeout=FRIDAY_JOB_TIMEOUT_SECONDS,
+		job_id=job_id,
+		enqueue_after_commit=True,
+	)
+	frappe.db.set_value("Chat Message", row_name, "job_id", job_id, update_modified=False)
 
 
 # ---------------------------------------------------------------------------
@@ -105,36 +156,44 @@ def handle_inbound(doc, method=None) -> None:
 
 	dispatch_mode = _get_dispatch_mode(platform)
 
-	if dispatch_mode == "async":
-		# Enqueue a Frappe RQ job. The job picks up the row by name and
-		# re-runs the pipeline in a worker. The webhook returns 200
-		# immediately so Telegram/Slack don't time out.
-		frappe.enqueue(
-			"frappe.friday_core.gateway.service.run_pipeline_for_row",
-			row_name=doc.name,
-			queue="default",
-			timeout=300,  # five minutes for the agent run
-		)
+	# Explicit override: "sync" forces inline execution in this process.
+	# Used by tests (deterministic, no worker needed) and as an operator
+	# emergency hatch. Everything else takes the worker path.
+	if dispatch_mode == "sync":
+		_run_pipeline(doc)
 		return
 
-	# Sync mode (CLI default). Run the pipeline right here, inside the
-	# inbound row's transaction. Outbound row exists by the time
-	# insert() returns to the CLI.
+	# Gateway v2 (design 55, Q1): the default path for EVERY surface is
+	# the dedicated friday worker. The webhook/CLI caller returns
+	# immediately; the worker runs the turn. Inline fallback when no
+	# friday worker is alive, so nothing ever hangs waiting on a queue
+	# nobody is consuming.
+	if _friday_worker_alive():
+		_enqueue_pipeline(doc.name, lock_retry=0)
+		return
+
+	frappe.logger("friday.gateway").warning(
+		"No friday worker alive — running the pipeline inline as fallback. "
+		"Start the dedicated worker with: bench worker --queue friday"
+	)
 	_run_pipeline(doc)
 
 
-def run_pipeline_for_row(row_name: str) -> None:
-	"""RQ job entrypoint for async dispatch.
+def run_pipeline_for_row(row_name: str, lock_retry: int = 0) -> None:
+	"""RQ job entrypoint — what the dedicated friday worker executes.
 
 	Loads the Chat Message row by name and runs the same pipeline the
-	sync path runs. Used by Telegram/Slack/A2A webhooks (when those
-	land) and by the recovery sweeper for orphan retries.
+	inline path runs. Used by the router's worker dispatch, the recovery
+	sweeper's orphan retries, and the Q3 busy-requeue.
+
+	`lock_retry` counts session-lock attempts (0 = first try; 1 = the one
+	requeue design 55 Q3 allows before the busy message).
 	"""
 	doc = frappe.get_doc("Chat Message", row_name)
 	if doc.processed:
 		# Already handled by an earlier successful run. Idempotent skip.
 		return
-	_run_pipeline(doc)
+	_run_pipeline(doc, in_worker=True, lock_retry=lock_retry)
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +201,17 @@ def run_pipeline_for_row(row_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_pipeline(inbound) -> None:
-	"""The same code for sync and async dispatch.
+def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None:
+	"""The same code for worker and inline dispatch.
 
 	Executes steps 1–10 from the module docstring. Acquires the session
 	lock for the duration. Always writes either an outbound reply or a
 	system-error outbound — never leaves the user hanging.
+
+	`in_worker`/`lock_retry` drive the Q3 busy behaviour: in a worker, a
+	first lock failure requeues once (a fresh job waits a fresh lock
+	window) before giving the busy message; inline runs keep the
+	immediate busy message (there's no queue to wait on).
 	"""
 	session_id = inbound.session_id
 	profile_name = inbound.agent_profile
@@ -170,8 +234,16 @@ def _run_pipeline(inbound) -> None:
 	acquired = lock.acquire(blocking=True)
 	if not acquired:
 		# Couldn't get the lock within the wait window — another turn
-		# for the same session is still running. Write a busy outbound
-		# so the user gets a clear signal.
+		# for the same session is still running.
+		if in_worker and lock_retry == 0:
+			# Q3 (design 55): requeue ONCE — the fresh job waits another
+			# full lock window before we give up, so a burst feels
+			# queued rather than rejected. The row stays processed=0;
+			# the requeued job (or the recovery sweeper) owns it now.
+			_enqueue_pipeline(inbound.name, lock_retry=1)
+			return
+		# Inline run, or the one requeue already spent: write a busy
+		# outbound so the user gets a clear signal.
 		_write_outbound(
 			inbound,
 			content="(session is busy with another message — please try again in a moment)",

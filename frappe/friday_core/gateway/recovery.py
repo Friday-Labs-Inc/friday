@@ -109,7 +109,20 @@ def sweep_orphans() -> dict:
 
 
 def _reenqueue(row_name: str, new_retry_count: int) -> None:
-	"""Bump retry_count and enqueue another pipeline run."""
+	"""Bump retry_count and enqueue another pipeline run.
+
+	Gateway v2 (design 55): retries go to the DEDICATED friday queue with
+	the same timeout the router uses — orphan recovery must not land agent
+	turns back on the shared default queue. Falls back to inline execution
+	when no friday worker is alive (same Q1 fallback as the router).
+	"""
+	from frappe.friday_core.gateway.service import (
+		FRIDAY_JOB_TIMEOUT_SECONDS,
+		FRIDAY_QUEUE,
+		_friday_worker_alive,
+		run_pipeline_for_row,
+	)
+
 	frappe.db.set_value(
 		"Chat Message",
 		row_name,
@@ -117,12 +130,15 @@ def _reenqueue(row_name: str, new_retry_count: int) -> None:
 		update_modified=False,
 	)
 	frappe.db.commit()
-	frappe.enqueue(
-		"frappe.friday_core.gateway.service.run_pipeline_for_row",
-		row_name=row_name,
-		queue="default",
-		timeout=300,
-	)
+	if _friday_worker_alive():
+		frappe.enqueue(
+			"frappe.friday_core.gateway.service.run_pipeline_for_row",
+			row_name=row_name,
+			queue=FRIDAY_QUEUE,
+			timeout=FRIDAY_JOB_TIMEOUT_SECONDS,
+		)
+	else:
+		run_pipeline_for_row(row_name)
 
 
 def _give_up(row_name: str) -> None:
