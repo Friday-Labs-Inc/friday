@@ -65,7 +65,7 @@ from typing import Any, TypedDict
 import frappe
 import requests
 
-from frappe.friday_core.llm.error_classifier import classify_api_error
+from frappe.friday_core.llm.error_classifier import FailoverReason, classify_api_error
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -91,6 +91,26 @@ class LLMAuthError(LLMError):
     """Raised on 401 — invalid or missing API key."""
 
     pass
+
+
+def _retry_after_seconds(response: Any) -> float | None:
+    """Parse a 429 response's `Retry-After` header into a capped wait, or None.
+
+    Ported from Hermes (conversation_loop.py rate-limit handling): respect the
+    provider's `Retry-After` on a 429, capped at 120s. Only the integer-seconds
+    form is parsed; an HTTP-date form (rare) raises on `float()` → returns None,
+    so the caller falls back to exponential backoff.
+    """
+    headers = getattr(response, "headers", None)
+    if not headers or not hasattr(headers, "get"):
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return min(float(raw), 120)
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +213,14 @@ class LLMProvider(ABC):
                     f"Check the API key in the LLM Provider DocType."
                 )
             if classified.retryable and attempt < self.MAX_RETRIES - 1:
-                time.sleep(2 ** attempt)
+                # Respect Retry-After on a 429 (capped 120s), else exponential
+                # backoff. Ported from Hermes' rate-limit handling.
+                wait = (
+                    _retry_after_seconds(response)
+                    if classified.reason is FailoverReason.rate_limit
+                    else None
+                )
+                time.sleep(wait if wait is not None else 2 ** attempt)
                 continue
             raise LLMError(
                 f"{self.PROVIDER_NAME} call failed: {classified.reason.value} "

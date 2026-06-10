@@ -269,6 +269,49 @@ class TestMinimaxProviderChat(unittest.TestCase):
         # 3 attempts for 429
         self.assertEqual(mock_post.call_count, 3)
 
+    @patch("frappe.friday_core.llm.provider.time.sleep")
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_429_respects_retry_after_header(self, mock_post: MagicMock, mock_sleep: MagicMock):
+        """A 429 with Retry-After waits the header value (seconds), not backoff."""
+        r429 = MagicMock(status_code=429)
+        r429.headers = {"Retry-After": "5"}
+        r200 = MagicMock(status_code=200, json=lambda: {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {},
+        })
+        mock_post.side_effect = [r429, r200]
+
+        result = self._make_provider().chat(messages=[{"role": "user", "content": "hi"}])
+        self.assertEqual(result["content"], "ok")
+        mock_sleep.assert_called_once_with(5.0)  # the header, not 2**0 backoff
+
+    @patch("frappe.friday_core.llm.provider.time.sleep")
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_429_caps_retry_after_at_120(self, mock_post: MagicMock, mock_sleep: MagicMock):
+        """An absurd Retry-After is capped at 120s (Hermes' cap)."""
+        r429 = MagicMock(status_code=429)
+        r429.headers = {"Retry-After": "999"}
+        r200 = MagicMock(status_code=200, json=lambda: {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {},
+        })
+        mock_post.side_effect = [r429, r200]
+
+        self._make_provider().chat(messages=[{"role": "user", "content": "hi"}])
+        mock_sleep.assert_called_once_with(120)
+
+    @patch("frappe.friday_core.llm.provider.time.sleep")
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_chat_429_without_header_uses_backoff(self, mock_post: MagicMock, mock_sleep: MagicMock):
+        """No Retry-After → fall back to exponential backoff (2**attempt)."""
+        r429 = MagicMock(status_code=429)
+        r429.headers = {}
+        r200 = MagicMock(status_code=200, json=lambda: {
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {},
+        })
+        mock_post.side_effect = [r429, r200]
+
+        self._make_provider().chat(messages=[{"role": "user", "content": "hi"}])
+        mock_sleep.assert_called_once_with(1)  # 2**0 on the first retry
+
     @patch("frappe.friday_core.llm.provider.requests.post")
     def test_chat_retries_on_500(self, mock_post: MagicMock):
         """500/502/503 triggers retry up to 3 times before raising."""
