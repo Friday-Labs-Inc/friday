@@ -55,6 +55,7 @@ from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.prompt_builder import build
 from frappe.friday_core.llm.reasoning import strip_reasoning
+from frappe.friday_core.llm.usage import record_usage
 from frappe.friday_core.skills.loader import load_for_profile
 
 # A.1 — the loop is capped at 15 think/act cycles per turn. A module constant
@@ -142,6 +143,15 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 		# reasoning/tool fields can carry them too (Hermes sanitizes pre-call).
 		sanitize_messages_surrogates(messages)
 		response = provider.chat(messages=messages, tools=tools, model=model)
+		# Usage accounting — one LLM Usage Log row per call (tokens + estimated
+		# cost). record_usage never raises; a logging failure can't break a turn.
+		record_usage(
+			profile_name=profile_name,
+			session_id=session_id,
+			provider=provider,
+			model=model or provider.get_default_model(),
+			usage=response.get("usage") or {},
+		)
 		# Strip reasoning/<think> blocks before `content` is used as the reply
 		# OR appended to history — reasoning models (e.g. MiniMax-M2) leak their
 		# chain-of-thought, which must not reach the user or pollute context.
