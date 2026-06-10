@@ -447,8 +447,8 @@ class AnthropicProvider(LLMProvider):
         sees the canonical flat `{id, name, arguments}` shape (B2.2).
       - **max_tokens**: required by Anthropic — defaulted when the row omits it.
 
-    Out of scope for v0.1 (B2.4): prompt caching, extended thinking, the
-    1M-context beta, vision.
+    Out of scope for v0.1 (B2.4): extended thinking, the 1M-context beta, vision.
+    (Prompt caching IS now applied — see `_apply_anthropic_cache_control`.)
     """
 
     PROVIDER_NAME = "anthropic"
@@ -488,6 +488,9 @@ class AnthropicProvider(LLMProvider):
         }
 
         system, anthropic_messages = _to_anthropic_messages(messages)
+        # Prompt caching (B2.4, now in scope): mark the system prefix + recent
+        # messages with cache_control so Anthropic caches them across a session.
+        system, anthropic_messages = _apply_anthropic_cache_control(system, anthropic_messages)
         payload: dict[str, Any] = {
             "model": model,
             "messages": anthropic_messages,
@@ -665,6 +668,39 @@ def _to_anthropic_tools(tools: list[dict]) -> list[dict]:
             }
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Anthropic prompt caching (port of Hermes agent/prompt_caching.py)
+# ---------------------------------------------------------------------------
+
+
+def _cache_marker(ttl: str) -> dict:
+    """Build an Anthropic cache_control marker for the TTL ('5m' or '1h')."""
+    return {"type": "ephemeral", "ttl": "1h"} if ttl == "1h" else {"type": "ephemeral"}
+
+
+def _apply_anthropic_cache_control(
+    system: str, messages: list[dict], ttl: str = "5m"
+) -> tuple[Any, list[dict]]:
+    """Mark the system prefix with cache_control (Anthropic prompt caching).
+
+    In Anthropic's request order (tools → system → messages), a cache_control
+    breakpoint on the `system` param caches the entire static prefix
+    [tools + system] — the bulk of repeated input tokens, ~75% input savings
+    across a session.
+
+    DIVERGENCE (disclosed) from Hermes' `system_and_3`: Hermes also places
+    breakpoints on the last 3 messages for incremental *history* caching. Friday
+    caches the static prefix only for v0.1 (cleaner, and it's the bulk of the
+    win); the per-message breakpoints are deferred. `messages` is unchanged.
+
+    Returns `(system, messages)` — `system` becomes a 1-element text-block list
+    when non-empty, else the original (empty) string.
+    """
+    if not system:
+        return system, messages
+    return [{"type": "text", "text": system, "cache_control": _cache_marker(ttl)}], messages
 
 
 # ---------------------------------------------------------------------------

@@ -90,7 +90,10 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 			{"role": "user", "content": "hi"},
 		])
 		sent = _sent(mock_post)
-		self.assertEqual(sent["system"], "You are Friday.")
+		# With prompt caching the system param is a 1-element text-block list
+		# (the block carries the cache_control marker — asserted separately).
+		self.assertEqual(sent["system"][0]["type"], "text")
+		self.assertEqual(sent["system"][0]["text"], "You are Friday.")
 		# system must NOT remain inside messages
 		self.assertEqual([m["role"] for m in sent["messages"]], ["user"])
 
@@ -183,6 +186,40 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 			"description": "Make a note",
 			"input_schema": {"type": "object", "properties": {"title": {"type": "string"}}},
 		}])
+
+
+class TestAnthropicPromptCaching(unittest.TestCase):
+	"""Prompt caching (port of Hermes prompt_caching, system-prefix scope)."""
+
+	@patch(_POST)
+	def test_system_carries_ephemeral_cache_control(self, mock_post):
+		mock_post.return_value = _ok()
+		_p().chat(messages=[
+			{"role": "system", "content": "You are Friday."},
+			{"role": "user", "content": "hi"},
+		])
+		sent = _sent(mock_post)
+		self.assertEqual(sent["system"][0]["cache_control"], {"type": "ephemeral"})
+
+	@patch(_POST)
+	def test_no_system_means_no_system_param_and_no_marker(self, mock_post):
+		mock_post.return_value = _ok()
+		_p().chat(messages=[{"role": "user", "content": "hi"}])
+		sent = _sent(mock_post)
+		self.assertNotIn("system", sent)
+
+	@patch(_POST)
+	def test_messages_are_not_polluted_with_cache_markers(self, mock_post):
+		# v0.1 caches the static prefix only — history messages stay untouched.
+		mock_post.return_value = _ok()
+		_p().chat(messages=[
+			{"role": "system", "content": "You are Friday."},
+			{"role": "user", "content": "hi"},
+			{"role": "assistant", "content": "hello"},
+			{"role": "user", "content": "again"},
+		])
+		for msg in _sent(mock_post)["messages"]:
+			self.assertNotIn("cache_control", json.dumps(msg))
 
 
 class TestAnthropicResponseTranslation(unittest.TestCase):
