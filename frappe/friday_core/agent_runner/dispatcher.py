@@ -482,6 +482,11 @@ def _handle_create_note(skill_name: str, parameters: dict) -> dict:
 # Register the handler.
 register_skill_handler("slice6-create-note", _handle_create_note)
 
+# Business-skill handlers register themselves on import (design 56). Imported
+# at the BOTTOM so `register_skill_handler` above already exists when the
+# module's import-time registration runs.
+from frappe.friday_core.skills import handlers_brand as _handlers_brand  # noqa: E402,F401
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers

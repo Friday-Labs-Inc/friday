@@ -1,0 +1,109 @@
+{
+    "actions": [],
+    "autoname": "format:BB-{####}",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "business_name",
+        "industry",
+        "status",
+        "what_they_do",
+        "target_audience",
+        "brand_personality",
+        "competitors",
+        "color_preferences",
+        "inspirations",
+        "notes"
+    ],
+    "fields": [
+        {
+            "description": "The client's business or product name.",
+            "fieldname": "business_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Business Name",
+            "reqd": 1
+        },
+        {
+            "description": "Industry / market the client operates in.",
+            "fieldname": "industry",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Industry"
+        },
+        {
+            "default": "Draft",
+            "description": "Draft = still being filled in. Ready = the agent may generate from it. Directions Generated = the agent has produced Brand Direction records for it.",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Draft\nReady\nDirections Generated"
+        },
+        {
+            "description": "What the business does, in the client's own words.",
+            "fieldname": "what_they_do",
+            "fieldtype": "Small Text",
+            "label": "What They Do"
+        },
+        {
+            "description": "Who the brand needs to speak to (age, role, market, mindset).",
+            "fieldname": "target_audience",
+            "fieldtype": "Small Text",
+            "label": "Target Audience"
+        },
+        {
+            "description": "Vibe words from the questionnaire — e.g. 'bold, playful, premium' or 'calm, clinical, trustworthy'.",
+            "fieldname": "brand_personality",
+            "fieldtype": "Small Text",
+            "label": "Brand Personality"
+        },
+        {
+            "description": "Competitors the client named (what to stand apart from).",
+            "fieldname": "competitors",
+            "fieldtype": "Small Text",
+            "label": "Competitors"
+        },
+        {
+            "description": "Colors the client likes or explicitly hates.",
+            "fieldname": "color_preferences",
+            "fieldtype": "Small Text",
+            "label": "Color Preferences"
+        },
+        {
+            "description": "Brands, sites, or visuals the client pointed to as inspiration.",
+            "fieldname": "inspirations",
+            "fieldtype": "Small Text",
+            "label": "Inspirations"
+        },
+        {
+            "description": "Anything else from the questionnaire that doesn't fit above.",
+            "fieldname": "notes",
+            "fieldtype": "Text",
+            "label": "Notes"
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Brand Brief",
+    "naming_rule": "Expression (old style)",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}
