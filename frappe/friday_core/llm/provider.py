@@ -128,6 +128,13 @@ class LLMProvider(ABC):
     TIMEOUT_SECONDS = 30
     MAX_RETRIES = 3
 
+    # Per-million-token rates from the LLM Provider row, attached by
+    # `_build_provider` after construction (class-level None defaults keep
+    # directly-constructed instances, e.g. in tests, working). Consumed by
+    # `llm/usage.py::record_usage` for cost estimation.
+    input_cost_per_million: float | None = None
+    output_cost_per_million: float | None = None
+
     @abstractmethod
     def chat(
         self,
@@ -762,32 +769,39 @@ def _build_provider(provider_row: dict) -> LLMProvider:
     default_max_tokens = provider_row.get("default_max_tokens")
     default_temperature = provider_row.get("default_temperature")
 
+    def _with_pricing(provider: LLMProvider) -> LLMProvider:
+        # Attach the row's per-million rates for usage/cost recording
+        # (llm/usage.py). Instance attrs shadow the class-level None defaults.
+        provider.input_cost_per_million = provider_row.get("input_cost_per_million") or None
+        provider.output_cost_per_million = provider_row.get("output_cost_per_million") or None
+        return provider
+
     if provider_type == "minimax":
-        return MinimaxProvider(
+        return _with_pricing(MinimaxProvider(
             api_key=api_key,
             default_model=default_model,
             base_url=base_url,
             default_max_tokens=default_max_tokens,
             default_temperature=default_temperature,
-        )
+        ))
 
     if provider_type == "openai":
-        return OpenAIProvider(
+        return _with_pricing(OpenAIProvider(
             api_key=api_key,
             default_model=default_model,
             base_url=base_url,
             default_max_tokens=default_max_tokens,
             default_temperature=default_temperature,
-        )
+        ))
 
     if provider_type == "anthropic":
-        return AnthropicProvider(
+        return _with_pricing(AnthropicProvider(
             api_key=api_key,
             default_model=default_model,
             base_url=base_url,
             default_max_tokens=default_max_tokens,
             default_temperature=default_temperature,
-        )
+        ))
 
     raise LLMError(f"Unsupported provider_type {provider_type!r}")
 

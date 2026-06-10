@@ -12,7 +12,9 @@
         "base_url",
         "default_model",
         "default_max_tokens",
-        "default_temperature"
+        "default_temperature",
+        "input_cost_per_million",
+        "output_cost_per_million"
     ],
     "fields": [
         {
@@ -72,6 +74,20 @@
             "fieldtype": "Float",
             "label": "Default Temperature",
             "description": "Sampling temperature. 0.0 = deterministic, 2.0 = very random. Typical range: 0.0–1.0."
+        },
+        {
+            "fieldname": "input_cost_per_million",
+            "fieldtype": "Float",
+            "label": "Input Cost per 1M Tokens (USD)",
+            "precision": "6",
+            "description": "Operator-set rate used to compute LLM Usage Log.estimated_cost. Leave blank to skip cost estimation. (Hermes derives rates from a bundled pricing dataset; Friday keeps them on the provider row.)"
+        },
+        {
+            "fieldname": "output_cost_per_million",
+            "fieldtype": "Float",
+            "label": "Output Cost per 1M Tokens (USD)",
+            "precision": "6",
+            "description": "Operator-set rate for output/completion tokens. Leave blank to skip cost estimation."
         }
     ],
     "links": [],
