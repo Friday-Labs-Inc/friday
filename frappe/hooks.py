@@ -220,7 +220,18 @@ doc_events = {
 		# The Friday gateway chokepoint — every inbound message from any
 		# surface (CLI, Telegram, Slack, Raven, A2A) hits this hook.
 		# See docs/design/47-gateway-design-decisions.md.
-		"after_insert": "frappe.friday_core.gateway.service.handle_inbound",
+		# The raven adapter posts outbound rows back into Raven (design 58);
+		# it returns immediately for everything non-raven/non-outbound.
+		"after_insert": [
+			"frappe.friday_core.gateway.service.handle_inbound",
+			"frappe.friday_core.surfaces.raven_adapter.handle_outbound_to_raven",
+		],
+	},
+	"Raven Message": {
+		# The Raven surface (design 58): human DMs/@mentions become inbound
+		# Chat Message rows. Only ever fires when the Raven app is installed
+		# (no Raven Message documents exist otherwise).
+		"after_insert": "frappe.friday_core.surfaces.raven_adapter.handle_raven_message",
 	},
 	"Task": {
 		# Slice 8 — task workflow state machine.  Derives dispatchable,

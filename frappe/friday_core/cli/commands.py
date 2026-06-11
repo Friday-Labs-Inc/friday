@@ -130,6 +130,71 @@ def setup(context, provider_type, default_model, provider_name, profile_name, ap
 			frappe.destroy()
 
 
+@click.command("setup-raven")
+@click.option("--profile", default="Friday", help="Agent Profile the Raven bot answers as.")
+@click.option(
+	"--install",
+	is_flag=True,
+	help="If Raven is missing, run `bench get-app raven` + `install-app` + `migrate` first.",
+)
+@pass_context
+def setup_raven(context, profile, install):
+	"""Provision the Raven chat surface: bot, War Room channel, platform wiring.
+
+	Raven stays a separate upstream app (design 58 Q1 — never bundled);
+	this command automates its install (--install) and seeds everything
+	Friday needs on top of it. Idempotent.
+
+	Example:
+
+	    bench --site friday.localhost friday setup-raven --install
+	"""
+	import subprocess
+
+	import frappe
+	from frappe.utils import get_bench_path
+
+	for site in context.sites:
+		frappe.init(site=site)
+		frappe.connect()
+		try:
+			raven_installed = "raven" in frappe.get_installed_apps()
+			if not raven_installed:
+				if not install:
+					click.echo(
+						"Raven is not installed on this site. Either re-run with "
+						"--install, or run manually:\n"
+						"  bench get-app https://github.com/The-Commit-Company/raven\n"
+						f"  bench --site {site} install-app raven"
+					)
+					raise SystemExit(1)
+				bench_path = get_bench_path()
+				frappe.destroy()  # release the DB connection before bench subcommands
+				click.echo("Installing Raven (get-app → install-app → migrate)…")
+				subprocess.run(
+					["bench", "get-app", "https://github.com/The-Commit-Company/raven", "--skip-assets"],
+					cwd=bench_path,
+					check=False,  # already-cloned is fine
+				)
+				subprocess.run(["bench", "--site", site, "install-app", "raven"], cwd=bench_path, check=False)
+				# migrate finishes the doctype sync even if install-app tripped
+				# (observed on Postgres); it is idempotent and cheap.
+				subprocess.run(["bench", "--site", site, "migrate"], cwd=bench_path, check=True)
+				click.echo("Note: run `bench build --app raven` once for the chat UI assets.")
+				frappe.init(site=site)
+				frappe.connect()
+
+			from frappe.friday_core.surfaces.bootstrap_raven import provision
+
+			summary = provision(profile)
+			click.echo(
+				f"\n✓ Raven surface ready. Open Raven and DM the "
+				f"'{summary['bot']}' bot, or @mention it in a channel."
+			)
+		finally:
+			frappe.destroy()
+
+
 @click.group("friday")
 def friday():
 	"""Friday agent framework — interactive and administrative commands."""
@@ -138,6 +203,7 @@ def friday():
 
 friday.add_command(chat)
 friday.add_command(setup)
+friday.add_command(setup_raven)
 
 # Frappe's command loader reads this `commands` symbol from the module
 # named in `hooks.py`. Each item is a click Command or Group; we expose
