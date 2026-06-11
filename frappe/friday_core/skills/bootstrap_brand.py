@@ -181,7 +181,7 @@ def _wire_profile(profile_name: str) -> None:
 	"""Assign the role + permit both skills on the profile (append-if-missing)."""
 	if not frappe.db.exists("Agent Profile", profile_name):
 		frappe.throw(
-			f"Agent Profile {profile_name!r} not found — run `bench friday setup` first."
+			frappe._("Agent Profile {0} not found — run `bench friday setup` first.").format(profile_name)
 		)
 	profile = frappe.get_doc("Agent Profile", profile_name)
 
