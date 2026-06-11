@@ -137,9 +137,12 @@ def _post_warroom(task_name: str, event: str, details: dict = None) -> None:
 	if warroom is None:
 		return
 	try:
+		# Savepoint: see workflow._post_warroom_update — a failed post must
+		# not abort the surrounding Postgres transaction.
+		frappe.db.savepoint("friday_warroom")
 		warroom.post_task_update(task_name, event, details)
 	except Exception:
-		pass
+		frappe.db.rollback(save_point="friday_warroom")
 
 
 def _raise_failure_issue(

@@ -316,6 +316,15 @@ def dispatch(
                 tool_call_id=tool_call_id,
             )
 
+        # Expose the dispatch context to handlers that need to know WHO is
+        # calling (e.g. delegate-task's depth guard reads the parent session).
+        # Overwritten at every dispatch — a nested child turn's dispatches set
+        # their own context, which is exactly the semantics the guard needs.
+        frappe.flags.friday_dispatch_context = {
+            "agent_profile": agent_profile,
+            "session_id": session_id,
+        }
+
         creds = resolve_credentials(agent_profile, skill_name)
         outcome = _execute_sandboxed(
             skill_name=skill_name,
@@ -486,6 +495,7 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 # at the BOTTOM so `register_skill_handler` above already exists when the
 # module's import-time registration runs.
 from frappe.friday_core.skills import handlers_brand as _handlers_brand  # noqa: E402,F401
+from frappe.friday_core.skills import handlers_delegate as _handlers_delegate  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------

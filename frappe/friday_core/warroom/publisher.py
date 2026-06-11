@@ -92,10 +92,15 @@ def _is_raven_installed() -> bool:
 	installed apps' schema (i.e. the Raven app is installed on this site).
 	"""
 	try:
-		return bool(frappe.db.exists(CHANNEL_DOCTYPE, {"name": ["like", "%"]}, cache=True))
+		# Check via the table catalogue (information_schema), NOT by querying
+		# the table itself. The old probe issued `SELECT ... FROM "tabRaven
+		# Channel"` — when the table is absent that statement FAILS, and on
+		# Postgres a failed statement ABORTS the surrounding transaction even
+		# though the exception is caught here ("graceful" on MariaDB,
+		# transaction-poisoning on Postgres: every later statement dies with
+		# InFailedSqlTransaction).
+		return frappe.db.table_exists(CHANNEL_DOCTYPE)
 	except Exception:
-		# Frappe raises `frappe.exceptions.ValidationError` if the doctype
-		# does not exist at all — treat that as "not installed".
 		return False
 
 

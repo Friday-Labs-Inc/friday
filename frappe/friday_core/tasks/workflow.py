@@ -60,8 +60,19 @@ def on_state_change(doc: "Task", method: str) -> None:
 	if doc.has_value_changed("workflow_state"):
 		_watch_transition(doc)
 
-	# Persist the updated dispatchable flag inside the same transaction.
-	doc.save(ignore_permissions=True)
+	# Persist the derived/side-effect fields WITHOUT doc.save(): this function
+	# runs ON on_update, so save() here re-fires on_update → this function →
+	# save() → RecursionError. db_set writes the columns directly and fires no
+	# document hooks (the Frappe idiom for persisting from inside a hook).
+	doc.db_set(
+		{
+			"dispatchable": 1 if doc.dispatchable else 0,
+			"started_at": doc.started_at,
+			"completed_at": doc.completed_at,
+			"assigned_to_profile": doc.assigned_to_profile,
+		},
+		update_modified=False,
+	)
 
 
 def _watch_transition(doc: "Task") -> None:
@@ -108,11 +119,16 @@ def _post_warroom_update(doc: "Task", state: str) -> None:
 		return
 
 	try:
+		# Savepoint so a failed statement inside the post (e.g. Raven not
+		# installed on this site) rolls back WITHOUT aborting the whole
+		# transaction — on Postgres a bare `except: pass` is NOT graceful:
+		# every later statement would fail with InFailedSqlTransaction.
+		frappe.db.savepoint("friday_warroom")
 		details = {"profile": doc.assigned_to_profile} if doc.assigned_to_profile else None
 		warroom.post_task_update(doc.name, state.lower(), details)
 	except Exception:
 		# Never block the task pipeline — degrade gracefully.
-		pass
+		frappe.db.rollback(save_point="friday_warroom")
 
 
 def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
