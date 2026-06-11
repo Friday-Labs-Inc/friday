@@ -124,7 +124,9 @@ def provision(profile_name: str = "Friday") -> dict:
 	from frappe.friday_core.skills.loader import invalidate_for_profile
 
 	invalidate_for_profile(profile_name)
-	frappe.db.commit()
+	# Manual commit is required: provision() runs via `bench execute` (no
+	# request lifecycle to commit for us) and must persist before returning.
+	frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 
 	summary = {
 		"role": BRAND_ROLE,
