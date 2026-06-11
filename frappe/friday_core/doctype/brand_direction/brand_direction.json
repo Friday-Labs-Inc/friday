@@ -1,0 +1,104 @@
+{
+    "actions": [],
+    "autoname": "format:BD-{####}",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "brief",
+        "direction_name",
+        "status",
+        "concept_story",
+        "personality_keywords",
+        "color_palette",
+        "typography",
+        "logo_concept",
+        "tagline_options"
+    ],
+    "fields": [
+        {
+            "description": "The Brand Brief this direction was generated from.",
+            "fieldname": "brief",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Brand Brief",
+            "options": "Brand Brief",
+            "reqd": 1
+        },
+        {
+            "description": "Short evocative name for this direction, e.g. 'Midnight Atelier' or 'Sunrise Grid'.",
+            "fieldname": "direction_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Direction Name",
+            "reqd": 1
+        },
+        {
+            "default": "Proposed",
+            "description": "Proposed = fresh from the agent. Shortlisted = client/team picked it for refinement. Refined = the design team has worked it. Rejected = not pursued.",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Proposed\nShortlisted\nRefined\nRejected"
+        },
+        {
+            "description": "The narrative: what this direction says about the brand and why it fits the brief.",
+            "fieldname": "concept_story",
+            "fieldtype": "Text",
+            "label": "Concept Story",
+            "reqd": 1
+        },
+        {
+            "description": "3–5 personality words this direction embodies.",
+            "fieldname": "personality_keywords",
+            "fieldtype": "Data",
+            "label": "Personality Keywords"
+        },
+        {
+            "description": "JSON list of colors: [{\"hex\": \"#1A1A2E\", \"name\": \"Ink Navy\", \"role\": \"primary\"}, ...].",
+            "fieldname": "color_palette",
+            "fieldtype": "JSON",
+            "label": "Color Palette"
+        },
+        {
+            "description": "Heading + body font suggestions and a one-line rationale.",
+            "fieldname": "typography",
+            "fieldtype": "Small Text",
+            "label": "Typography"
+        },
+        {
+            "description": "A designer-ready description of the logo concept — imagery, construction, mood. NOT an image; the design team draws from this.",
+            "fieldname": "logo_concept",
+            "fieldtype": "Text",
+            "label": "Logo Concept"
+        },
+        {
+            "description": "2–3 tagline options for this direction.",
+            "fieldname": "tagline_options",
+            "fieldtype": "Small Text",
+            "label": "Tagline Options"
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Brand Direction",
+    "naming_rule": "Expression (old style)",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}
