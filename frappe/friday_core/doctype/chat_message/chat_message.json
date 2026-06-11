@@ -13,28 +13,106 @@
   "processed",
   "retry_count",
   "failure_reason",
-  "compacted"
+  "compacted",
+  "job_id"
  ],
  "fields": [
-  {"fieldname": "session_id", "fieldtype": "Data", "in_list_view": 1, "label": "Session ID", "reqd": 1},
-  {"fieldname": "platform", "fieldtype": "Link", "label": "Platform", "options": "Chat Platform"},
-  {"fieldname": "direction", "fieldtype": "Select", "in_list_view": 1, "label": "Direction", "options": "inbound\noutbound", "reqd": 1},
-  {"fieldname": "sender_id", "fieldtype": "Data", "label": "Sender ID"},
-  {"fieldname": "agent_profile", "fieldtype": "Link", "label": "Agent Profile", "options": "Agent Profile"},
-  {"fieldname": "content", "fieldtype": "Long Text", "label": "Content"},
-  {"fieldname": "timestamp", "fieldtype": "Datetime", "in_list_view": 1, "label": "Timestamp", "reqd": 1},
-  {"default": "0", "fieldname": "processed", "fieldtype": "Check", "label": "Processed"},
-  {"default": "0", "description": "Number of times the recovery sweeper has re-enqueued this inbound row. Capped at 3.", "fieldname": "retry_count", "fieldtype": "Int", "label": "Retry Count"},
-  {"description": "Populated by the recovery sweeper after 3 failed retries. Empty means the row either succeeded (processed=1) or has not yet exhausted retries.", "fieldname": "failure_reason", "fieldtype": "Small Text", "label": "Failure Reason"},
-  {"default": "0", "description": "Set to 1 once this turn has been folded into a Compaction Summary (Feature C). prompt_builder excludes compacted rows from the tail and uses the summary instead.", "fieldname": "compacted", "fieldtype": "Check", "label": "Compacted"}
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Session ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Link",
+   "label": "Platform",
+   "options": "Chat Platform"
+  },
+  {
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Direction",
+   "options": "inbound\noutbound",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sender_id",
+   "fieldtype": "Data",
+   "label": "Sender ID"
+  },
+  {
+   "fieldname": "agent_profile",
+   "fieldtype": "Link",
+   "label": "Agent Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content"
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Timestamp",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "processed",
+   "fieldtype": "Check",
+   "label": "Processed"
+  },
+  {
+   "default": "0",
+   "description": "Number of times the recovery sweeper has re-enqueued this inbound row. Capped at 3.",
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count"
+  },
+  {
+   "description": "Populated by the recovery sweeper after 3 failed retries. Empty means the row either succeeded (processed=1) or has not yet exhausted retries.",
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason"
+  },
+  {
+   "default": "0",
+   "description": "Set to 1 once this turn has been folded into a Compaction Summary (Feature C). prompt_builder excludes compacted rows from the tail and uses the summary instead.",
+   "fieldname": "compacted",
+   "fieldtype": "Check",
+   "label": "Compacted"
+  },
+  {
+   "description": "RQ job id that processed this inbound row on the dedicated friday queue (Gateway v2, design 55 Q6). Empty for inline/sync runs.",
+   "fieldname": "job_id",
+   "fieldtype": "Data",
+   "label": "Job ID",
+   "read_only": 1
+  }
  ],
  "links": [],
  "module": "Friday Core",
  "name": "Chat Message",
  "naming_rule": "Autoincrement",
  "permissions": [
-  {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},
-  {"create": 1, "read": 1, "role": "Agent Supervisor", "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
