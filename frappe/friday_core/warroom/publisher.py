@@ -107,11 +107,15 @@ def _is_raven_installed() -> bool:
 def _get_channel_id() -> Optional[str]:
 	"""
 	Return the Raven Channel document name for CHANNEL_NAME, or None if not found.
+
+	Raven lowercases `channel_name` on save (the War Room is stored as
+	`friday_war_room`), so we look it up by the lowercased slug — matching how
+	`surfaces/bootstrap_raven` seeds it.
 	"""
 	try:
 		channel = frappe.db.get_value(
 			CHANNEL_DOCTYPE,
-			{"channel_name": CHANNEL_NAME},
+			{"channel_name": CHANNEL_NAME.strip().lower().replace(" ", "-")},
 			"name",
 			as_dict=True,
 		)

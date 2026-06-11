@@ -112,13 +112,18 @@ class TestPostTaskUpdateNetworkError(unittest.TestCase):
 
 
 class TestIsRavenInstalledDoctypeExists(unittest.TestCase):
-    """_is_raven_installed() returns True when Raven Channel doctype exists."""
+    """_is_raven_installed() returns True when Raven Channel doctype exists.
+
+    Probes the table catalogue (frappe.db.table_exists), NOT a query against
+    the table — querying a missing table aborts the Postgres transaction even
+    when the exception is caught (fix shipped in #75).
+    """
 
     @patch("frappe.friday_core.warroom.publisher.frappe")
     def test_returns_true_when_doctype_exists(self, mock_frappe):
         from frappe.friday_core.warroom.publisher import _is_raven_installed
 
-        mock_frappe.db.exists.return_value = "Raven Channel"
+        mock_frappe.db.table_exists.return_value = True
 
         result = _is_raven_installed()
 
@@ -128,7 +133,7 @@ class TestIsRavenInstalledDoctypeExists(unittest.TestCase):
     def test_returns_false_when_doctype_not_found(self, mock_frappe):
         from frappe.friday_core.warroom.publisher import _is_raven_installed
 
-        mock_frappe.db.exists.return_value = None
+        mock_frappe.db.table_exists.return_value = False
 
         result = _is_raven_installed()
 
@@ -138,7 +143,7 @@ class TestIsRavenInstalledDoctypeExists(unittest.TestCase):
     def test_returns_false_on_exception(self, mock_frappe):
         from frappe.friday_core.warroom.publisher import _is_raven_installed
 
-        mock_frappe.db.exists.side_effect = Exception("DB error")
+        mock_frappe.db.table_exists.side_effect = Exception("DB error")
 
         result = _is_raven_installed()
 
