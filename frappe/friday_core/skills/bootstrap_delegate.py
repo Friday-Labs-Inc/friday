@@ -94,7 +94,9 @@ def provision(profile_name: str = "Friday") -> dict:
 	skill.save(ignore_permissions=True)
 
 	if not frappe.db.exists("Agent Profile", profile_name):
-		frappe.throw(f"Agent Profile {profile_name!r} not found — run `bench friday setup` first.")
+		frappe.throw(
+			frappe._("Agent Profile {0} not found — run `bench friday setup` first.").format(profile_name)
+		)
 	profile = frappe.get_doc("Agent Profile", profile_name)
 	if DELEGATOR_ROLE not in {row.role for row in (profile.assigned_roles or [])}:
 		profile.append("assigned_roles", {"role": DELEGATOR_ROLE})
