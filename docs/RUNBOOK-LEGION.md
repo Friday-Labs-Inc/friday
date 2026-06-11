@@ -8,12 +8,22 @@ Run every command from a terminal on Legion. Copy-paste blocks as-is.
 
 ---
 
-## ⚠️ TWO THINGS BEFORE YOU START
+## ⚠️ BEFORE YOU START
 
 1. **Rotate your MiniMax API key** in the MiniMax dashboard. The old key was
    pasted into a chat and must be treated as burned. Have the **new** key ready.
 2. **Never put the key (or any password) into a file.** We pass the key through
    an environment variable that lives only in your current shell.
+3. **Merge the open PRs first.** This runbook clones `main`, so `main` must
+   already contain the Raven surface (**#77**) and this runbook (**#78**).
+   Approve + merge them, or Part 6 (Raven) won't exist on the branch you clone.
+4. **Legion's git needs access to the private fork.** Run `gh auth login` on
+   Legion (or add an SSH key) so `bench init` can clone `Friday-Labs-Inc/friday`.
+   With SSH, swap the `--frappe-path` URL for
+   `git@github.com:Friday-Labs-Inc/friday.git`.
+5. **Postgres must be running on Legion** (port 5432). If you only have MariaDB,
+   replace `--db-type postgres --db-host 127.0.0.1 --db-port 5432` in Part 2
+   with `--db-type mariadb` — Friday runs on both (we've proven it on Postgres).
 
 > **Shortcut option:** if you can briefly pause your other bench, you can skip
 > all the port juggling — stop it, then in Part 1 **skip the "set isolated
