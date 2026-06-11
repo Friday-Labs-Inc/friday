@@ -256,7 +256,10 @@ def _wait_for_outbound(
 	"""
 	deadline = time.monotonic() + timeout
 	while True:
-		frappe.db.commit()  # refresh this transaction's read snapshot
+		# Manual commit is required: this is a long-lived CLI process polling
+		# for a row written by ANOTHER process (the friday worker) — without a
+		# commit, this transaction's read snapshot never sees it.
+		frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 		content = _read_latest_outbound(session_id, after_creation)
 		if content is not None:
 			return content
