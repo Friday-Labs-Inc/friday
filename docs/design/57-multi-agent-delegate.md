@@ -1,6 +1,6 @@
 # Design 57 — Multi-agent: the `delegate-task` skill
 
-**Status: PROPOSED — decisions Q1–Q6 below need locking before any code.**
+**Status: LOCKED 2026-06-10 — all six decisions (Q1–Q6) accepted as recommended ("lock all").**
 
 ## What this is, in plain English
 
