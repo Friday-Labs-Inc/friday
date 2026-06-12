@@ -84,6 +84,8 @@ from typing import Any
 import frappe
 
 from frappe.friday_core.llm.compression import SUMMARY_PREFIX, latest_summary
+from frappe.friday_core.llm.memory import recall_block
+from frappe.friday_core.llm.references import expand_references
 from frappe.friday_core.skills.loader import (
     SkillDefinition,
     to_tool_definition,
@@ -122,11 +124,24 @@ def build(
     system_text = _build_system_prompt(profile)
     messages.append({"role": "system", "content": system_text})
 
+    # 1b. Memory recall (design 59, Q2) — the profile's Active memories in a
+    # fenced reference-only block, right after the system prompt. Same
+    # placement pattern as the compaction summary: durable context the model
+    # must know but never treat as instructions.
+    memories = recall_block(profile_name)
+    if memories:
+        messages.append({"role": "system", "content": memories})
+
     # 2. Conversation history (prior turns).
     history = _load_history(session_id, max_history_turns)
     messages.extend(history)
 
-    # 3. Current user message.
+    # 3. Current user message — with any @-referenced records expanded and
+    # appended (design 59, Q4/Q5; Hermes appends expansions to the user turn
+    # so the context travels with the message).
+    references = expand_references(inbound_content, profile_name)
+    if references:
+        inbound_content = f"{inbound_content}\n\n{references}"
     messages.append({"role": "user", "content": inbound_content})
 
     # 4. Tool definitions — from the already-loaded skill list.

@@ -409,7 +409,18 @@ def _execute_sandboxed(
     falls back to in-process handler invocation so tests and local dev
     without Docker still work.
     """
+    from frappe.friday_core.sandbox import handlers as sandbox_handlers
     from frappe.friday_core.sandbox.runner import execute, SandboxResult
+
+    # Route by where the handler LIVES. The Docker image can only run skills
+    # bundled into it (sandbox/handlers.py registry). First-party in-process
+    # handlers (brand/delegate/memory — they need the ORM, the dispatch-context
+    # flags, even nested run_turn) must run here regardless of Docker being up;
+    # shipping them to a container that doesn't contain them fails every call
+    # the moment Docker Desktop happens to be running (v0.1 trust posture:
+    # first-party skills are trusted; see feedback memory).
+    if sandbox_handlers.get(skill_name) is None:
+        return handler(skill_name=skill_name, parameters=parameters)
 
     try:
         sandbox_result = execute(
@@ -496,6 +507,7 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 # module's import-time registration runs.
 from frappe.friday_core.skills import handlers_brand as _handlers_brand  # noqa: E402,F401
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate  # noqa: E402,F401
+from frappe.friday_core.skills import handlers_memory as _handlers_memory  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------
