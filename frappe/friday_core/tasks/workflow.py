@@ -99,6 +99,13 @@ def _watch_transition(doc: "Task") -> None:
 	# --- War Room post ----------------------------------------------------
 	_post_warroom_update(doc, state)
 
+	# --- RandomPack write-back (design 60, Q5) ------------------------------
+	# The bridge no-ops for tasks/projects without backend refs and never
+	# raises — a write-back outage cannot break a task save.
+	from frappe.friday_core.integrations.randompack_bridge import on_task_transition
+
+	on_task_transition(doc, state)
+
 	# --- emit Redis pub/sub for task runner -------------------------------
 	# Only emit when we are moving INTO Assigned AND the profile actually
 	# changed (avoids duplicate events on re-save without assignment change).

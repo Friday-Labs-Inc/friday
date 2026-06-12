@@ -13,28 +13,116 @@
   "priority",
   "result",
   "started_at",
-  "completed_at"
+  "completed_at",
+  "execution_mode",
+  "backend_ref",
+  "depends_on"
  ],
  "fields": [
-  {"fieldname": "title", "fieldtype": "Data", "in_list_view": 1, "label": "Title", "reqd": 1},
-  {"fieldname": "description", "fieldtype": "Long Text", "label": "Description"},
-  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Project"},
-  {"fieldname": "assigned_to_profile", "fieldtype": "Link", "label": "Assigned To Profile", "options": "Agent Profile"},
-  {"fieldname": "required_skills", "fieldtype": "Table", "label": "Required Skills", "options": "Task Skill"},
-  {"fieldname": "workflow_state", "fieldtype": "Data", "label": "Workflow State"},
-  {"default": "0", "fieldname": "dispatchable", "fieldtype": "Check", "label": "Dispatchable"},
-  {"fieldname": "priority", "fieldtype": "Select", "in_list_view": 1, "label": "Priority", "options": "low\nnormal\nhigh\nurgent", "reqd": 1},
-  {"fieldname": "result", "fieldtype": "JSON", "label": "Result (JSON)"},
-  {"fieldname": "started_at", "fieldtype": "Datetime", "label": "Started At"},
-  {"fieldname": "completed_at", "fieldtype": "Datetime", "label": "Completed At"}
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Long Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project"
+  },
+  {
+   "fieldname": "assigned_to_profile",
+   "fieldtype": "Link",
+   "label": "Assigned To Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "fieldname": "required_skills",
+   "fieldtype": "Table",
+   "label": "Required Skills",
+   "options": "Task Skill"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State"
+  },
+  {
+   "default": "0",
+   "fieldname": "dispatchable",
+   "fieldtype": "Check",
+   "label": "Dispatchable"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Priority",
+   "options": "low\nnormal\nhigh\nurgent",
+   "reqd": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "JSON",
+   "label": "Result (JSON)"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "default": "mechanical",
+   "description": "mechanical = run required_skills in sequence (no model). agentic = the matched profile runs a real governed turn (design 60, Q2). milestone = never auto-dispatched; completed by events (gate decisions) or humans.",
+   "fieldname": "execution_mode",
+   "fieldtype": "Select",
+   "label": "Execution Mode",
+   "options": "mechanical\nagentic\nmilestone"
+  },
+  {
+   "description": "The RandomPack backend's reference for this task/phase (write-back key). Empty = no write-back.",
+   "fieldname": "backend_ref",
+   "fieldtype": "Data",
+   "label": "Backend Ref"
+  },
+  {
+   "description": "AND-gated dependencies: this task dispatches only when ALL linked tasks are Completed.",
+   "fieldname": "depends_on",
+   "fieldtype": "Table",
+   "label": "Depends On",
+   "options": "Task Dependency"
+  }
  ],
  "links": [],
  "module": "Friday Core",
  "name": "Task",
  "naming_rule": "Autoincrement",
  "permissions": [
-  {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},
-  {"create": 1, "read": 1, "role": "Agent Supervisor", "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
  ],
  "sort_field": "creation",
  "sort_order": "DESC",

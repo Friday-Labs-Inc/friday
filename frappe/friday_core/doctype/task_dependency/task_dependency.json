@@ -1,0 +1,27 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": [
+  "task"
+ ],
+ "fields": [
+  {
+   "description": "This task may only dispatch after the linked task is Completed (design 60, Q3 \u2014 AND-gating).",
+   "fieldname": "task",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Depends On Task",
+   "options": "Task",
+   "reqd": 1
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Task Dependency",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

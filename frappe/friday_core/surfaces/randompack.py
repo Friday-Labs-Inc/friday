@@ -58,7 +58,10 @@ def receive_event():
 
 	raw_body = frappe.request.get_data() or b""
 	header = frappe.get_request_header(SIGNATURE_HEADER) or ""
-	secret = settings.get_password("webhook_secret") or ""
+	try:
+		secret = settings.get_password("webhook_secret") or ""
+	except Exception:
+		secret = ""  # unset secret → verify_signature fails closed (401)
 	tolerance = settings.signature_tolerance_seconds or DEFAULT_TOLERANCE_SECONDS
 
 	if not verify_signature(raw_body, header, secret, tolerance):
@@ -217,9 +220,193 @@ def handle_payment_received(data: dict, event) -> None:
 	frappe.get_doc(doc_fields).insert(ignore_permissions=True)
 
 
+# ---------------------------------------------------------------------------
+# 60b handlers — the command center reacts to the pipeline's business moments
+# ---------------------------------------------------------------------------
+
+
+def _backend_ref(data: dict, event) -> str:
+	return str(data.get("project_id") or data.get("brief_id") or event.event_id)
+
+
+def _find_brief(backend_ref: str) -> str | None:
+	return frappe.db.get_value("Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name")
+
+
+def _find_project(backend_ref: str) -> str | None:
+	return frappe.db.get_value("Project", {"backend_ref": backend_ref}, "name")
+
+
+def _warroom(text: str) -> None:
+	"""Best-effort War Room post (reuses the task publisher's transport)."""
+	try:
+		from frappe.friday_core.warroom.publisher import _get_channel_id, _post_to_raven
+
+		channel = _get_channel_id()
+		if channel:
+			_post_to_raven(channel, {"text": text, "message_type": "Text", "hide_in_message_history": False})
+	except Exception:  # noqa: BLE001 — visibility must never break processing
+		pass
+
+
+def handle_project_created(data: dict, event) -> None:
+	"""project.created → Friday Project + the productized pipeline (Q4)."""
+	from frappe.friday_core.tasks.templates import instantiate_pipeline
+
+	ref = _backend_ref(data, event)
+	brief = _find_brief(ref)
+	if not brief:
+		raise ValueError(f"no ingested Brand Brief for backend project {ref!r} — was payment.received delivered?")
+
+	project = _find_project(ref)
+	if not project:
+		doc = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"RandomPack {ref}",
+				"description": f"Productized pipeline for backend project {ref} (brief {brief}).",
+				"status": "Open",
+				"backend_ref": ref,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		project = doc.name
+
+	tasks = instantiate_pipeline(project, ref, brief)
+	_warroom(f"**[PRJ {ref}]** pipeline planned — {len(tasks)} tasks created (brief {brief}).")
+
+	from frappe.friday_core.integrations.randompack_client import post_project_note
+
+	post_project_note(ref, note=f"Friday planned the pipeline: {len(tasks)} tasks, gates at direction choice and final approval.")
+
+
+def handle_gate_decided(data: dict, event) -> None:
+	"""gate.decided → complete the gate milestone; the pipeline resumes (Q3)."""
+	ref = _backend_ref(data, event)
+	project = _find_project(ref)
+	if not project:
+		raise ValueError(f"no Friday project for backend ref {ref!r}")
+	gate = str(data.get("gate") or "gate1")
+	task_name = frappe.db.get_value("Task", {"project": project, "backend_ref": gate}, "name")
+	if not task_name:
+		raise ValueError(f"no milestone task {gate!r} on project {project!r}")
+
+	task = frappe.get_doc("Task", task_name)
+	if task.workflow_state != "Completed":
+		task.workflow_state = "Completed"
+		task.completed_at = frappe.utils.now_datetime()
+		task.save(ignore_permissions=True)
+
+	decision = data.get("decision") or data.get("chosen_direction") or ""
+	if decision:
+		_remember(f"Backend project {ref}: {gate} decided — {decision}", subject=ref)
+	_warroom(f"**[PRJ {ref}]** {gate} decided: {decision or 'approved'} — downstream tasks unblocked.")
+
+
+def handle_refinement_requested(data: dict, event) -> None:
+	"""refinement.requested → an agentic task now; advisory scope-guard at round ≥ 3 (Q6)."""
+	ref = _backend_ref(data, event)
+	project = _find_project(ref)
+	if not project:
+		raise ValueError(f"no Friday project for backend ref {ref!r}")
+	round_n = int(data.get("round") or 1)
+	request = str(data.get("request") or data.get("notes") or "See backend comments.")
+	brief = _find_brief(ref) or ""
+
+	frappe.get_doc(
+		{
+			"doctype": "Task",
+			"title": f"Refinement round {round_n}",
+			"description": (
+				f"Client refinement request (round {round_n}) for Brand Brief {brief}:\n"
+				f"{request}\n\nProduce the revised draft(s); reply with a concise summary."
+			),
+			"project": project,
+			"workflow_state": "Pending",
+			"execution_mode": "agentic",
+			"backend_ref": f"refinement_r{round_n}",
+			"required_skills": [{"skill": "get-brand-brief"}],
+		}
+	).insert(ignore_permissions=True)
+
+	if round_n >= 3:
+		_remember(f"Backend project {ref} reached refinement round {round_n} (+2 delivery days each).", subject=ref)
+		_warroom(f"⚠️ **[PRJ {ref}]** refinement round {round_n} — scope check: each round adds 2 delivery days.")
+
+
+def handle_kill_switch(data: dict, event) -> None:
+	"""project.cancelled / payment.refunded → cancel all open tasks NOW (Q7)."""
+	ref = _backend_ref(data, event)
+	project = _find_project(ref)
+	if not project:
+		return  # nothing planned — nothing to kill
+	open_tasks = frappe.get_all(
+		"Task",
+		filters={"project": project, "workflow_state": ("not in", ["Completed", "Cancelled"])},
+		pluck="name",
+	)
+	for name in open_tasks:
+		task = frappe.get_doc("Task", name)
+		task.workflow_state = "Cancelled"
+		task.save(ignore_permissions=True)
+	frappe.db.set_value("Project", project, "status", "Cancelled", update_modified=False)
+	_warroom(f"🛑 **[PRJ {ref}]** {event.event_type} — {len(open_tasks)} open tasks cancelled.")
+
+
+def handle_gate_reminder(data: dict, event) -> None:
+	ref = _backend_ref(data, event)
+	_warroom(f"⏰ **[PRJ {ref}]** gate reminder: {data.get('gate') or 'a gate'} is awaiting the client.")
+
+
+def handle_comment_added(data: dict, event) -> None:
+	"""Relay client/team comments to the War Room (Friday's own notes are
+	already filtered out by the backend — locked contract, no self-dedupe)."""
+	ref = _backend_ref(data, event)
+	comment = str(data.get("comment") or data.get("text") or "")[:500]
+	if comment:
+		_warroom(f"💬 **[PRJ {ref}]** comment: {comment}")
+
+
+def handle_project_completed(data: dict, event) -> None:
+	ref = _backend_ref(data, event)
+	project = _find_project(ref)
+	if project:
+		frappe.db.set_value("Project", project, "status", "Completed", update_modified=False)
+	_remember(f"Backend project {ref} completed and delivered.", subject=ref)
+	_warroom(f"✅ **[PRJ {ref}]** project completed.")
+
+
+def _remember(memory: str, subject: str) -> None:
+	"""Direct memory write for event context (no agent turn to attribute)."""
+	profile = (
+		frappe.db.get_value("Chat Platform", "raven", "default_agent_profile")
+		or frappe.db.get_value("Chat Platform", "cli", "default_agent_profile")
+		or "Friday"
+	)
+	if not frappe.db.exists("Agent Profile", profile):
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Agent Memory",
+			"memory": memory[:490],
+			"agent_profile": profile,
+			"subject": subject,
+			"source_session": "randompack-events",
+			"status": "Active",
+		}
+	).insert(ignore_permissions=True)
+
+
 _HANDLERS = {
 	"payment.received": handle_payment_received,
-	# 60b: project.created, gate.opened, gate.decided, refinement.requested,
-	# phase.changed, comment.added, files.delivered, project.completed,
-	# project.cancelled, payment.refunded, gate.reminder.
+	"project.created": handle_project_created,
+	"gate.decided": handle_gate_decided,
+	"refinement.requested": handle_refinement_requested,
+	"project.cancelled": handle_kill_switch,
+	"payment.refunded": handle_kill_switch,
+	"gate.reminder": handle_gate_reminder,
+	"comment.added": handle_comment_added,
+	"project.completed": handle_project_completed,
+	# gate.opened / phase.changed / files.delivered: recorded (no action needed
+	# v0.1 — the ledger keeps them for audit and later use).
 }

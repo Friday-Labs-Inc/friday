@@ -34,7 +34,28 @@ def tick() -> None:
 	"""
 	tasks = _fetch_dispatchable_tasks(limit=5)
 	for task_doc in tasks:
+		if not _ready_to_dispatch(task_doc):
+			continue
 		_claim_and_dispatch(task_doc)
+
+
+def _ready_to_dispatch(task_doc) -> bool:
+	"""Design 60 gating, applied after the locked fetch.
+
+	- milestone tasks are NEVER auto-dispatched (gates: completed only by
+	  gate.decided events or humans),
+	- AND-dependencies: every linked task must be Completed (Q3),
+	- a paused project ("On Hold") parks its whole pipeline.
+	"""
+	if (task_doc.get("execution_mode") or "mechanical") == "milestone":
+		return False
+	for dep in task_doc.get("depends_on") or []:
+		if frappe.db.get_value("Task", dep.task, "workflow_state") != "Completed":
+			return False
+	if task_doc.get("project"):
+		if frappe.db.get_value("Project", task_doc.project, "status") == "On Hold":
+			return False
+	return True
 
 
 def _fetch_dispatchable_tasks(limit: int = 5) -> list["Task"]:
@@ -137,13 +158,13 @@ def _match_profiles(task_doc: "Task") -> list[str]:
 		return [p.name for p in frappe.get_all(
 			"Agent Profile",
 			filters={"status": "Active"},
-			order="creation ASC",
+			order_by="creation asc",
 		)]
 
 	active = frappe.get_all(
 		"Agent Profile",
 		filters={"status": "Active"},
-		order="creation ASC",
+		order_by="creation asc",
 	)
 
 	matched = []
