@@ -179,6 +179,15 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	"""
 	task = frappe.get_doc("Task", task_name)
 
+	# Design 60, Q2 — agentic tasks run a REAL governed turn instead of the
+	# mechanical skill sequence. Milestones never reach here (the dispatcher
+	# filters them), but guard anyway.
+	if (task.get("execution_mode") or "mechanical") == "agentic":
+		_run_task_agentic(task, profile_name)
+		return
+	if task.get("execution_mode") == "milestone":
+		return
+
 	# Record start time for duration calculation.
 	started_at = now_datetime()
 
@@ -335,6 +344,55 @@ def _build_result_envelope(results: list, status: str) -> dict:
 		],
 		"completed_at": frappe.utils.now_datetime(),
 	}
+
+
+def _run_task_agentic(task: "Task", profile_name: str) -> None:
+	"""Run one queued task as a real governed agent turn (design 60, Q2).
+
+	Same isolation contract as delegation (design 57): a fresh
+	`task::<name>` session, the task framing as the only context, the
+	profile's own permissions gating every skill call, the summary stored
+	as the result envelope. State transitions fire the workflow hook, which
+	carries War Room posts and backend write-back.
+	"""
+	from frappe.friday_core.agent_runner.runner import run_turn
+
+	task.workflow_state = "Executing"
+	task.assigned_to_profile = profile_name
+	task.started_at = now_datetime()
+	task.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	framing = (
+		f"You are completing a queued pipeline task ({task.name}): {task.title}\n\n"
+		f"Instructions:\n{task.description or ''}\n\n"
+		"Tool discipline: call each tool AT MOST ONCE unless a tool result "
+		"tells you otherwise. Once you have what you need, STOP calling tools "
+		"and write your final answer as a normal reply.\n\n"
+		"When finished, reply with a clear, concise summary of the outcome — "
+		"including the names of any records you created. Your reply is stored "
+		"as the task result for human review."
+	)
+	try:
+		summary = run_turn(
+			profile_name=profile_name,
+			session_id=f"task::{task.name}",
+			inbound_content=framing,
+		)
+	except Exception as exc:  # noqa: BLE001 — the task row is the failure ledger
+		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
+		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
+		task.workflow_state = "Blocked"
+		task.save(ignore_permissions=True)
+		frappe.db.commit()
+		_post_warroom(task.name, "blocked", {"profile": profile_name, "issue": issue})
+		return
+
+	task.result = frappe.as_json({"status": "success", "summary": summary})
+	task.workflow_state = "Completed"
+	task.completed_at = now_datetime()
+	task.save(ignore_permissions=True)
+	frappe.db.commit()
 
 
 def _task_transition(task: "Task", target_state: str) -> None:

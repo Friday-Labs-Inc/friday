@@ -508,6 +508,7 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 from frappe.friday_core.skills import handlers_brand as _handlers_brand  # noqa: E402,F401
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate  # noqa: E402,F401
 from frappe.friday_core.skills import handlers_memory as _handlers_memory  # noqa: E402,F401
+from frappe.friday_core.skills import handlers_project as _handlers_project  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------

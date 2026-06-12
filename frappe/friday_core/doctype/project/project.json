@@ -4,19 +4,60 @@
  "autoname": "field:project_name",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": ["project_name", "description", "status"],
+ "field_order": [
+  "project_name",
+  "description",
+  "status",
+  "backend_ref"
+ ],
  "fields": [
-  {"fieldname": "project_name", "fieldtype": "Data", "in_list_view": 1, "label": "Project Name", "reqd": 1, "unique": 1},
-  {"fieldname": "description", "fieldtype": "Long Text", "label": "Description"},
-  {"fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "Open\nIn Progress\nCompleted\nCancelled", "reqd": 1}
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Long Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Open\nIn Progress\nCompleted\nCancelled\nOn Hold",
+   "reqd": 1
+  },
+  {
+   "description": "The RandomPack backend's project id (write-back + event linkage).",
+   "fieldname": "backend_ref",
+   "fieldtype": "Data",
+   "label": "Backend Ref",
+   "unique": 1
+  }
  ],
  "links": [],
  "module": "Friday Core",
  "name": "Project",
  "naming_rule": "Set by user",
  "permissions": [
-  {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1},
-  {"create": 1, "read": 1, "role": "Agent Supervisor", "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
  ],
  "sort_field": "creation",
  "sort_order": "DESC",

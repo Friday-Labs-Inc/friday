@@ -40,7 +40,12 @@ def _settings():
 
 
 def _headers(settings) -> dict:
-	secret = settings.get_password("api_secret") or ""
+	# get_password RAISES (not None) when the encrypted field was never set —
+	# an unconfigured secret must mean "send unauthenticated", not "crash".
+	try:
+		secret = settings.get_password("api_secret") or ""
+	except Exception:
+		secret = ""
 	return {"Authorization": f"token {settings.api_key}:{secret}"}
 
 
