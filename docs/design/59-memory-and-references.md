@@ -1,6 +1,6 @@
 # Design 59 — Memory + @-references: Friday remembers, and you can point
 
-**Status: PROPOSED — decisions Q1–Q6 below need locking before any code.**
+**Status: LOCKED 2026-06-12 — all six decisions (Q1–Q6) accepted as recommended ("lock all").**
 
 ## What this is, in plain English
 
