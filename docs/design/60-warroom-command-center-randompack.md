@@ -1,6 +1,6 @@
 # Design 60 — The War Room Command Center + the RandomPack integration
 
-**Status: PROPOSED — decisions Q1–Q7 below need locking before any code.**
+**Status: LOCKED 2026-06-12 — all seven decisions (Q1–Q7) accepted as recommended ("lock all"). Implementation: 60a then 60b.**
 
 ## What this is, in plain English
 
