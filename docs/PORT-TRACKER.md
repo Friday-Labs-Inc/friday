@@ -58,19 +58,19 @@ yet.** Foundation: solid. Product: barely started.
 *What the agent remembers and carries into each reply.*
 - ✅ Compress long conversations — summary text now verbatim Hermes, threshold corrected to 0.50, divergences disclosed (#64)
 - ✅ Use a cheaper model to write those summaries
-- ⬜ Context engine (deciding what to include each turn)
-- ⬜ @-references (point the agent at a file or record)
-- ⬜ Long-term memory / recall across sessions
+- ✅ Context engine (v0.1 scope) — memory recall + @-reference expansion + compression decide each turn's context
+- ✅ @-references — @BB-0001-style record refs, permission-gated, not-found reported (#80)
+- ✅ Long-term memory — Agent Memory rows + `remember` skill + fenced every-turn recall, proven across sessions (#80)
 
 ## 5. The tools the agent can use (its hands)
 *What the agent can actually DO.*
 - ✅ Every skill IS a tool (database record)
-- ⬜ **Delegate / sub-agents** (one agent spawns helpers) — needed for many-agent work
+- ✅ **Delegate / sub-agents** — delegate-task, proven live (#75)
 - ⬜ **MCP** (plug in outside tools without coding each one) — needed for integrations
 - ⬜ Browser control · ⬜ Computer use · ⬜ Code execution · ⬜ Web search
 - ⬛ Shell/terminal — skip (banned in v0.1) · ⬛ Image/video/voice/vision — skip
 - ⬛ Discord / Feishu / etc. — skip (those are business skills, add on demand)
-- ⬜ Memory tool · ⬜ Checkpoint / interrupt
+- ✅ Memory tool (`remember`, #80) · ⬜ Checkpoint / interrupt
 - ✅ Send a message back to the human
 - 🟡 To-do / kanban / scheduled jobs (you have the tracker + Frappe's scheduler)
 
@@ -81,9 +81,9 @@ yet.** Foundation: solid. Product: barely started.
 - 🟡 Skill usage stats
 - ⬜ **Curator** (auto-promote good skills, retire stale ones)
 - ⬜ **Learner** (the agent writes NEW skills from experience) — Hermes' signature "learning loop"
-- ⬜ Memory / recall
+- ✅ Memory / recall (#80)
 - ⬜ Safety audit for self-written skills
-- ⬜ **YOUR business skills** (brand directions, copy, mockups, the website) — **the product. 1 built so far.**
+- 🟡 **YOUR business skills** — brand directions live (#73); copy/mockups/site next. 5 skills total now.
 
 ## 7. Permissions & safety (governance — your edge)
 *Who's allowed to do what, and proof of everything that happened.*
@@ -101,18 +101,18 @@ yet.** Foundation: solid. Product: barely started.
 
 ## 9. Talking to humans (the front door)
 - ✅ One gateway every message flows through
-- 🟡 Command-line chat (works) + setup (just built)
-- ⬜ Raven (chat inside Frappe) — the first real human surface
+- ✅ Command-line chat + setup + setup-raven
+- ✅ Raven — team chat surface live, War Room lit (#77)
 - ⬜ Telegram / Slack / WhatsApp / … — add per need
 - ⬜ Agent-to-agent messaging
 
 ## 10. Coordinating many agents (orchestration)
 *A supervisor handing work to specialist agents — the multi-agent vision.*
 - 🟡 Work list (Project / Task / Issue)
-- 🟡 Orchestrator that matches a task to a capable agent
+- ✅ Orchestrator capability matcher — in live use by delegation (#75)
 - ⬜ "Waiting on another agent" (dependency)
 - ✅ A failed task auto-files a ticket
-- ⬜ Sub-agents (see §5)
+- ✅ Sub-agents (see §5, #75)
 
 ## 11. Command-line & setup
 - ✅ `friday chat` (talk to an agent)
