@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "autoname": "field:event_id",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event_id",
+  "event_type",
+  "version",
+  "occurred_at",
+  "status",
+  "payload",
+  "failure_reason",
+  "processed_at"
+ ],
+ "fields": [
+  {
+   "description": "The backend's event UUID \u2014 the idempotency key. Unique: a duplicate delivery cannot create a second row.",
+   "fieldname": "event_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Envelope type, e.g. project.created, gate.decided.",
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Data",
+   "label": "Version"
+  },
+  {
+   "description": "The backend's occurred_at timestamp (informational; signature freshness uses the per-attempt t).",
+   "fieldname": "occurred_at",
+   "fieldtype": "Data",
+   "label": "Occurred At"
+  },
+  {
+   "default": "Received",
+   "description": "Received = persisted + queued. Processed = handler succeeded. Failed = handler errored (failure_reason set); a backend replay re-runs it.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Received\nProcessed\nFailed"
+  },
+  {
+   "description": "The full envelope `data` object, verbatim.",
+   "fieldname": "payload",
+   "fieldtype": "JSON",
+   "label": "Payload"
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason"
+  },
+  {
+   "fieldname": "processed_at",
+   "fieldtype": "Datetime",
+   "label": "Processed At"
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "RandomPack Event",
+ "naming_rule": "By fieldname",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Agent Supervisor"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
