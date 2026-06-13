@@ -431,11 +431,16 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 		"including the names of any records you created. Your reply is stored "
 		"as the task result for human review."
 	)
+	# Design 61b — pass a per-iteration heartbeat so a long agentic ReAct loop
+	# (real LLM calls + tool dispatches) keeps last_heartbeat_at fresh and the
+	# reconciler's executing-stale sweep does NOT block it as runner_lost.
+	task_name = task.name
 	try:
 		summary = run_turn(
 			profile_name=profile_name,
 			session_id=f"task::{task.name}",
 			inbound_content=framing,
+			heartbeat=lambda: _heartbeat(task_name),
 		)
 	except Exception as exc:
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
