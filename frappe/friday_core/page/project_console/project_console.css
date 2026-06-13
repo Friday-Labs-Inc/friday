@@ -1,0 +1,263 @@
+/* Project Console (design 65c) — layout + theming.
+   Uses Frappe's CSS variables so it follows light/dark themes. */
+
+.friday-console {
+	padding: 8px 4px;
+}
+
+/* --- health strip --- */
+.fc-health {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px;
+	padding: 10px 14px;
+	margin-bottom: 14px;
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	background: var(--card-bg);
+	font-size: var(--text-sm);
+}
+.fc-pill {
+	font-weight: 600;
+	padding: 2px 10px;
+	border-radius: 12px;
+}
+.fc-ok {
+	color: var(--green-600);
+}
+.fc-degraded {
+	color: var(--orange-600);
+}
+.fc-down {
+	color: var(--red-600);
+}
+.fc-unknown {
+	color: var(--text-muted);
+}
+.fc-count {
+	color: var(--text-muted);
+}
+.fc-count b {
+	color: var(--text-color);
+	margin-left: 4px;
+}
+.fc-count.fc-blue b {
+	color: var(--blue-600);
+}
+.fc-count.fc-red b {
+	color: var(--red-600);
+}
+.fc-count.fc-green b {
+	color: var(--green-600);
+}
+.fc-worker {
+	margin-left: auto;
+	font-size: var(--text-xs);
+}
+.fc-worker.fc-green {
+	color: var(--green-600);
+}
+.fc-worker.fc-red {
+	color: var(--red-600);
+}
+
+/* --- main two-column --- */
+.fc-main {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+}
+.fc-projects-wrap {
+	flex: 1 1 62%;
+	min-width: 0;
+}
+.fc-feed-wrap {
+	flex: 1 1 38%;
+	min-width: 0;
+}
+.fc-section-title {
+	font-size: var(--text-xs);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-muted);
+	margin: 6px 2px 8px;
+	font-weight: 600;
+}
+.fc-scope {
+	color: var(--blue-600);
+	cursor: pointer;
+	text-transform: none;
+	letter-spacing: 0;
+}
+.fc-empty {
+	color: var(--text-muted);
+	padding: 12px;
+	font-size: var(--text-sm);
+}
+
+/* --- project cards --- */
+.fc-projects {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 12px;
+	margin-bottom: 18px;
+}
+.fc-card {
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	background: var(--card-bg);
+	padding: 12px;
+	cursor: pointer;
+	transition: border-color 0.15s;
+}
+.fc-card:hover {
+	border-color: var(--blue-400);
+}
+.fc-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+}
+.fc-card-title {
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.fc-status {
+	font-size: var(--text-xs);
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--bg-light-gray);
+	color: var(--text-muted);
+}
+.fc-status-completed {
+	color: var(--green-600);
+}
+.fc-status-in_progress {
+	color: var(--blue-600);
+}
+.fc-status-on_hold {
+	color: var(--orange-600);
+}
+.fc-status-cancelled {
+	color: var(--red-600);
+}
+.fc-progress {
+	height: 6px;
+	border-radius: 3px;
+	background: var(--bg-light-gray);
+	overflow: hidden;
+}
+.fc-progress-bar {
+	height: 100%;
+	background: var(--green-500);
+}
+.fc-card-foot {
+	display: flex;
+	justify-content: space-between;
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+	margin-top: 6px;
+}
+
+/* --- in-flight rows --- */
+.fc-active-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	font-size: var(--text-sm);
+	border-bottom: 1px solid var(--border-color);
+}
+.fc-active-agent {
+	font-weight: 600;
+}
+.fc-active-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-muted);
+}
+.fc-active-state {
+	font-size: var(--text-xs);
+	color: var(--blue-600);
+}
+.fc-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	display: inline-block;
+}
+.fc-blue-dot {
+	background: var(--blue-500);
+	animation: fc-pulse 1.4s infinite;
+}
+@keyframes fc-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
+}
+
+/* --- live feed --- */
+.fc-feed {
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-md);
+	background: var(--card-bg);
+	max-height: 70vh;
+	overflow-y: auto;
+}
+.fc-feed-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--border-color);
+	font-size: var(--text-sm);
+}
+.fc-feed-row:last-child {
+	border-bottom: none;
+}
+.fc-feed-icon {
+	width: 16px;
+	text-align: center;
+}
+.fc-feed-agent {
+	font-weight: 600;
+	white-space: nowrap;
+}
+.fc-feed-text {
+	flex: 1;
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.fc-feed-text i {
+	color: var(--text-color);
+	font-style: normal;
+	font-weight: 500;
+}
+.fc-feed-time {
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.fc-terminal {
+	background: var(--bg-light-gray);
+}
+.fc-live-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--green-500);
+	margin-left: 6px;
+	animation: fc-pulse 1.4s infinite;
+}

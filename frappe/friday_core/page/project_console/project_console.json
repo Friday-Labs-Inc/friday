@@ -1,0 +1,23 @@
+{
+ "content": null,
+ "creation": "2026-06-13 00:00:00",
+ "doctype": "Page",
+ "icon": "project",
+ "idx": 0,
+ "modified": "2026-06-13 00:00:00",
+ "module": "Friday Core",
+ "name": "project-console",
+ "page_name": "project-console",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Agent Supervisor"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "title": "Project Console"
+}

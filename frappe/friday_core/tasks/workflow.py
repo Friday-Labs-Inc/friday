@@ -103,6 +103,13 @@ def _watch_transition(doc: "Task") -> None:
 	# --- War Room post ----------------------------------------------------
 	_post_warroom_update(doc, state)
 
+	# --- Live console push (design 65c) -----------------------------------
+	# Push the transition to every Desk console client over realtime. Never
+	# raises; the console's 30s snapshot poll reconciles any dropped frame.
+	from frappe.friday_core.console.console_stream import publish_activity
+
+	publish_activity(doc, state)
+
 	# --- RandomPack write-back (design 60, Q5) ------------------------------
 	# The bridge no-ops for tasks/projects without backend refs and never
 	# raises — a write-back outage cannot break a task save.
