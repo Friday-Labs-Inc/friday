@@ -280,6 +280,12 @@ scheduler_events = {
 			"frappe.friday_core.tasks.dispatcher.tick",
 			"frappe.friday_core.tasks.reconciler.tick",
 		],
+		# Friday (design 63b-OAuth): backstop refresh of expiring provider OAuth
+		# tokens so a long-idle Claude/Codex login stays warm and a broken refresh
+		# surfaces before an agent needs it. On-use refresh is the primary path.
+		"*/30 * * * *": [
+			"frappe.friday_core.llm.oauth_token_refresh.tick",
+		],
 	},
 	"all": [
 		"frappe.email.queue.flush",

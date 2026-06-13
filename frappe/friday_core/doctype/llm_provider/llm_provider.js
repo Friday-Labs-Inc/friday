@@ -40,8 +40,99 @@ frappe.ui.form.on("LLM Provider", {
 				},
 			});
 		});
+
+		// OAuth subscription login (design 63b-OAuth). Claude is the manual-paste
+		// PKCE flow: open the URL, approve, paste the code#state back.
+		frm.add_custom_button(
+			__("Login with Claude"),
+			function () {
+				start_claude_login(frm);
+			},
+			__("OAuth Login")
+		);
+
+		// Show the current OAuth status when this is an OAuth provider.
+		if (frm.doc.auth_mode === "oauth") {
+			frappe.call({
+				method: "frappe.friday_core.llm.oauth.endpoints.oauth_status",
+				args: { provider_name: frm.doc.name },
+				callback: function (r) {
+					const s = r && r.message;
+					if (!s) return;
+					const msg = s.logged_in
+						? __("OAuth: logged in ({0}), token valid until {1}.", [
+								s.oauth_flavor || "?",
+								s.expires_at || "?",
+						  ])
+						: __("OAuth provider — not logged in yet. Use OAuth Login.");
+					frm.dashboard.add_comment(msg, s.logged_in ? "green" : "orange", true);
+				},
+			});
+		}
 	},
 });
+
+// Claude OAuth: ask the server for the authorize URL, open it, then collect the
+// pasted code#state and exchange it. No callback route — Anthropic shows the
+// code on its own page and the operator pastes it here.
+function start_claude_login(frm) {
+	frappe.call({
+		method: "frappe.friday_core.llm.oauth.endpoints.start_claude_login",
+		args: { provider_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Preparing Claude login…"),
+		callback: function (r) {
+			const url = r && r.message && r.message.authorize_url;
+			if (!url) {
+				frappe.msgprint(__("Could not start the Claude login."));
+				return;
+			}
+			window.open(url, "_blank");
+			const d = new frappe.ui.Dialog({
+				title: __("Log in with Claude"),
+				fields: [
+					{
+						fieldtype: "HTML",
+						options: `<p>${__(
+							"A Claude login tab was opened. Approve access, then copy the code shown (it looks like <code>code#state</code>) and paste it below."
+						)}</p>`,
+					},
+					{
+						fieldtype: "Data",
+						fieldname: "pasted",
+						label: __("Pasted code"),
+						reqd: 1,
+					},
+				],
+				primary_action_label: __("Complete login"),
+				primary_action: function (values) {
+					frappe.call({
+						method: "frappe.friday_core.llm.oauth.endpoints.complete_claude_login",
+						args: { provider_name: frm.doc.name, pasted: values.pasted },
+						freeze: true,
+						freeze_message: __("Exchanging code…"),
+						callback: function (res) {
+							const s = res && res.message;
+							if (s && s.logged_in) {
+								frappe.show_alert({
+									message: __("Logged in with Claude"),
+									indicator: "green",
+								});
+								d.hide();
+								frm.reload_doc();
+							} else {
+								frappe.msgprint(
+									__("Login did not complete — check the pasted code.")
+								);
+							}
+						},
+					});
+				},
+			});
+			d.show();
+		},
+	});
+}
 
 // Render the live (or catalog) list as a click-to-fill dialog. Clicking a
 // row writes it into default_model and closes — no manual typing of model

@@ -466,6 +466,18 @@ class AnthropicProvider(LLMProvider):
     # Anthropic requires max_tokens; used when the LLM Provider row leaves it blank.
     DEFAULT_MAX_TOKENS = 4096
 
+    # --- OAuth (subscription login, design 63b-OAuth) ---------------------
+    # When constructed with an `oauth_token` (Claude Pro/Max), the request must
+    # use Bearer auth + this exact beta/header set, NOT x-api-key. These are
+    # non-negotiable: without `oauth-2025-04-20` + `x-app: cli`, Anthropic's
+    # infra intermittently 500s on OAuth traffic; the user-agent version must
+    # stay reasonably current or OAuth requests are rejected (bump on upgrade).
+    OAUTH_BETAS = (
+        "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,"
+        "claude-code-20250219,oauth-2025-04-20"
+    )
+    CLAUDE_CLI_VERSION = "1.0.108"
+
     def __init__(
         self,
         api_key: str,
@@ -473,12 +485,33 @@ class AnthropicProvider(LLMProvider):
         base_url: str | None = None,
         default_max_tokens: int | None = None,
         default_temperature: float | None = None,
+        oauth_token: str | None = None,
     ):
         self.api_key = api_key
         self.default_model = default_model
         self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self.default_max_tokens = default_max_tokens
         self.default_temperature = default_temperature
+        # When set, chat() authenticates with this OAuth bearer token + the
+        # Claude-Code header set instead of the x-api-key path.
+        self.oauth_token = oauth_token
+
+    def _auth_headers(self) -> dict:
+        """Auth + protocol headers — Bearer (OAuth) or x-api-key (API key)."""
+        if self.oauth_token:
+            return {
+                "authorization": f"Bearer {self.oauth_token}",
+                "anthropic-version": self.ANTHROPIC_VERSION,
+                "anthropic-beta": self.OAUTH_BETAS,
+                "user-agent": f"claude-cli/{self.CLAUDE_CLI_VERSION} (external, cli)",
+                "x-app": "cli",
+                "content-type": "application/json",
+            }
+        return {
+            "x-api-key": self.api_key,
+            "anthropic-version": self.ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        }
 
     def chat(
         self,
@@ -488,11 +521,7 @@ class AnthropicProvider(LLMProvider):
     ) -> LLMResponse:
         model = model or self.default_model
         url = f"{self.base_url}{self.MESSAGES_PATH}"
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": self.ANTHROPIC_VERSION,
-            "content-type": "application/json",
-        }
+        headers = self._auth_headers()
 
         system, anthropic_messages = _to_anthropic_messages(messages)
         # Prompt caching (B2.4, now in scope): mark the system prefix + recent
@@ -762,7 +791,6 @@ def _build_provider(provider_row: dict) -> LLMProvider:
     Select must list it too. (An OpenRouter / Azure endpoint needs no new
     class — use `openai` with `base_url` set.)
     """
-    api_key = _get_api_key(provider_row)
     provider_type = provider_row.get("provider_type") or "minimax"
     default_model = provider_row.get("default_model") or "MiniMax-Standard"
     base_url = provider_row.get("base_url") or None
@@ -775,6 +803,31 @@ def _build_provider(provider_row: dict) -> LLMProvider:
         provider.input_cost_per_million = provider_row.get("input_cost_per_million") or None
         provider.output_cost_per_million = provider_row.get("output_cost_per_million") or None
         return provider
+
+    # OAuth (design 63b-OAuth): a subscription-logged-in provider. The access
+    # token (refreshed in-line if expiring) replaces the API key; the flavour
+    # picks the transport. We fetch the token BEFORE the api_key path so an OAuth
+    # row (which has no api_key) never hits _get_api_key.
+    if (provider_row.get("auth_mode") or "api_key") == "oauth":
+        from frappe.friday_core.llm.oauth import tokens
+
+        access_token = tokens.get_fresh_access_token(provider_row)
+        flavor = provider_row.get("oauth_flavor")
+        if flavor == "anthropic-claude":
+            return _with_pricing(AnthropicProvider(
+                api_key="",
+                oauth_token=access_token,
+                default_model=default_model,
+                base_url=base_url,
+                default_max_tokens=default_max_tokens,
+                default_temperature=default_temperature,
+            ))
+        if flavor == "openai-codex":
+            # The Codex Responses-API transport lands in design 63b-2.
+            raise LLMError("OpenAI Codex OAuth is not available yet (design 63b-2).")
+        raise LLMError(f"LLM Provider has unknown oauth_flavor {flavor!r}")
+
+    api_key = _get_api_key(provider_row)
 
     if provider_type == "minimax":
         return _with_pricing(MinimaxProvider(
