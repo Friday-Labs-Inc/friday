@@ -107,7 +107,7 @@ class TestVerdictStrict(unittest.TestCase):
 		mock_inflight.return_value = {"default": 0, "friday": 0}
 
 		def count(doctype, filters=None):
-			if doctype == "Friday Issue":
+			if doctype == "Issue":
 				return 6
 			return 0
 
