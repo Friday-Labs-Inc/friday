@@ -120,6 +120,11 @@ def _reconcile_assigned_orphans() -> None:
 	first enqueue and spam the queue. With it, we still heal a stall within
 	~90 seconds of it happening.
 	"""
+	# Python-side cutoff: TIMESTAMPDIFF is MySQL-only and breaks on Postgres
+	# (the database backend this bench actually runs). Computing the cutoff
+	# in Python and comparing as a parameter is portable across both, and
+	# also more readable than DB-specific interval arithmetic.
+	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-ASSIGNED_GRACE_SECONDS)
 	rows = frappe.db.sql(
 		"""
 		SELECT name, assigned_to_profile
@@ -127,10 +132,10 @@ def _reconcile_assigned_orphans() -> None:
 		WHERE workflow_state = 'Assigned'
 		  AND assigned_to_profile IS NOT NULL
 		  AND (executing_token IS NULL OR executing_token = '')
-		  AND TIMESTAMPDIFF(SECOND, COALESCE(assigned_at, modified), NOW()) > %(grace)s
+		  AND COALESCE(assigned_at, modified) < %(cutoff)s
 		LIMIT 50
 		""",
-		{"grace": ASSIGNED_GRACE_SECONDS},
+		{"cutoff": cutoff},
 		as_dict=True,
 	)
 	if not rows:
@@ -170,19 +175,17 @@ def _reconcile_executing_stale() -> None:
 	fresh, so this sweep cannot kill it. Only truly silent workers get
 	caught.
 	"""
+	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-EXECUTING_STALE_MINUTES)
 	rows = frappe.db.sql(
 		"""
 		SELECT name
 		FROM `tabTask`
 		WHERE workflow_state = 'Executing'
-		  AND (
-		    last_heartbeat_at IS NULL
-		    OR TIMESTAMPDIFF(MINUTE, last_heartbeat_at, NOW()) > %(grace)s
-		  )
-		  AND TIMESTAMPDIFF(MINUTE, COALESCE(started_at, modified), NOW()) > %(grace)s
+		  AND (last_heartbeat_at IS NULL OR last_heartbeat_at < %(cutoff)s)
+		  AND COALESCE(started_at, modified) < %(cutoff)s
 		LIMIT 50
 		""",
-		{"grace": EXECUTING_STALE_MINUTES},
+		{"cutoff": cutoff},
 		as_dict=True,
 	)
 	if not rows:
@@ -211,6 +214,7 @@ def _reconcile_transient_blocked() -> None:
 	Semantic blocks (dependency_failed, no_profile_for_skills:*) need a
 	human to fix the underlying condition — they are NOT retried here.
 	"""
+	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-TRANSIENT_BLOCKED_GRACE_MINUTES)
 	rows = frappe.db.sql(
 		"""
 		SELECT name, retry_count
@@ -218,10 +222,10 @@ def _reconcile_transient_blocked() -> None:
 		WHERE workflow_state = 'Blocked'
 		  AND blocked_reason IN ('oom', 'timeout', 'runner_lost')
 		  AND retry_count < %(budget)s
-		  AND TIMESTAMPDIFF(MINUTE, modified, NOW()) > %(grace)s
+		  AND modified < %(cutoff)s
 		LIMIT 50
 		""",
-		{"budget": RETRY_BUDGET, "grace": TRANSIENT_BLOCKED_GRACE_MINUTES},
+		{"budget": RETRY_BUDGET, "cutoff": cutoff},
 		as_dict=True,
 	)
 	if not rows:
@@ -259,6 +263,15 @@ def _reconcile_randompack_events() -> None:
 	re-enqueues of a succeeded event are a no-op. We increment retry_count
 	via SQL to dodge a get/save round trip per row.
 	"""
+	# Two cutoffs, one per status — Received events get a tight 60s grace
+	# (the original enqueue should have fired by now), Failed events get a
+	# longer 5-minute backoff before retrying.
+	received_cutoff = frappe.utils.add_to_date(
+		frappe.utils.now_datetime(), seconds=-RANDOMPACK_RECEIVED_GRACE_SECONDS
+	)
+	failed_cutoff = frappe.utils.add_to_date(
+		frappe.utils.now_datetime(), minutes=-RANDOMPACK_FAILED_GRACE_MINUTES
+	)
 	rows = frappe.db.sql(
 		"""
 		SELECT name, status
@@ -266,18 +279,16 @@ def _reconcile_randompack_events() -> None:
 		WHERE status IN ('Received', 'Failed')
 		  AND retry_count < %(budget)s
 		  AND (
-		    (status = 'Received'
-		      AND TIMESTAMPDIFF(SECOND, modified, NOW()) > %(received_grace)s)
+		    (status = 'Received' AND modified < %(received_cutoff)s)
 		    OR
-		    (status = 'Failed'
-		      AND TIMESTAMPDIFF(MINUTE, modified, NOW()) > %(failed_grace)s)
+		    (status = 'Failed' AND modified < %(failed_cutoff)s)
 		  )
 		LIMIT 50
 		""",
 		{
 			"budget": RETRY_BUDGET,
-			"received_grace": RANDOMPACK_RECEIVED_GRACE_SECONDS,
-			"failed_grace": RANDOMPACK_FAILED_GRACE_MINUTES,
+			"received_cutoff": received_cutoff,
+			"failed_cutoff": failed_cutoff,
 		},
 		as_dict=True,
 	)

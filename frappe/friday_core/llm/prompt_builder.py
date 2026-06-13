@@ -162,13 +162,23 @@ def build(
 
 
 def _build_system_prompt(profile) -> str:
-	"""Assemble the system prompt from the operator's text and a minimal frame."""
-	# Minimal frame. The operator's system_prompt comes after this, verbatim.
+	"""Assemble the system prompt from the operator's text and a minimal frame.
+
+	The GOVERNANCE paragraph (design 66, Q3) is non-negotiable: it ends the
+	"agent fabricates records when it has no read tool" failure mode the
+	Legion validation transcript documented (L5142). The operator's
+	system_prompt rides after the frame, verbatim, so per-profile voice and
+	the governance contract compose instead of conflict.
+	"""
 	frame = (
 		"You are a Friday AI Agent. "
 		"Respond conversationally or use a tool when appropriate. "
 		"Think step by step. "
 		"When you use a tool, output only the tool call — do not describe it.\n\n"
+		"GOVERNANCE: If you do not have a tool that can fetch the "
+		"information someone is asking about, say so plainly. Never invent "
+		"records, files, or data you did not retrieve through a tool call. "
+		"Hallucination is a governance failure, not a creativity feature.\n\n"
 	)
 	operator_prompt = profile.system_prompt or ""
 	return frame + operator_prompt
