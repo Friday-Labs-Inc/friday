@@ -365,14 +365,16 @@ def _block_task(task: "Task", results: list) -> None:
 		details=frappe.as_json(failed.result) if (failed and failed.result) else None,
 	)
 
-	# Post "blocked" to War Room, referencing the Issue.
+	# Post "blocked" to War Room, referencing the Issue. Design 62 — name the
+	# agent that hit the block so the War Room shows who needs help, not a
+	# faceless task.
 	_post_warroom(
 		task.name,
 		"blocked",
 		{
 			"error_message": results[-1].result if results else None,
 			"issue": issue_name,
-			"profile": None,
+			"profile": task.get("assigned_to_profile"),
 		},
 	)
 

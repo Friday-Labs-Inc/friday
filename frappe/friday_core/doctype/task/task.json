@@ -21,7 +21,9 @@
   "last_heartbeat_at",
   "executing_token",
   "blocked_reason",
-  "retry_count"
+  "retry_count",
+  "originating_session",
+  "originating_platform"
  ],
  "fields": [
   {
@@ -143,6 +145,20 @@
    "fieldname": "retry_count",
    "fieldtype": "Int",
    "label": "Retry Count",
+   "read_only": 1
+  },
+  {
+   "description": "The Chat Message session_id that triggered this task, if it was born from a conversation. On a terminal transition the agent writes a reply back to this session (design 62). Empty = no chat report-back (e.g. RandomPack pipeline tasks, whose report-back is the backend write-back).",
+   "fieldname": "originating_session",
+   "fieldtype": "Data",
+   "label": "Originating Session",
+   "read_only": 1
+  },
+  {
+   "description": "The surface the originating session lives on (raven / cli / telegram / ...). Used to route the report-back Chat Message.",
+   "fieldname": "originating_platform",
+   "fieldtype": "Data",
+   "label": "Originating Platform",
    "read_only": 1
   }
  ],
