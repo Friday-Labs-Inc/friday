@@ -51,6 +51,14 @@ frappe.ui.form.on("LLM Provider", {
 			__("OAuth Login")
 		);
 
+		frm.add_custom_button(
+			__("Login with Codex"),
+			function () {
+				start_codex_login(frm);
+			},
+			__("OAuth Login")
+		);
+
 		// Show the current OAuth status when this is an OAuth provider.
 		if (frm.doc.auth_mode === "oauth") {
 			frappe.call({
@@ -130,6 +138,65 @@ function start_claude_login(frm) {
 				},
 			});
 			d.show();
+		},
+	});
+}
+
+// Codex OAuth: device-code. Show the user code + verification link, then poll
+// the server (one poll per call) until the operator approves in the browser.
+function start_codex_login(frm) {
+	frappe.call({
+		method: "frappe.friday_core.llm.oauth.endpoints.start_codex_login",
+		args: { provider_name: frm.doc.name },
+		freeze: true,
+		freeze_message: __("Preparing Codex login…"),
+		callback: function (r) {
+			const m = r && r.message;
+			if (!m || !m.user_code) {
+				frappe.msgprint(__("Could not start the Codex login."));
+				return;
+			}
+			window.open(m.verification_url, "_blank");
+			const d = new frappe.ui.Dialog({
+				title: __("Log in with Codex"),
+				fields: [
+					{
+						fieldtype: "HTML",
+						options: `<p>${__("In the opened tab, enter this code:")}</p>
+							<h3 style="font-family:var(--font-stack-monospace,monospace);letter-spacing:2px;">${frappe.utils.escape_html(
+								m.user_code
+							)}</h3>
+							<p class="text-muted">${__("Waiting for approval…")}</p>`,
+					},
+				],
+			});
+			d.show();
+
+			const interval_ms = Math.max(3, m.interval || 5) * 1000;
+			const poll = () => {
+				frappe.call({
+					method: "frappe.friday_core.llm.oauth.endpoints.poll_codex_login",
+					args: { provider_name: frm.doc.name },
+					callback: function (res) {
+						const s = res && res.message;
+						if (s && s.logged_in) {
+							frappe.show_alert({
+								message: __("Logged in with Codex"),
+								indicator: "green",
+							});
+							d.hide();
+							frm.reload_doc();
+						} else if (s && s.pending && d.$wrapper.is(":visible")) {
+							setTimeout(poll, interval_ms);
+						}
+					},
+					error: function () {
+						d.hide();
+						frappe.msgprint(__("Codex login failed — please try again."));
+					},
+				});
+			};
+			setTimeout(poll, interval_ms);
 		},
 	});
 }

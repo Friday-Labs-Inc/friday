@@ -61,18 +61,21 @@ class TestBuildProviderOAuthBranch(unittest.TestCase):
 		self.assertEqual(provider.oauth_token, "fresh-tok")
 
 	@patch("frappe.friday_core.llm.oauth.tokens.get_fresh_access_token", return_value="fresh-tok")
-	def test_codex_oauth_not_yet_available(self, _tok):
-		from frappe.friday_core.llm.provider import LLMError, _build_provider
+	def test_codex_oauth_builds_codex_provider(self, _tok):
+		from frappe.friday_core.llm.provider import CodexProvider, _build_provider
 
 		row = {
 			"name": "Codex",
 			"provider_type": "openai",
 			"auth_mode": "oauth",
 			"oauth_flavor": "openai-codex",
+			"oauth_account_id": "acc-123",
 			"default_model": "gpt-5-codex",
 		}
-		with self.assertRaises(LLMError):
-			_build_provider(row)
+		provider = _build_provider(row)
+		self.assertIsInstance(provider, CodexProvider)
+		self.assertEqual(provider.oauth_token, "fresh-tok")
+		self.assertEqual(provider.account_id, "acc-123")
 
 
 if __name__ == "__main__":
