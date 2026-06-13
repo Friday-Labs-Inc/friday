@@ -367,6 +367,10 @@ after_migrate = [
 	# Agent Profile so each agent is a first-class, assignable, @-mentionable
 	# actor in Desk. Idempotent + failure-isolated per profile.
 	"frappe.friday_core.identity.agent_identity.provision_all_agent_users",
+	# Friday (design 65b): create the native project-console views — Number
+	# Cards, Dashboard Charts, the Task Pipeline Kanban, and the Projects
+	# Workspace. Idempotent + failure-isolated per artifact.
+	"frappe.friday_core.console.provision_console.provision_console",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]
