@@ -14,7 +14,8 @@
         "permitted_skills",
         "network_allowlist",
         "requires_approval_above_risk",
-        "status"
+        "status",
+        "frappe_user"
     ],
     "fields": [
         {
@@ -76,6 +77,14 @@
             "label": "Status",
             "options": "Active\nSuspended\nRetired",
             "reqd": 1
+        },
+        {
+            "description": "The backing system Frappe User for this agent (design 65a). Auto-provisioned, login disabled. Lets the agent be assigned, @-mentioned, and shown with an avatar in Desk.",
+            "fieldname": "frappe_user",
+            "fieldtype": "Link",
+            "label": "Frappe User",
+            "options": "User",
+            "read_only": 1
         }
     ],
     "links": [],
