@@ -62,11 +62,14 @@ def publish_activity(task, state: str) -> None:
 			"is_terminal": state in TERMINAL_STATES,
 			"ts": frappe.utils.now(),
 		}
-		# No room/user/doctype args -> site room "all" -> all System User Desk
-		# clients. after_commit is irrelevant here (no DB write) but the runner
-		# calls this mid-transaction, so leave the default (immediate) — the
-		# page tolerates an event that slightly precedes commit because its 30s
-		# snapshot reconciles from committed state anyway.
-		frappe.publish_realtime(ACTIVITY_EVENT, payload)
+		# Site-wide broadcast is DELIBERATE: no room/user/doctype args -> Frappe's
+		# get_site_room() -> the "all" room, which every System User Desk client
+		# (operators + the agent users from 65a) is auto-joined to. The console is
+		# one shared command-center; per-project room scoping is a future
+		# optimization (65 design, Q6), not a correctness need on a single-tenant
+		# site. The realtime-pick-room lint asks "do you really want that?" — yes.
+		# after_commit stays default (immediate); the page's 30s snapshot reconciles
+		# from committed state, so a frame slightly preceding commit is harmless.
+		frappe.publish_realtime(ACTIVITY_EVENT, payload)  # nosemgrep
 	except Exception:
 		_logger.warning("console_stream: failed to publish activity for %s", task.get("name"))
