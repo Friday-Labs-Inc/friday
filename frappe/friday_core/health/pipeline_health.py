@@ -68,10 +68,42 @@ def _build_snapshot() -> dict:
 		for state in ("Pending", "Assigned", "Executing", "Blocked", "Review", "Completed", "Cancelled")
 	}
 
+	# "Stuck" mirrors what the reconciler will actually act on next tick — not
+	# just the raw state count. A healthy Executing task heartbeats, so we
+	# only count Executing rows whose heartbeat is older than the reconciler's
+	# 15-minute stale grace. Same for Assigned (executing_token + 30s grace).
+	# This is the difference between "you have work in flight" (good) and
+	# "you have stale work the reconciler will sweep" (the actual alert).
+	from frappe.friday_core.tasks.reconciler import (
+		ASSIGNED_GRACE_SECONDS,
+		EXECUTING_STALE_MINUTES,
+		TRANSIENT_BLOCKED_REASONS,
+	)
+
+	assigned_cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-ASSIGNED_GRACE_SECONDS)
+	executing_cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-EXECUTING_STALE_MINUTES)
 	stuck = {
-		"assigned_orphaned": tasks_by_state.get("Assigned", 0),
-		"executing_stale": tasks_by_state.get("Executing", 0),
-		"transient_blocked_pending_retry": tasks_by_state.get("Blocked", 0),
+		"assigned_orphaned": frappe.db.count(
+			"Task",
+			{
+				"workflow_state": "Assigned",
+				"assigned_at": ("<", assigned_cutoff),
+			},
+		),
+		"executing_stale": frappe.db.count(
+			"Task",
+			{
+				"workflow_state": "Executing",
+				"last_heartbeat_at": ("<", executing_cutoff),
+			},
+		),
+		"transient_blocked_pending_retry": frappe.db.count(
+			"Task",
+			{
+				"workflow_state": "Blocked",
+				"blocked_reason": ("in", TRANSIENT_BLOCKED_REASONS),
+			},
+		),
 	}
 
 	randompack = {
@@ -79,7 +111,7 @@ def _build_snapshot() -> dict:
 		"events_failed_retriable": frappe.db.count("RandomPack Event", {"status": "Failed"}),
 	}
 
-	open_issues = frappe.db.count("Friday Issue", {"status": "Open"})
+	open_issues = frappe.db.count("Issue", {"status": "Open"})
 
 	verdict = _verdict(
 		tick_age=tick_age,
@@ -166,19 +198,49 @@ def _scheduler_tick_age() -> int | None:
 
 def _inflight_jobs_by_queue() -> dict[str, int]:
 	"""
-	Return ``{queue_name: in_flight_count}`` for queues with at least one job
-	in flight OR a known worker.
+	Return ``{queue_short_name: in_flight_count}`` for every queue that has
+	at least one worker subscribed.
 
-	The "worker present" signal is "we saw this queue in the get_jobs() map
-	at all" — Frappe's ``get_jobs()`` populates keys per queue the worker
-	listens on. A queue absent from the map means no worker is consuming
-	it. (We could also probe Redis directly; this is the cheap, idiomatic
-	check.)
+	Truth source is the Redis set ``rq:workers:<full_queue_name>`` — RQ
+	maintains one such set per queue, containing the keys of every worker
+	currently listening on that queue. A non-empty set means the queue is
+	being served; an empty (or missing) set means the queue has no listener
+	even if jobs are getting enqueued.
+
+	WHY NOT ``get_jobs()`` (the original 61b implementation): it returns a
+	map of queue → IN-FLIGHT job names. An idle worker on a quiet queue
+	does not appear, so we falsely reported it absent. Caught the first
+	time this endpoint was called on a live bench (2026-06-13).
+
+	WHY NOT ``rq.Worker.all()[i].queue_names``: in RQ 2.x the worker hash
+	stored in Redis only carries ``last_heartbeat``; the queue list is held
+	in the worker process and not persisted. Reading it from outside the
+	worker returns ``[]``.
+
+	Queue short names: Frappe namespaces queues as ``<bench-name>:<short>``
+	(e.g. ``Users-alphaworkz-Documents-friday-bench:friday``). Callers ask
+	for ``"friday"``, so we strip the prefix.
 	"""
-	from frappe.utils.background_jobs import get_jobs
+	from frappe.utils.background_jobs import get_queues, get_redis_conn
 
 	try:
-		jobs = get_jobs() or {}
+		conn = get_redis_conn()
+		queues = get_queues(connection=conn) or []
 	except Exception:
 		return {}
-	return {q: len(names or []) for q, names in jobs.items()}
+
+	out: dict[str, int] = {}
+	for q in queues:
+		full = q.name
+		short = full.split(":", 1)[1] if ":" in full else full
+		try:
+			workers = conn.smembers(f"rq:workers:{full}")
+		except Exception:
+			workers = None
+		if workers:
+			try:
+				inflight = q.count
+			except Exception:
+				inflight = 0
+			out[short] = inflight
+	return out
