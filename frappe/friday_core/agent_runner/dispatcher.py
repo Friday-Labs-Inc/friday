@@ -505,6 +505,7 @@ from frappe.friday_core.skills import handlers_brand as _handlers_brand
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
 from frappe.friday_core.skills import handlers_project as _handlers_project
+from frappe.friday_core.skills import handlers_read as _handlers_read  # design 66a
 
 # ---------------------------------------------------------------------------
 # Internal helpers
