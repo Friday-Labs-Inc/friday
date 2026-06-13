@@ -110,6 +110,15 @@ def _watch_transition(doc: "Task") -> None:
 
 	on_task_transition(doc, state)
 
+	# --- Agent report-back (design 62, Q3) ---------------------------------
+	# A terminal task that knows the conversation it came from writes a direct
+	# reply to that session, authored by the agent that did the work. No-op
+	# for tasks with no originating_session (e.g. RandomPack pipeline tasks,
+	# whose report-back is the bridge above). Never raises.
+	from frappe.friday_core.tasks.report_back import report_back
+
+	report_back(doc, state)
+
 	# --- emit Redis pub/sub for task runner -------------------------------
 	# Only emit when we are moving INTO Assigned AND the profile actually
 	# changed (avoids duplicate events on re-save without assignment change).

@@ -150,24 +150,34 @@ def _build_payload(task_name: str, event: str, details: dict | None) -> dict:
 
 
 def _format_message_text(task_name: str, event: str, details: dict | None) -> str:
-	"""Format a human-readable War Room message."""
-	import frappe
+	"""Format a human-readable War Room message.
 
-	text = f"**[{task_name}]** — *{event}*"
+	Design 62 — the message leads with the AGENT as speaker so the War
+	Room shows *who* did the work, not a single faceless voice. The agent
+	profile (from ``details['profile']``) headlines the line; the task ref
+	and event follow.
+	"""
+	details = details or {}
+	profile = details.get("profile")
 
-	if details:
-		text += "\n"
-		for k, v in details.items():
-			if k == "error_message" and v:
-				text += f"\n  > Error: {v}"
-			elif k == "duration_ms" and v:
-				text += f"\n  > Duration: {v}ms"
-			elif k == "profile" and v:
-				text += f"\n  > Profile: {v}"
-			elif k == "skills" and v:
-				text += f"\n  > Skills: {', '.join(v)}"
-			else:
-				text += f"\n  > {k}: {v}"
+	if profile:
+		text = f"🤖 **{profile}**\n   `[{task_name}]` {event}"
+	else:
+		# No known agent (e.g. a system-level transition) — fall back to the
+		# task-led format.
+		text = f"**[{task_name}]** — *{event}*"
+
+	for k, v in details.items():
+		if k == "profile":
+			continue  # already the headline
+		if k == "error_message" and v:
+			text += f"\n  > Error: {v}"
+		elif k == "duration_ms" and v:
+			text += f"\n  > Duration: {v}ms"
+		elif k == "skills" and v:
+			text += f"\n  > Skills: {', '.join(v)}"
+		elif v:
+			text += f"\n  > {k}: {v}"
 
 	return text
 
