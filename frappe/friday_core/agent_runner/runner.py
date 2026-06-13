@@ -75,7 +75,7 @@ _EMPTY_RESPONSE_FALLBACK = (
 )
 
 
-def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
+def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat=None) -> str:
 	"""Produce one agent reply for one user message via the ReAct loop.
 
 	Arguments:
@@ -137,6 +137,15 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	empty_retries = 0
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
+		# Design 61b — heartbeat once per ReAct iteration so the durability
+		# reconciler's executing-stale sweep distinguishes a long but healthy
+		# agentic turn from a runner that died mid-execution. Optional + best-
+		# effort: a heartbeat failure must never break the turn.
+		if heartbeat is not None:
+			try:
+				heartbeat()
+			except Exception:
+				pass
 		# Scrub surrogates from the whole message list before the API call —
 		# reasoning/tool fields can carry them too (Hermes sanitizes pre-call).
 		sanitize_messages_surrogates(messages)

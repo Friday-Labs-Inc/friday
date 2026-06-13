@@ -355,6 +355,10 @@ after_migrate = [
 	# Creates one row named "Agent Settings" if none exists. Safe to call
 	# repeatedly — Frappe will raise if a second row is created.
 	"frappe.friday_core.llm.after_migrate.ensure_agent_settings",
+	# Friday (design 61b, Q4): register the 'friday' background queue in
+	# common_site_config.json so a fresh clone doesn't silently lose the
+	# runner trigger to an unknown-queue error. Idempotent + atomic.
+	"frappe.friday_core.health.after_migrate.register_friday_queue",
 	# Friday: register the task runner real-time handler after every migrate
 	# so it can receive agent_task.assigned pub/sub events.
 	"frappe.friday_core.tasks.runner.register_task_runner",
