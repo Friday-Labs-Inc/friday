@@ -52,6 +52,10 @@ class ProjectConsole {
 		this.MAX_FEED = 60;
 		this.POLL_MS = 30000;
 
+		// Build ONE debounced re-seed and reuse it. Creating a fresh debounced
+		// fn per call (debounce(...)()) would never actually debounce.
+		this._debounced_refresh = frappe.utils.debounce(() => this.refresh(), 1500);
+
 		this._build_layout();
 		this._subscribe_realtime();
 		this._start_poll();
@@ -269,7 +273,7 @@ class ProjectConsole {
 			this._render_feed();
 			// A terminal event likely changed counts/progress — cheap re-seed.
 			if (data.is_terminal) {
-				frappe.utils.debounce(() => this.refresh(), 1500)();
+				this._debounced_refresh();
 			}
 		});
 	}
