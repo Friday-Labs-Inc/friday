@@ -64,6 +64,10 @@ def on_state_change(doc: "Task", method: str) -> None:
 	if doc.has_value_changed("workflow_state"):
 		_watch_transition(doc)
 
+	# Design 65d — derive the display fields from the live state too: the
+	# 0/50/100 progress bar and the is_milestone mirror of execution_mode.
+	from frappe.friday_core.tasks.rollup import progress_for_state
+
 	# Persist the derived/side-effect fields WITHOUT doc.save(): this function
 	# runs ON on_update, so save() here re-fires on_update → this function →
 	# save() → RecursionError. db_set writes the columns directly and fires no
@@ -74,6 +78,8 @@ def on_state_change(doc: "Task", method: str) -> None:
 			"started_at": doc.started_at,
 			"completed_at": doc.completed_at,
 			"assigned_to_profile": doc.assigned_to_profile,
+			"progress": progress_for_state(doc.workflow_state),
+			"is_milestone": 1 if (doc.get("execution_mode") == "milestone") else 0,
 		},
 		update_modified=False,
 	)
@@ -109,6 +115,24 @@ def _watch_transition(doc: "Task") -> None:
 	from frappe.friday_core.console.console_stream import publish_activity
 
 	publish_activity(doc, state)
+
+	# --- Project rollup (design 65d) --------------------------------------
+	# Recompute the parent project's counts / %-complete / dates / cost from
+	# its child tasks. Writes only the Project row via db_set (fires no Task
+	# hooks → no recursion). The current task's just-saved state and cost_usd
+	# are visible in this same transaction, so the rollup includes them.
+	# Fail-soft inside a savepoint (same contract as the War Room post): a
+	# rollup hiccup must not break the task save, and on Postgres a failed
+	# statement must roll back to avoid poisoning the transaction. The numbers
+	# are derived — they self-heal on the next transition.
+	if doc.get("project"):
+		try:
+			frappe.db.savepoint("friday_rollup")
+			from frappe.friday_core.tasks.rollup import recompute_project_rollup
+
+			recompute_project_rollup(doc.project)
+		except Exception:
+			frappe.db.rollback(save_point="friday_rollup")
 
 	# --- RandomPack write-back (design 60, Q5) ------------------------------
 	# The bridge no-ops for tasks/projects without backend refs and never

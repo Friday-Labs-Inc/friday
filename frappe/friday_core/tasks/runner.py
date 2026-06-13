@@ -203,6 +203,12 @@ def _claim_task(task_name: str) -> str | None:
 	return token if current == token else None
 
 
+def _elapsed_ms(started_at) -> int:
+	"""Milliseconds from ``started_at`` to now (design 65d duration_ms)."""
+	delta = now_datetime() - started_at
+	return int(delta.total_seconds() * 1000)
+
+
 def _heartbeat(task_name: str) -> None:
 	"""
 	Refresh ``last_heartbeat_at`` so the reconciler knows this runner is alive.
@@ -416,10 +422,12 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 	carries War Room posts and backend write-back.
 	"""
 	from frappe.friday_core.agent_runner.runner import run_turn
+	from frappe.friday_core.tasks.rollup import task_cost_from_usage
 
+	started_at = now_datetime()
 	task.workflow_state = "Executing"
 	task.assigned_to_profile = profile_name
-	task.started_at = now_datetime()
+	task.started_at = started_at
 	task.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -448,6 +456,11 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"
+		# Design 65d — capture whatever LLM spend accrued before the failure
+		# (honest blank if no rates configured), so a blocked task still shows
+		# its cost.
+		task.cost_usd = task_cost_from_usage(task.name)
+		task.duration_ms = _elapsed_ms(started_at)
 		task.save(ignore_permissions=True)
 		frappe.db.commit()
 		_post_warroom(task.name, "blocked", {"profile": profile_name, "issue": issue})
@@ -456,6 +469,11 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 	task.result = frappe.as_json({"status": "success", "summary": summary})
 	task.workflow_state = "Completed"
 	task.completed_at = now_datetime()
+	# Design 65d — attach the real cost + duration of this turn. cost_usd is the
+	# summed LLM Usage Log for this task's session, or None when no rates are set
+	# (never a fabricated 0). The project rollup (workflow hook) sums these.
+	task.cost_usd = task_cost_from_usage(task.name)
+	task.duration_ms = _elapsed_ms(started_at)
 	task.save(ignore_permissions=True)
 	frappe.db.commit()
 
