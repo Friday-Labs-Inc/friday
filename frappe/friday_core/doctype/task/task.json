@@ -16,7 +16,12 @@
   "completed_at",
   "execution_mode",
   "backend_ref",
-  "depends_on"
+  "depends_on",
+  "assigned_at",
+  "last_heartbeat_at",
+  "executing_token",
+  "blocked_reason",
+  "retry_count"
  ],
  "fields": [
   {
@@ -103,6 +108,42 @@
    "fieldtype": "Table",
    "label": "Depends On",
    "options": "Task Dependency"
+  },
+  {
+   "description": "Set by the dispatcher at Pending → Assigned. The reconciler uses this + a 30s grace to detect Assigned-but-never-picked-up tasks (lost enqueue) and re-fire the runner trigger.",
+   "fieldname": "assigned_at",
+   "fieldtype": "Datetime",
+   "label": "Assigned At",
+   "read_only": 1
+  },
+  {
+   "description": "Updated by the runner during execution (every 30s for agentic, per skill boundary for mechanical). The reconciler treats Executing tasks without a fresh heartbeat as runner_lost (15 min default) and Blocks them, raising a Failure Issue.",
+   "fieldname": "last_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Last Heartbeat At",
+   "read_only": 1
+  },
+  {
+   "description": "Idempotent claim token written by the runner in a single check-and-set transaction (Assigned → Executing). A duplicate trigger sees a non-empty token and exits cleanly — the runner becomes at-least-once-trigger / exactly-once-effect.",
+   "fieldname": "executing_token",
+   "fieldtype": "Data",
+   "label": "Executing Token",
+   "read_only": 1
+  },
+  {
+   "description": "Structured reason a Pending or Blocked task is parked (e.g. no_profile_for_skills:create-brand-direction, profile_has_no_llm_provider, dependency_failed). Surfaced on the Pipeline Health page; the reconciler clears it once the underlying condition changes.",
+   "fieldname": "blocked_reason",
+   "fieldtype": "Data",
+   "label": "Blocked Reason",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Count of automated retries the reconciler has issued for transient failures (oom, timeout, runner_lost). Capped at 3; beyond that the task stays Blocked for a human.",
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count",
+   "read_only": 1
   }
  ],
  "links": [],

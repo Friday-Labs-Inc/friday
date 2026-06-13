@@ -32,24 +32,24 @@ import frappe
 
 
 def ensure_agent_settings() -> None:
-    """Create the Agent Settings singleton if it doesn't exist yet.
+	"""Create the Agent Settings singleton if it doesn't exist yet.
 
-    Called from `frappe/hooks.py` `after_migrate`. Idempotent — calling
-    it when the row already exists is a no-op.
-    """
-    if frappe.db.exists("Agent Settings", "Agent Settings"):
-        return
+	Called from `frappe/hooks.py` `after_migrate`. Idempotent — calling
+	it when the row already exists is a no-op.
+	"""
+	if frappe.db.exists("Agent Settings", "Agent Settings"):
+		return
 
-    try:
-        frappe.get_doc(
-            {
-                "doctype": "Agent Settings",
-                "name": "Agent Settings",
-            }
-        ).insert(ignore_permissions=True)
-        frappe.db.commit()
-    except Exception:
-        # Either the row was created by a concurrent migrate, or something
-        # else went wrong. Either way, the row exists now — the next call
-        # will see it and return.
-        frappe.db.rollback()
+	try:
+		frappe.get_doc(
+			{
+				"doctype": "Agent Settings",
+				"name": "Agent Settings",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		# Either the row was created by a concurrent migrate, or something
+		# else went wrong. Either way, the row exists now — the next call
+		# will see it and return.
+		frappe.db.rollback()

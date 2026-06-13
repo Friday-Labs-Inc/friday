@@ -42,14 +42,16 @@ def _tc(call_id, name="slice6-create-note", arguments='{"title": "x"}'):
 
 
 def _ok(content="Done.", call_id="c1"):
-	return DispatchResult(success=True, content=content, execution_log_name="EL-1",
-	                      tool_call_name="s", tool_call_id=call_id)
+	return DispatchResult(
+		success=True, content=content, execution_log_name="EL-1", tool_call_name="s", tool_call_id=call_id
+	)
 
 
 def _err(content="boom", call_id="c1"):
 	# success=False WITH a log row, but NOT a permission denial.
-	return DispatchResult(success=False, content=content, execution_log_name="EL-err",
-	                      tool_call_name="s", tool_call_id=call_id)
+	return DispatchResult(
+		success=False, content=content, execution_log_name="EL-err", tool_call_name="s", tool_call_id=call_id
+	)
 
 
 def _provider(*responses):
@@ -70,12 +72,14 @@ def _run(provider, dispatch_results=None, denial=False, messages=None):
 		"tools": [],
 		"model": "m",
 	}
-	with patch(f"{_R}.maybe_compress_session"), \
-	     patch(f"{_R}.load_for_profile", return_value=[]), \
-	     patch(f"{_R}.build", return_value=prompt), \
-	     patch(f"{_R}.get_provider_for_profile", return_value=provider), \
-	     patch(f"{_R}.dispatch", side_effect=dispatch_results) as md, \
-	     patch(f"{_R}._is_permission_denial", return_value=denial):
+	with (
+		patch(f"{_R}.maybe_compress_session"),
+		patch(f"{_R}.load_for_profile", return_value=[]),
+		patch(f"{_R}.build", return_value=prompt),
+		patch(f"{_R}.get_provider_for_profile", return_value=provider),
+		patch(f"{_R}.dispatch", side_effect=dispatch_results) as md,
+		patch(f"{_R}._is_permission_denial", return_value=denial),
+	):
 		result = run_turn("P", "S", "hi")
 	return result, md, provider
 
@@ -124,11 +128,13 @@ class TestSequentialDispatch(unittest.TestCase):
 		# *identical* (name, arguments) would correctly collapse to one — that
 		# behaviour is covered in test_react_dedup).
 		prov = _provider(
-			_resp(tool_calls=[
-				_tc("c1", arguments='{"title": "a"}'),
-				_tc("c2", arguments='{"title": "b"}'),
-				_tc("c3", arguments='{"title": "c"}'),
-			]),
+			_resp(
+				tool_calls=[
+					_tc("c1", arguments='{"title": "a"}'),
+					_tc("c2", arguments='{"title": "b"}'),
+					_tc("c3", arguments='{"title": "c"}'),
+				]
+			),
 			_resp(content="finished"),
 		)
 		result, md, _ = _run(prov, dispatch_results=[_ok(call_id="c1"), _ok(call_id="c2"), _ok(call_id="c3")])
@@ -141,8 +147,12 @@ class TestSequentialDispatch(unittest.TestCase):
 class TestPermissionDenialBreaks(unittest.TestCase):
 	def test_denial_breaks_loop_and_returns_denial_text(self):
 		prov = _provider(_resp(tool_calls=[_tc("c1")]))  # would loop forever if not broken
-		denied = DispatchResult(success=False, content="I don't have permission to do that: nope",
-		                        execution_log_name="EL-rej", tool_call_id="c1")
+		denied = DispatchResult(
+			success=False,
+			content="I don't have permission to do that: nope",
+			execution_log_name="EL-rej",
+			tool_call_id="c1",
+		)
 		result, md, _ = _run(prov, dispatch_results=[denied], denial=True)
 		self.assertIn("permission", result.lower())
 		self.assertEqual(md.call_count, 1)
@@ -156,7 +166,8 @@ class TestApprovalPauseBreaks(unittest.TestCase):
 		pending = DispatchResult(
 			success=False,
 			content="This action needs human approval (Workflow Request WR-1).",
-			pending_approval=True, tool_call_id="c1",
+			pending_approval=True,
+			tool_call_id="c1",
 		)
 		result, md, _ = _run(prov, dispatch_results=[pending], denial=False)
 		self.assertIn("approval", result.lower())
@@ -167,7 +178,9 @@ class TestApprovalPauseBreaks(unittest.TestCase):
 class TestToolErrorContinues(unittest.TestCase):
 	def test_tool_error_is_fed_back_and_loop_continues(self):
 		prov = _provider(_resp(tool_calls=[_tc("c1")]), _resp(content="recovered"))
-		result, md, _ = _run(prov, dispatch_results=[_err(content="skill blew up", call_id="c1")], denial=False)
+		result, _md, _ = _run(
+			prov, dispatch_results=[_err(content="skill blew up", call_id="c1")], denial=False
+		)
 		self.assertEqual(result, "recovered")
 		self.assertEqual(prov.chat.call_count, 2)  # error fed back, loop continued
 		# The error content is fed back verbatim so the model can adapt.
@@ -208,6 +221,7 @@ class TestEmptyResponseRetry(unittest.TestCase):
 	def test_empty_exhausted_returns_fallback(self):
 		# Always empty → initial call + MAX_EMPTY_RETRIES retries → fallback.
 		from frappe.friday_core.agent_runner import runner
+
 		prov = _provider(_resp(content=""))  # single return_value, repeated
 		result, _, _ = _run(prov, dispatch_results=[])
 		self.assertEqual(result, runner._EMPTY_RESPONSE_FALLBACK)
@@ -217,13 +231,14 @@ class TestEmptyResponseRetry(unittest.TestCase):
 		# empty (retry) → tool call (resets streak) → empty×3 → exhausted fallback.
 		# Proves the counter resets on a usable response (Hermes resets on content).
 		from frappe.friday_core.agent_runner import runner
+
 		prov = _provider(
-			_resp(content=""),                          # retry 1
+			_resp(content=""),  # retry 1
 			_resp(content="", tool_calls=[_tc("c1")]),  # usable → resets streak
-			_resp(content=""),                          # retry 1 again
-			_resp(content=""),                          # retry 2
-			_resp(content=""),                          # retry 3
-			_resp(content=""),                          # exhausted → fallback
+			_resp(content=""),  # retry 1 again
+			_resp(content=""),  # retry 2
+			_resp(content=""),  # retry 3
+			_resp(content=""),  # exhausted → fallback
 		)
 		result, md, _ = _run(prov, dispatch_results=[_ok(call_id="c1")])
 		self.assertEqual(result, runner._EMPTY_RESPONSE_FALLBACK)
@@ -236,25 +251,31 @@ class TestIsPermissionDenial(unittest.TestCase):
 	@patch(f"{_R}.frappe")
 	def test_rejected_log_is_denial(self, mock_frappe):
 		from frappe.friday_core.agent_runner.runner import _is_permission_denial
+
 		mock_frappe.db.get_value.return_value = "rejected"
 		self.assertTrue(_is_permission_denial(_err()))
 
 	@patch(f"{_R}.frappe")
 	def test_error_log_is_not_denial(self, mock_frappe):
 		from frappe.friday_core.agent_runner.runner import _is_permission_denial
+
 		mock_frappe.db.get_value.return_value = "error"
 		self.assertFalse(_is_permission_denial(_err()))
 
 	@patch(f"{_R}.frappe")
 	def test_success_is_not_denial_and_skips_db(self, mock_frappe):
 		from frappe.friday_core.agent_runner.runner import _is_permission_denial
+
 		self.assertFalse(_is_permission_denial(_ok()))
 		mock_frappe.db.get_value.assert_not_called()
 
 	@patch(f"{_R}.frappe")
 	def test_no_log_name_is_not_denial(self, mock_frappe):
 		from frappe.friday_core.agent_runner.runner import _is_permission_denial
-		self.assertFalse(_is_permission_denial(DispatchResult(success=False, content="x", execution_log_name=None)))
+
+		self.assertFalse(
+			_is_permission_denial(DispatchResult(success=False, content="x", execution_log_name=None))
+		)
 		mock_frappe.db.get_value.assert_not_called()
 
 

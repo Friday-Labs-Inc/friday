@@ -53,7 +53,7 @@ class TestRepairToolArguments(unittest.TestCase):
 		self.assertEqual(repair_tool_arguments("not json at all {{"), "{}")
 
 	def test_always_returns_parseable_json(self):
-		for raw in ('{"a":1}', '{bad', 'None', '', '{"x": [}', '<garbage>'):
+		for raw in ('{"a":1}', "{bad", "None", "", '{"x": [}', "<garbage>"):
 			json.loads(repair_tool_arguments(raw))  # must not raise
 
 

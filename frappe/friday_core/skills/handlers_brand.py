@@ -29,7 +29,6 @@ from __future__ import annotations
 import json
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
 
 GET_BRAND_BRIEF = "get-brand-brief"

@@ -85,10 +85,12 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 	@patch(_POST)
 	def test_system_message_is_hoisted(self, mock_post):
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "system", "content": "You are Friday."},
-			{"role": "user", "content": "hi"},
-		])
+		_p().chat(
+			messages=[
+				{"role": "system", "content": "You are Friday."},
+				{"role": "user", "content": "hi"},
+			]
+		)
 		sent = _sent(mock_post)
 		# With prompt caching the system param is a 1-element text-block list
 		# (the block carries the cache_control marker — asserted separately).
@@ -114,20 +116,22 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 		# The runner re-sends an assistant turn in OpenAI WIRE shape
 		# ({id, function:{name, arguments}}); the adapter must accept that.
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "user", "content": "make a note"},
-			{
-				"role": "assistant",
-				"content": "sure",
-				"tool_calls": [
-					{
-						"id": "call_1",
-						"type": "function",
-						"function": {"name": "create_note", "arguments": '{"title": "x"}'},
-					},
-				],
-			},
-		])
+		_p().chat(
+			messages=[
+				{"role": "user", "content": "make a note"},
+				{
+					"role": "assistant",
+					"content": "sure",
+					"tool_calls": [
+						{
+							"id": "call_1",
+							"type": "function",
+							"function": {"name": "create_note", "arguments": '{"title": "x"}'},
+						},
+					],
+				},
+			]
+		)
 		assistant = _sent(mock_post)["messages"][1]
 		self.assertEqual(assistant["role"], "assistant")
 		blocks = assistant["content"]
@@ -140,12 +144,17 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 	@patch(_POST)
 	def test_tool_message_becomes_tool_result_block(self, mock_post):
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "user", "content": "make a note"},
-			{"role": "assistant", "content": "", "tool_calls": [
-				{"id": "call_1", "name": "create_note", "arguments": "{}"}]},
-			{"role": "tool", "tool_call_id": "call_1", "content": "Note created"},
-		])
+		_p().chat(
+			messages=[
+				{"role": "user", "content": "make a note"},
+				{
+					"role": "assistant",
+					"content": "",
+					"tool_calls": [{"id": "call_1", "name": "create_note", "arguments": "{}"}],
+				},
+				{"role": "tool", "tool_call_id": "call_1", "content": "Note created"},
+			]
+		)
 		last = _sent(mock_post)["messages"][-1]
 		self.assertEqual(last["role"], "user")
 		self.assertEqual(
@@ -156,14 +165,21 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 	@patch(_POST)
 	def test_consecutive_tool_results_merge_into_one_user_message(self, mock_post):
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "user", "content": "do two"},
-			{"role": "assistant", "content": "", "tool_calls": [
-				{"id": "c1", "name": "s", "arguments": "{}"},
-				{"id": "c2", "name": "s", "arguments": "{}"}]},
-			{"role": "tool", "tool_call_id": "c1", "content": "first"},
-			{"role": "tool", "tool_call_id": "c2", "content": "second"},
-		])
+		_p().chat(
+			messages=[
+				{"role": "user", "content": "do two"},
+				{
+					"role": "assistant",
+					"content": "",
+					"tool_calls": [
+						{"id": "c1", "name": "s", "arguments": "{}"},
+						{"id": "c2", "name": "s", "arguments": "{}"},
+					],
+				},
+				{"role": "tool", "tool_call_id": "c1", "content": "first"},
+				{"role": "tool", "tool_call_id": "c2", "content": "second"},
+			]
+		)
 		last = _sent(mock_post)["messages"][-1]
 		self.assertEqual(last["role"], "user")
 		self.assertEqual(len(last["content"]), 2)
@@ -172,20 +188,27 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 	@patch(_POST)
 	def test_openai_tool_defs_translated_to_input_schema(self, mock_post):
 		mock_post.return_value = _ok()
-		openai_tools = [{
-			"type": "function",
-			"function": {
-				"name": "create_note",
-				"description": "Make a note",
-				"parameters": {"type": "object", "properties": {"title": {"type": "string"}}},
-			},
-		}]
+		openai_tools = [
+			{
+				"type": "function",
+				"function": {
+					"name": "create_note",
+					"description": "Make a note",
+					"parameters": {"type": "object", "properties": {"title": {"type": "string"}}},
+				},
+			}
+		]
 		_p().chat(messages=[{"role": "user", "content": "hi"}], tools=openai_tools)
-		self.assertEqual(_sent(mock_post)["tools"], [{
-			"name": "create_note",
-			"description": "Make a note",
-			"input_schema": {"type": "object", "properties": {"title": {"type": "string"}}},
-		}])
+		self.assertEqual(
+			_sent(mock_post)["tools"],
+			[
+				{
+					"name": "create_note",
+					"description": "Make a note",
+					"input_schema": {"type": "object", "properties": {"title": {"type": "string"}}},
+				}
+			],
+		)
 
 
 class TestAnthropicPromptCaching(unittest.TestCase):
@@ -194,10 +217,12 @@ class TestAnthropicPromptCaching(unittest.TestCase):
 	@patch(_POST)
 	def test_system_carries_ephemeral_cache_control(self, mock_post):
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "system", "content": "You are Friday."},
-			{"role": "user", "content": "hi"},
-		])
+		_p().chat(
+			messages=[
+				{"role": "system", "content": "You are Friday."},
+				{"role": "user", "content": "hi"},
+			]
+		)
 		sent = _sent(mock_post)
 		self.assertEqual(sent["system"][0]["cache_control"], {"type": "ephemeral"})
 
@@ -212,12 +237,14 @@ class TestAnthropicPromptCaching(unittest.TestCase):
 	def test_messages_are_not_polluted_with_cache_markers(self, mock_post):
 		# v0.1 caches the static prefix only — history messages stay untouched.
 		mock_post.return_value = _ok()
-		_p().chat(messages=[
-			{"role": "system", "content": "You are Friday."},
-			{"role": "user", "content": "hi"},
-			{"role": "assistant", "content": "hello"},
-			{"role": "user", "content": "again"},
-		])
+		_p().chat(
+			messages=[
+				{"role": "system", "content": "You are Friday."},
+				{"role": "user", "content": "hi"},
+				{"role": "assistant", "content": "hello"},
+				{"role": "user", "content": "again"},
+			]
+		)
 		for msg in _sent(mock_post)["messages"]:
 			self.assertNotIn("cache_control", json.dumps(msg))
 

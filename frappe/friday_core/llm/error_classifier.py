@@ -32,7 +32,6 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-
 # ── Taxonomy (F.1 — trimmed) ────────────────────────────────────────────────
 
 
@@ -194,7 +193,11 @@ def _determine_reason(status_code: int | None, text: str, err_type: str) -> Fail
 		if status_code == 400:
 			# A 400 is a malformed request, unless it's specifically the
 			# context being too long (which we compress, not abort).
-			return FailoverReason.context_overflow if _matches(text, _CONTEXT_PATTERNS) else FailoverReason.format_error
+			return (
+				FailoverReason.context_overflow
+				if _matches(text, _CONTEXT_PATTERNS)
+				else FailoverReason.format_error
+			)
 		if status_code in (503, 529):
 			return FailoverReason.overloaded
 		if status_code >= 500:

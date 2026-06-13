@@ -35,7 +35,7 @@ CHANNEL_DOCTYPE = "Raven Channel"
 def post_task_update(
 	task_name: str,
 	event: str,
-	details: Optional[dict] = None,
+	details: dict | None = None,
 ) -> None:
 	"""
 	Post a task status update to the Raven War Room channel.
@@ -86,6 +86,7 @@ def post_task_update(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_raven_installed() -> bool:
 	"""
 	Return True only when the ``Raven Channel`` DocType is present in the
@@ -104,7 +105,7 @@ def _is_raven_installed() -> bool:
 		return False
 
 
-def _get_channel_id() -> Optional[str]:
+def _get_channel_id() -> str | None:
 	"""
 	Return the Raven Channel document name for CHANNEL_NAME, or None if not found.
 
@@ -124,7 +125,7 @@ def _get_channel_id() -> Optional[str]:
 		return None
 
 
-def _build_payload(task_name: str, event: str, details: Optional[dict]) -> dict:
+def _build_payload(task_name: str, event: str, details: dict | None) -> dict:
 	"""
 	Assemble the message dict posted to Raven.
 
@@ -148,7 +149,7 @@ def _build_payload(task_name: str, event: str, details: Optional[dict]) -> dict:
 	}
 
 
-def _format_message_text(task_name: str, event: str, details: Optional[dict]) -> str:
+def _format_message_text(task_name: str, event: str, details: dict | None) -> str:
 	"""Format a human-readable War Room message."""
 	import frappe
 
@@ -187,10 +188,7 @@ def _post_to_raven(channel_id: str, payload: dict) -> None:
 	"""
 	import requests
 
-	endpoint = (
-		frappe.utils.get_url()
-		+ "/api/method/raven.api.send_message"
-	)
+	endpoint = frappe.utils.get_url() + "/api/method/raven.api.send_message"
 
 	headers = {
 		"Content-Type": "application/json",

@@ -39,8 +39,14 @@ _SKILL = {
 	"parameters_schema": {
 		"type": "object",
 		"properties": {
-			"memory": {"type": "string", "description": "The fact to remember — ONE sentence, under 500 characters."},
-			"subject": {"type": "string", "description": "Optional grouping tag: a client name or record ID like 'BB-0001'."},
+			"memory": {
+				"type": "string",
+				"description": "The fact to remember — ONE sentence, under 500 characters.",
+			},
+			"subject": {
+				"type": "string",
+				"description": "Optional grouping tag: a client name or record ID like 'BB-0001'.",
+			},
 		},
 		"required": ["memory"],
 	},

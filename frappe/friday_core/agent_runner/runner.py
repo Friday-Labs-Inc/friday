@@ -45,7 +45,6 @@ import hashlib
 import json
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
 from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_messages_surrogates,
@@ -72,8 +71,7 @@ _EMPTY_REPLY_FALLBACK = "I'm unable to complete this in the time allotted."
 # before giving up, instead of handing the user a blank turn.
 MAX_EMPTY_RETRIES = 3
 _EMPTY_RESPONSE_FALLBACK = (
-	"The model returned an empty response after several retries. "
-	"Please try rephrasing your request."
+	"The model returned an empty response after several retries. Please try rephrasing your request."
 )
 
 
@@ -116,7 +114,7 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str) -> str:
 	# never break the turn, so we log and continue with the full prompt.
 	try:
 		maybe_compress_session(profile_name, session_id)
-	except Exception as exc:  # noqa: BLE001 — compression must never break a turn
+	except Exception as exc:
 		frappe.logger("friday.compression").warning(
 			f"Compression pass errored for session {session_id!r}: "
 			f"{type(exc).__name__}; continuing with the full prompt."
@@ -298,9 +296,7 @@ def _deterministic_call_id(name: str, arguments, index: int) -> str:
 	conversation doesn't churn ids and bust prompt caching); the index keeps two
 	*different* calls in one response distinct.
 	"""
-	digest = hashlib.sha1(
-		f"{name}:{_arguments_key(arguments)}:{index}".encode("utf-8")
-	).hexdigest()[:12]
+	digest = hashlib.sha1(f"{name}:{_arguments_key(arguments)}:{index}".encode()).hexdigest()[:12]
 	return f"call_{digest}"
 
 

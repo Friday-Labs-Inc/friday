@@ -133,7 +133,9 @@ class TestHints(unittest.TestCase):
 		self.assertFalse(c.should_fallback)
 
 	def test_result_carries_context(self):
-		c = classify_api_error(status_code=429, provider="minimax", model="MiniMax-Standard", message="slow down")
+		c = classify_api_error(
+			status_code=429, provider="minimax", model="MiniMax-Standard", message="slow down"
+		)
 		self.assertIsInstance(c, ClassifiedError)
 		self.assertEqual(c.status_code, 429)
 		self.assertEqual(c.provider, "minimax")

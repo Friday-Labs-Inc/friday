@@ -86,7 +86,6 @@ from __future__ import annotations
 import json
 
 import frappe
-
 from frappe.friday_core.permissions.matrix import PermissionMatrix
 
 # Every cache key starts with this prefix. Used both for naming individual

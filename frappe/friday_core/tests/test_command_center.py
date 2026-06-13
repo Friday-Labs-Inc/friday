@@ -136,7 +136,9 @@ class TestAgenticRunner(unittest.TestCase):
 	@patch("frappe.friday_core.tasks.runner._raise_failure_issue", return_value="ISS-9")
 	@patch(_RUN, side_effect=RuntimeError("model down"))
 	@patch("frappe.friday_core.tasks.runner.frappe")
-	def test_agentic_failure_blocks_and_files_issue(self, mock_frappe, mock_run, mock_issue, mock_war, mock_now):
+	def test_agentic_failure_blocks_and_files_issue(
+		self, mock_frappe, mock_run, mock_issue, mock_war, mock_now
+	):
 		from frappe.friday_core.tasks import runner
 
 		task = self._task()
@@ -206,7 +208,9 @@ class TestEventHandlers(unittest.TestCase):
 		gate_task = MagicMock()
 		gate_task.workflow_state = "Pending"
 		mock_frappe.get_doc.return_value = gate_task
-		randompack.handle_gate_decided({"project_id": "RP-100", "gate": "gate1", "decision": "Midnight Roast"}, MagicMock())
+		randompack.handle_gate_decided(
+			{"project_id": "RP-100", "gate": "gate1", "decision": "Midnight Roast"}, MagicMock()
+		)
 		self.assertEqual(gate_task.workflow_state, "Completed")
 		gate_task.save.assert_called_once()
 

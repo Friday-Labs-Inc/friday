@@ -166,9 +166,7 @@ def instantiate_pipeline(project_name: str, backend_ref: str, brief_name: str) -
 				"execution_mode": spec["mode"],
 				"backend_ref": spec["key"],
 				"required_skills": [{"skill": s} for s in spec["skills"]],
-				"depends_on": [
-					{"task": created[dep]} for dep in spec["depends_on"] if dep in created
-				],
+				"depends_on": [{"task": created[dep]} for dep in spec["depends_on"] if dep in created],
 			}
 		)
 		task.insert(ignore_permissions=True)

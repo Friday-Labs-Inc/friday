@@ -15,6 +15,6 @@ Phase 1: cold-spawn per execution.
 Phase 1.5: warm container pool.
 """
 
-from frappe.friday_core.sandbox.runner import execute, SandboxResult
+from frappe.friday_core.sandbox.runner import SandboxResult, execute
 
-__all__ = ["execute", "SandboxResult"]
+__all__ = ["SandboxResult", "execute"]

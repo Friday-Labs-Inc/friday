@@ -53,7 +53,6 @@ from __future__ import annotations
 import unittest
 
 import frappe
-
 from frappe.friday_core.skills import loader as loader_module
 from frappe.friday_core.skills.loader import (
 	SKILLS_CACHE_KEY_PREFIX,
@@ -102,7 +101,9 @@ def _ensure_skill(name: str, status: str, operation: str = "read"):
 		skill.append("required_doctypes", {"target_doctype": TARGET_DOCTYPE, "operation": operation})
 		# Give the test skill a real parameters_schema so the tool-definition
 		# test can verify it round-trips correctly.
-		skill.parameters_schema = '{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}'
+		skill.parameters_schema = (
+			'{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}'
+		)
 		skill.save(ignore_permissions=True)
 		return
 	doc = frappe.get_doc(

@@ -52,7 +52,7 @@ def unfinished_dependencies(task) -> list[str]:
 	rows have a `.task` name). Returns an empty list when nothing blocks it.
 	"""
 	blocked: list[str] = []
-	for row in (getattr(task, "depends_on", None) or []):
+	for row in getattr(task, "depends_on", None) or []:
 		if not row.task:
 			continue
 		status = frappe.db.get_value(TASK_DOCTYPE, row.task, "status")

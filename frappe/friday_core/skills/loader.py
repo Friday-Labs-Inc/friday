@@ -110,7 +110,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import frappe
-
 from frappe.friday_core.permissions.matrix import build_matrix, evaluate
 
 # ---------------------------------------------------------------------------
@@ -387,9 +386,7 @@ def _cache_get(profile_name: str) -> list[SkillDefinition] | None:
 		return [SkillDefinition.from_dict(item) for item in data]
 	except (json.JSONDecodeError, KeyError, TypeError) as exc:
 		# Corrupt entry: drop and treat as miss so the next call rebuilds.
-		frappe.logger().warning(
-			f"friday.skills.loader: dropping corrupt cache for {profile_name!r}: {exc}"
-		)
+		frappe.logger().warning(f"friday.skills.loader: dropping corrupt cache for {profile_name!r}: {exc}")
 		frappe.cache().delete_value(_skills_key(profile_name))
 		return None
 

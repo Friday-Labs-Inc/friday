@@ -57,7 +57,6 @@ from __future__ import annotations
 import unittest
 
 import frappe
-
 from frappe.friday_core.permissions import cache as cache_module
 from frappe.friday_core.permissions import matrix as matrix_module
 from frappe.friday_core.permissions.matrix import (

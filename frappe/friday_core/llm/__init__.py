@@ -39,16 +39,16 @@ See also:
 
 from __future__ import annotations
 
-from frappe.friday_core.llm.provider import (
-    LLMProvider,
-    MinimaxProvider,
-    get_provider_for_profile,
-)
 from frappe.friday_core.llm.prompt_builder import build
+from frappe.friday_core.llm.provider import (
+	LLMProvider,
+	MinimaxProvider,
+	get_provider_for_profile,
+)
 
 __all__ = [
-    "LLMProvider",
-    "MinimaxProvider",
-    "get_provider_for_profile",
-    "build",
+	"LLMProvider",
+	"MinimaxProvider",
+	"build",
+	"get_provider_for_profile",
 ]

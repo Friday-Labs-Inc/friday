@@ -105,6 +105,10 @@ def call_command(cmd, context):
 
 def get_commands():
 	# prevent circular imports
+	# Friday CLI commands (Slice 4+) — registered alongside Frappe's own
+	# bench subcommands. See frappe/friday_core/cli/commands.py.
+	from frappe.friday_core.cli.commands import commands as friday_commands
+
 	from .gettext import commands as gettext_commands
 	from .redis_utils import commands as redis_commands
 	from .scheduler import commands as scheduler_commands
@@ -112,10 +116,6 @@ def get_commands():
 	from .testing import commands as testing_commands
 	from .translate import commands as translate_commands
 	from .utils import commands as utils_commands
-
-	# Friday CLI commands (Slice 4+) — registered alongside Frappe's own
-	# bench subcommands. See frappe/friday_core/cli/commands.py.
-	from frappe.friday_core.cli.commands import commands as friday_commands
 
 	clickable_link = "https://frappeframework.com/docs"
 	all_commands = (

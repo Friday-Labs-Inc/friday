@@ -73,7 +73,6 @@ should not touch the decision logic). Single Responsibility, applied.
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.permissions.matrix import Decision, PermissionMatrix
 
 

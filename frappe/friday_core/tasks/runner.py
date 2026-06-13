@@ -4,9 +4,10 @@
 """
 Task runner — executes assigned Tasks inside Docker sandboxes.
 
-Consumes ``agent_task.assigned`` real-time events emitted by the
-workflow hook and the task dispatcher.  Transitions task state through
-Executing → Review (success) or Executing → Blocked (failure).
+Executes a Task as a background RQ job enqueued by the workflow hook
+(``tasks.workflow.on_state_change``) when the task enters ``Assigned``.
+Transitions task state through Executing → Review (success) or
+Executing → Blocked (failure).
 
 Registration
 ------------
@@ -24,19 +25,22 @@ runner (``friday_core.sandbox.runner``) but differ in lifecycle:
 - Task flow: event-driven, cron-dispatched, persistent.
 """
 
-import frappe
-from frappe.utils import now_datetime
+from __future__ import annotations
 
+import frappe
 from frappe.friday_core.issues.raise_issue import raise_failure_issue
+from frappe.utils import now_datetime
 
 # Lazy import to avoid circular dependency with the warroom module.
 _warroom = None
+
 
 def _get_warroom():
 	global _warroom
 	if _warroom is None:
 		try:
 			from frappe.friday_core import warroom
+
 			_warroom = warroom
 		except Exception:
 			_warroom = None
@@ -50,6 +54,7 @@ _logger = frappe.logger("friday.tasks.runner")
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def register_task_runner() -> None:
 	"""
 	Subscribe to ``agent_task.assigned`` real-time events.
@@ -61,17 +66,12 @@ def register_task_runner() -> None:
 	breaks every site migrate. This stub exists so the ``after_migrate``
 	hook entry in ``hooks.py`` doesn't fail.
 
-	The real handler ``on_agent_task_assigned()`` remains usable — it
-	just needs a different trigger. Options for the actual subscription:
-
-	  - A ``doc_events["Task"]["on_update"]`` hook that calls it
-	    when the workflow_state transitions to "Assigned".
-	  - An RQ job enqueued by ``tasks.workflow.on_state_change`` when
-	    the assignment happens.
-	  - A scheduled ``tasks.dispatcher.tick`` poll (already wired in
-	    ``hooks.scheduler_events``).
-
-	Pick one in a follow-up Slice 8.x; until then the runner is dormant.
+	The real handler ``on_agent_task_assigned()`` is now triggered by
+	``tasks.workflow.on_state_change``: when a Task transitions into
+	``Assigned`` it enqueues that handler as an RQ job on the ``default``
+	queue (decision 2026-06-13). This stub therefore stays a no-op — it
+	exists only so the ``after_migrate`` hook entry in ``hooks.py`` does
+	not fail. No realtime subscription is needed or possible server-side.
 	"""
 	# Intentional no-op. See docstring above for the real fix.
 	pass
@@ -79,11 +79,11 @@ def register_task_runner() -> None:
 
 def on_agent_task_assigned(message: dict) -> None:
 	"""
-	Handle an ``agent_task.assigned`` real-time event.
+	Execute a task that has just been assigned.
 
-	Executed asynchronously by the Frappe realtime worker after the
-	``agent_task.assigned`` pub/sub message is published by the workflow
-	hook or the dispatcher.
+	Runs as an RQ background job enqueued by ``tasks.workflow.on_state_change``
+	when a Task transitions into ``Assigned`` (on the ``default`` queue, after
+	the assigning transaction commits).
 
 	Args:
 		message: Dict with keys ``task_name``, ``assigned_to_profile``,
@@ -93,9 +93,7 @@ def on_agent_task_assigned(message: dict) -> None:
 	profile_name = message.get("assigned_to_profile")
 
 	if not task_name or not profile_name:
-		_logger.error(
-			"Malformed agent_task.assigned message: %s", message
-		)
+		_logger.error("Malformed agent_task.assigned message: %s", message)
 		return
 
 	try:
@@ -110,9 +108,7 @@ def on_agent_task_assigned(message: dict) -> None:
 		# exist (the sandbox signals oom/timeout via `status`, handled in
 		# _block_task). Evaluating the missing name raised AttributeError and
 		# MASKED the real error. Collapsed to one correct handler.
-		_logger.exception(
-			"Task runner crashed for task %s on profile %s", task_name, profile_name
-		)
+		_logger.exception("Task runner crashed for task %s on profile %s", task_name, profile_name)
 		issue_name = _raise_failure_issue(task_name, "error")
 		_post_warroom(task_name, "error", {"profile": profile_name, "issue": issue_name})
 
@@ -121,7 +117,8 @@ def on_agent_task_assigned(message: dict) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _post_warroom(task_name: str, event: str, details: dict = None) -> None:
+
+def _post_warroom(task_name: str, event: str, details: dict | None = None) -> None:
 	"""
 	Post a status update to the Raven War Room channel.
 
@@ -169,6 +166,58 @@ def _raise_failure_issue(
 		return None
 
 
+def _claim_task(task_name: str) -> str | None:
+	"""
+	Design 61, Q5 — idempotent claim-and-set lease.
+
+	Atomically transition Assigned → Executing AND stamp an executing_token.
+	A duplicate trigger (the reconciler re-fires a lost enqueue, or a stuck
+	queue belatedly drains the original) sees a non-empty token and exits
+	cleanly. This is what makes the at-least-once-trigger / exactly-once-
+	effect contract honest — without it, the reconciler would risk double-
+	executing the same task and writing duplicate deliverables.
+
+	Returns the token if we won the claim, None if someone else got there
+	first. The UPDATE itself is the lock; we do not pre-read the row.
+	"""
+	token = frappe.generate_hash(length=16)
+	# COALESCE collapses NULL/'' so an empty-string token left over from an
+	# older row (pre-migration) does not falsely lock the task.
+	frappe.db.sql(
+		"""
+		UPDATE `tabTask`
+		SET workflow_state = 'Executing',
+		    executing_token = %s,
+		    started_at = COALESCE(started_at, NOW()),
+		    last_heartbeat_at = NOW()
+		WHERE name = %s
+		  AND workflow_state = 'Assigned'
+		  AND COALESCE(executing_token, '') = ''
+		""",
+		(token, task_name),
+	)
+	# frappe.db.sql returns a list of rows for SELECT; for UPDATE the affected
+	# row count comes via the underlying cursor. The simple, portable test:
+	# re-read the token. If it matches, we won.
+	current = frappe.db.get_value("Task", task_name, "executing_token")
+	return token if current == token else None
+
+
+def _heartbeat(task_name: str) -> None:
+	"""
+	Refresh ``last_heartbeat_at`` so the reconciler knows this runner is alive.
+
+	Called periodically during long agentic turns and at every skill boundary
+	for mechanical runs. Failures are swallowed: a missed heartbeat costs at
+	most one reconciler grace window, but a crash inside the heartbeat must
+	never break the actual work.
+	"""
+	try:
+		frappe.db.set_value("Task", task_name, "last_heartbeat_at", now_datetime(), update_modified=False)
+	except Exception:
+		_logger.warning("heartbeat update failed for %s", task_name)
+
+
 def _run_task(task_name: str, profile_name: str) -> None:
 	"""
 	Load a task, execute its required skills, and update the task state.
@@ -177,6 +226,15 @@ def _run_task(task_name: str, profile_name: str) -> None:
 		task_name: ``Task`` document name.
 		profile_name: ``Agent Profile`` name to execute the task under.
 	"""
+	# Q5 — claim the task atomically. If someone else already did, exit cleanly.
+	token = _claim_task(task_name)
+	if not token:
+		_logger.info(
+			"runner: task %s already claimed (duplicate trigger from reconciler?) — exiting",
+			task_name,
+		)
+		return
+
 	task = frappe.get_doc("Task", task_name)
 
 	# Design 60, Q2 — agentic tasks run a REAL governed turn instead of the
@@ -191,8 +249,8 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	# Record start time for duration calculation.
 	started_at = now_datetime()
 
-	# Transition to Executing (workflow action).
-	_task_transition(task, "Executing")
+	# Transition to Executing was already done atomically by _claim_task; we
+	# only refresh the timestamp fields the doc-level save needs to see.
 	task.started_at = started_at
 	task.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -205,6 +263,9 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	results = []
 
 	for skill_name in skills:
+		# Heartbeat at every skill boundary so the reconciler's executing-stale
+		# sweep does not block a long but healthy task. Cheap update — no save.
+		_heartbeat(task_name)
 		result = _execute_skill_in_sandbox(skill_name, task, profile_name)
 		results.append(result)
 
@@ -220,9 +281,8 @@ def _run_task(task_name: str, profile_name: str) -> None:
 
 	# Post "completed" to War Room.
 	import datetime
-	duration_ms = int(
-		(datetime.datetime.utcnow() - started_at).total_seconds() * 1000
-	)
+
+	duration_ms = int((datetime.datetime.utcnow() - started_at).total_seconds() * 1000)
 	_post_warroom(
 		task_name,
 		"completed",
@@ -230,9 +290,7 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	)
 
 
-def _execute_skill_in_sandbox(
-	skill_name: str, task: "Task", profile_name: str
-) -> "SandboxResult":
+def _execute_skill_in_sandbox(skill_name: str, task: "Task", profile_name: str) -> "SandboxResult":
 	"""
 	Execute one skill from a task's required_skills in a Docker sandbox.
 
@@ -247,8 +305,8 @@ def _execute_skill_in_sandbox(
 	Returns:
 		``SandboxResult`` dataclass from sandbox.runner.
 	"""
-	from frappe.friday_core.sandbox import runner as sandbox_runner
 	from frappe.friday_core.sandbox import credentials as sandbox_creds
+	from frappe.friday_core.sandbox import runner as sandbox_runner
 
 	parameters = _parse_task_parameters(task, skill_name)
 	creds = sandbox_creds.resolve_credentials(profile_name, skill_name)
@@ -379,7 +437,7 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			session_id=f"task::{task.name}",
 			inbound_content=framing,
 		)
-	except Exception as exc:  # noqa: BLE001 — the task row is the failure ledger
+	except Exception as exc:
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"

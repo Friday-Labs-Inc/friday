@@ -80,9 +80,18 @@ _SKILLS: dict[str, dict] = {
 			"type": "object",
 			"properties": {
 				"brief": {"type": "string", "description": "The Brand Brief ID this direction belongs to."},
-				"direction_name": {"type": "string", "description": "Short evocative name, e.g. 'Midnight Atelier'."},
-				"concept_story": {"type": "string", "description": "The narrative: what this direction says about the brand and why it fits the brief."},
-				"personality_keywords": {"type": "string", "description": "3-5 comma-separated personality words."},
+				"direction_name": {
+					"type": "string",
+					"description": "Short evocative name, e.g. 'Midnight Atelier'.",
+				},
+				"concept_story": {
+					"type": "string",
+					"description": "The narrative: what this direction says about the brand and why it fits the brief.",
+				},
+				"personality_keywords": {
+					"type": "string",
+					"description": "3-5 comma-separated personality words.",
+				},
 				"color_palette": {
 					"type": "array",
 					"description": "3-6 colors with roles.",
@@ -91,12 +100,21 @@ _SKILLS: dict[str, dict] = {
 						"properties": {
 							"hex": {"type": "string", "description": "e.g. '#1A1A2E'"},
 							"name": {"type": "string", "description": "e.g. 'Ink Navy'"},
-							"role": {"type": "string", "description": "primary / secondary / accent / background"},
+							"role": {
+								"type": "string",
+								"description": "primary / secondary / accent / background",
+							},
 						},
 					},
 				},
-				"typography": {"type": "string", "description": "Heading + body font suggestion with a one-line rationale."},
-				"logo_concept": {"type": "string", "description": "Designer-ready description of the logo: imagery, construction, mood."},
+				"typography": {
+					"type": "string",
+					"description": "Heading + body font suggestion with a one-line rationale.",
+				},
+				"logo_concept": {
+					"type": "string",
+					"description": "Designer-ready description of the logo: imagery, construction, mood.",
+				},
 				"tagline_options": {"type": "string", "description": "2-3 tagline options, one per line."},
 			},
 			"required": ["brief", "direction_name", "concept_story"],

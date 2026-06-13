@@ -55,7 +55,6 @@ and re-read `docs/design/47-gateway-design-decisions.md` §9.
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.agent_runner.runner import run_turn
 from frappe.friday_core.gateway.batching import flush_batch
 from frappe.friday_core.permissions.matrix import check as permission_check
@@ -93,7 +92,7 @@ def _friday_worker_alive() -> bool:
 		from frappe.utils.background_jobs import get_queue, get_workers
 
 		return len(get_workers(get_queue(FRIDAY_QUEUE))) > 0
-	except Exception:  # noqa: BLE001 — any infra failure means "use inline"
+	except Exception:
 		return False
 
 
@@ -304,7 +303,7 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		# crash between these two, recovery sweeper picks it up.
 		_mark_processed(inbound, retry_count=inbound.retry_count or 0)
 
-	except Exception as exc:  # noqa: BLE001 — gateway is the last error catcher
+	except Exception as exc:
 		# Log full traceback to Frappe Error Log AND write a system-error
 		# outbound row so the user gets feedback. Don't re-raise: in sync
 		# mode that would roll back the inbound row, hiding the audit.
@@ -327,7 +326,7 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		# benign here, so we swallow it.
 		try:
 			lock.release()
-		except Exception:  # noqa: BLE001
+		except Exception:
 			pass
 
 

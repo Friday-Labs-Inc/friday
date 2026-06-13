@@ -107,9 +107,7 @@ def verify_signature(raw_body: bytes, header: str, secret: str, tolerance_second
 	"""
 	if not secret or not header:
 		return False
-	parts = dict(
-		part.split("=", 1) for part in header.split(",") if "=" in part
-	)
+	parts = dict(part.split("=", 1) for part in header.split(",") if "=" in part)
 	t = parts.get("t")
 	v1 = parts.get("v1")
 	if not t or not v1:
@@ -154,7 +152,7 @@ def process_event(event_id: str) -> None:
 		event.failure_reason = note
 		event.processed_at = frappe.utils.now_datetime()
 		event.save(ignore_permissions=True)
-	except Exception as exc:  # noqa: BLE001 — the event row is the error ledger
+	except Exception as exc:
 		event.status = "Failed"
 		event.failure_reason = f"{type(exc).__name__}: {str(exc)[:300]}"
 		event.save(ignore_permissions=True)
@@ -191,9 +189,7 @@ def handle_payment_received(data: dict, event) -> None:
 		return
 
 	backend_ref = str(data.get("project_id") or data.get("brief_id") or event.event_id)
-	existing = frappe.db.get_value(
-		"Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name"
-	)
+	existing = frappe.db.get_value("Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name")
 	if existing:
 		return  # snapshot is frozen — never overwrite
 
@@ -206,8 +202,12 @@ def handle_payment_received(data: dict, event) -> None:
 			continue
 		if isinstance(value, list):
 			value = ", ".join(str(v) for v in value)
-		if target in doc_fields and doc_fields[target]:
-			doc_fields[target] = f"{doc_fields[target]}\nAvoid: {value}" if key == "brands_avoid" else f"{doc_fields[target]}\n{value}"
+		if doc_fields.get(target):
+			doc_fields[target] = (
+				f"{doc_fields[target]}\nAvoid: {value}"
+				if key == "brands_avoid"
+				else f"{doc_fields[target]}\n{value}"
+			)
 		else:
 			doc_fields[target] = value
 
@@ -245,7 +245,7 @@ def _warroom(text: str) -> None:
 		channel = _get_channel_id()
 		if channel:
 			_post_to_raven(channel, {"text": text, "message_type": "Text", "hide_in_message_history": False})
-	except Exception:  # noqa: BLE001 — visibility must never break processing
+	except Exception:
 		pass
 
 
@@ -256,7 +256,9 @@ def handle_project_created(data: dict, event) -> None:
 	ref = _backend_ref(data, event)
 	brief = _find_brief(ref)
 	if not brief:
-		raise ValueError(f"no ingested Brand Brief for backend project {ref!r} — was payment.received delivered?")
+		raise ValueError(
+			f"no ingested Brand Brief for backend project {ref!r} — was payment.received delivered?"
+		)
 
 	project = _find_project(ref)
 	if not project:
@@ -272,12 +274,24 @@ def handle_project_created(data: dict, event) -> None:
 		doc.insert(ignore_permissions=True)
 		project = doc.name
 
+	# Design 61, Q7b — explicit replay narration. ``instantiate_pipeline`` is
+	# already idempotent per-task (it dedupes against existing backend_ref
+	# slugs on the project — templates.py:150), so a replay returns an empty
+	# list of newly-created names rather than double-planning. Make that
+	# safety visible in the War Room so a replay is observably a no-op,
+	# instead of looking like a successful "0 tasks created" plan.
 	tasks = instantiate_pipeline(project, ref, brief)
+	if not tasks:
+		_warroom(f"**[PRJ {ref}]** project.created replay — pipeline already planned; no-op.")
+		return
 	_warroom(f"**[PRJ {ref}]** pipeline planned — {len(tasks)} tasks created (brief {brief}).")
 
 	from frappe.friday_core.integrations.randompack_client import post_project_note
 
-	post_project_note(ref, note=f"Friday planned the pipeline: {len(tasks)} tasks, gates at direction choice and final approval.")
+	post_project_note(
+		ref,
+		note=f"Friday planned the pipeline: {len(tasks)} tasks, gates at direction choice and final approval.",
+	)
 
 
 def handle_gate_decided(data: dict, event) -> None:
@@ -330,8 +344,12 @@ def handle_refinement_requested(data: dict, event) -> None:
 	).insert(ignore_permissions=True)
 
 	if round_n >= 3:
-		_remember(f"Backend project {ref} reached refinement round {round_n} (+2 delivery days each).", subject=ref)
-		_warroom(f"⚠️ **[PRJ {ref}]** refinement round {round_n} — scope check: each round adds 2 delivery days.")
+		_remember(
+			f"Backend project {ref} reached refinement round {round_n} (+2 delivery days each).", subject=ref
+		)
+		_warroom(
+			f"⚠️ **[PRJ {ref}]** refinement round {round_n} — scope check: each round adds 2 delivery days."
+		)
 
 
 def handle_kill_switch(data: dict, event) -> None:

@@ -16,7 +16,7 @@ runner : Event-driven task executor that resumes paused containers.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-	from frappe.friday_core.doctype.task.task import Task
 	from frappe.friday_core.doctype.agent_profile.agent_profile import AgentProfile
+	from frappe.friday_core.doctype.task.task import Task
 
-__all__ = ["workflow", "dispatcher", "runner", "warroom"]
+__all__ = ["dispatcher", "runner", "warroom", "workflow"]

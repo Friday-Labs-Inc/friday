@@ -76,9 +76,7 @@ def handle_raven_message(doc, method=None) -> None:
 	if channel.is_direct_message:
 		# Q3 — DMs: answer only in DM channels the bot belongs to (a DM
 		# between two humans is none of our business).
-		if not frappe.db.exists(
-			"Raven Channel Member", {"channel_id": doc.channel_id, "user_id": bot_user}
-		):
+		if not frappe.db.exists("Raven Channel Member", {"channel_id": doc.channel_id, "user_id": bot_user}):
 			return
 	else:
 		# Q3 — channels: answer only when the bot is explicitly mentioned.

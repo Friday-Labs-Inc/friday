@@ -8,35 +8,58 @@ Registered as ``scheduler_events["cron"]["*/1 * * * *"]`` in ``hooks.py``.
 
 One dispatcher cycle (``tick()``) runs every 60 seconds and:
 
-1. Atomically fetches up to 5 dispatchable, unclaimed ``Pending`` tasks
+1. Atomically fetches a window of dispatchable, unclaimed ``Pending`` tasks
    using ``SELECT … FOR UPDATE SKIP LOCKED`` so concurrent dispatcher
    instances never double-claim a row.
-2. For each task, matches required skills against active Agent Profiles.
-3. Assigns the first eligible profile, transitions the task to ``Assigned``,
-   and emits an ``agent_task.assigned`` pub/sub event.
+2. For each task, matches required skills against active Agent Profiles,
+   stopping once ``DISPATCH_BUDGET_PER_TICK`` ready tasks have been handed off.
+3. Assigns the first eligible profile and transitions the task to ``Assigned``.
+   That state change fires ``tasks.workflow.on_state_change``, which enqueues
+   the background runner (the single trigger chokepoint).
 4. Logs a warning if a task has no eligible profile (it stays Pending and
    will be retried on the next tick).
 """
 
+from __future__ import annotations
+
 import frappe
 from frappe.utils import now_datetime
-
 
 _logger = frappe.logger("friday.tasks.dispatcher")
 
 
+# How many tasks one tick will actually hand off to runners.
+DISPATCH_BUDGET_PER_TICK = 5
+# How many candidate rows we scan to FIND that many ready tasks. Larger than
+# the budget so that tasks parked by _ready_to_dispatch (unmet dependencies,
+# On Hold projects, milestone gates) cannot sit at the front of the queue and
+# starve newer, ready tasks behind them.
+DISPATCH_SCAN_WINDOW = 100
+
+
 def tick() -> None:
 	"""
-	One dispatcher cycle — claim and dispatch up to 5 tasks.
+	One dispatcher cycle — scan up to ``DISPATCH_SCAN_WINDOW`` candidates and
+	hand off at most ``DISPATCH_BUDGET_PER_TICK`` ready tasks.
 
 	Safe to call concurrently from multiple scheduler workers;
 	``FOR UPDATE SKIP LOCKED`` ensures tasks are claimed exactly once.
+
+	The scan/budget split matters: a small fetch (the old ``limit=5``) could
+	return five tasks that are all parked by ``_ready_to_dispatch`` — the tick
+	then dispatches nothing while ready tasks wait behind them. Scanning a
+	wider window and only spending the budget on ready tasks prevents that
+	starvation.
 	"""
-	tasks = _fetch_dispatchable_tasks(limit=5)
+	tasks = _fetch_dispatchable_tasks(limit=DISPATCH_SCAN_WINDOW)
+	dispatched = 0
 	for task_doc in tasks:
 		if not _ready_to_dispatch(task_doc):
 			continue
 		_claim_and_dispatch(task_doc)
+		dispatched += 1
+		if dispatched >= DISPATCH_BUDGET_PER_TICK:
+			break
 
 
 def _ready_to_dispatch(task_doc) -> bool:
@@ -120,21 +143,22 @@ def _claim_and_dispatch(task_doc: "Task") -> None:
 
 	chosen_profile = eligible[0]
 
+	# Assign the profile AND transition Pending → Assigned in a single save.
+	# The state change is what fires ``tasks.workflow.on_state_change``, which
+	# enqueues the runner — that hook is the single trigger chokepoint. The
+	# original code set only ``assigned_to_profile`` and left the task in
+	# Pending, so the transition hook never ran and the task was never picked
+	# up. Setting the state directly mirrors the runner's own transitions
+	# (``runner._task_transition`` falls back to a direct set when no Frappe
+	# Workflow is configured on the Task DocType).
+	#
+	# ``assigned_at`` is the timestamp the durability reconciler reads to
+	# detect Assigned-but-never-picked-up tasks (lost enqueue) — without it
+	# the reconciler can't tell a brand-new assignment from a stale one.
 	task_doc.assigned_to_profile = chosen_profile
+	task_doc.workflow_state = "Assigned"
+	task_doc.assigned_at = frappe.utils.now_datetime()
 	task_doc.save(ignore_permissions=True)
-
-	# Publish outside the save transaction via after_commit so the
-	# runner picks it up after the DB commit.
-	frappe.publish_realtime(
-		event="agent_task.assigned",
-		message={
-			"task_name": task_doc.name,
-			"assigned_to_profile": chosen_profile,
-			"workflow_state": "Assigned",
-		},
-		doctype="Task",
-		after_commit=True,
-	)
 
 
 def _match_profiles(task_doc: "Task") -> list[str]:
@@ -155,11 +179,14 @@ def _match_profiles(task_doc: "Task") -> list[str]:
 
 	if not required:
 		# No required skills — any active profile can take it.
-		return [p.name for p in frappe.get_all(
-			"Agent Profile",
-			filters={"status": "Active"},
-			order_by="creation asc",
-		)]
+		return [
+			p.name
+			for p in frappe.get_all(
+				"Agent Profile",
+				filters={"status": "Active"},
+				order_by="creation asc",
+			)
+		]
 
 	active = frappe.get_all(
 		"Agent Profile",
@@ -193,16 +220,15 @@ def _load_permitted_skills(profile_name: str) -> set[str]:
 
 	skills = {row.skill for row in profile.permitted_skills if row.skill}
 
-	if not skills and profile.agent_role_profile:
+	# Use .get(): ``agent_role_profile`` is an optional link that is not a
+	# guaranteed column on every Agent Profile. A direct ``profile.x`` access
+	# raises AttributeError when the field is absent, and because tick() runs
+	# in the scheduler that exception was swallowed upstream — tasks just sat
+	# Pending with no Error Log. .get() returns None instead of raising.
+	if not skills and profile.get("agent_role_profile"):
 		try:
-			role_profile = frappe.get_doc(
-				"Agent Role Profile", profile.agent_role_profile
-			)
-			skills |= {
-				row.skill
-				for row in role_profile.get("assigned_roles", [])
-				if row.skill
-			}
+			role_profile = frappe.get_doc("Agent Role Profile", profile.get("agent_role_profile"))
+			skills |= {row.skill for row in role_profile.get("assigned_roles", []) if row.skill}
 		except Exception:
 			# Role profile may not exist or have no assigned_roles — ignore.
 			pass

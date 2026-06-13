@@ -5,7 +5,7 @@
 Unit tests for the task dispatcher.
 
 Covers: atomic task claim with FOR UPDATE SKIP LOCKED, profile matching,
-no-match warning logging, and publish_realtime emission on assignment.
+no-match warning logging, and the Pending → Assigned transition on assignment.
 """
 
 import unittest
@@ -23,7 +23,49 @@ class TestTickNoTasks(unittest.TestCase):
 
 		tick()
 
-		mock_fetch.assert_called_once_with(limit=5)
+		mock_fetch.assert_called_once_with(limit=100)
+
+
+class TestTickStarvationGuard(unittest.TestCase):
+	"""tick() scans past parked tasks and still spends its budget on ready ones."""
+
+	@patch("frappe.friday_core.tasks.dispatcher._claim_and_dispatch")
+	@patch("frappe.friday_core.tasks.dispatcher._ready_to_dispatch")
+	@patch("frappe.friday_core.tasks.dispatcher._fetch_dispatchable_tasks")
+	def test_parked_tasks_do_not_block_ready_ones(self, mock_fetch, mock_ready, mock_claim):
+		"""
+		The original bug: a small fetch returned only tasks that ``_ready_to_
+		dispatch`` parks (unmet deps / On Hold), so the tick dispatched nothing
+		while ready tasks waited behind them. The wide scan must reach them.
+		"""
+		from frappe.friday_core.tasks.dispatcher import tick
+
+		# 10 parked (not ready) tasks at the front, then 3 ready ones behind.
+		parked = [MagicMock() for _ in range(10)]
+		ready = [MagicMock() for _ in range(3)]
+		mock_fetch.return_value = parked + ready
+		mock_ready.side_effect = lambda t: t in ready
+
+		tick()
+
+		# All 3 ready tasks dispatched despite 10 parked ahead of them.
+		self.assertEqual(mock_claim.call_count, 3)
+		mock_fetch.assert_called_once_with(limit=100)
+
+	@patch("frappe.friday_core.tasks.dispatcher._claim_and_dispatch")
+	@patch("frappe.friday_core.tasks.dispatcher._ready_to_dispatch")
+	@patch("frappe.friday_core.tasks.dispatcher._fetch_dispatchable_tasks")
+	def test_dispatch_budget_capped_per_tick(self, mock_fetch, mock_ready, mock_claim):
+		"""Even with many ready tasks, one tick hands off at most the budget (5)."""
+		from frappe.friday_core.tasks.dispatcher import tick
+
+		ready = [MagicMock() for _ in range(20)]
+		mock_fetch.return_value = ready
+		mock_ready.return_value = True
+
+		tick()
+
+		self.assertEqual(mock_claim.call_count, 5)
 
 
 class TestFetchDispatchableTasksQuery(unittest.TestCase):
@@ -96,7 +138,7 @@ class TestClaimAndDispatchNoProfile(unittest.TestCase):
 
 
 class TestClaimAndDispatchWithProfile(unittest.TestCase):
-	"""_claim_and_dispatch assigns and emits event when a profile matches."""
+	"""_claim_and_dispatch assigns and transitions to Assigned when a profile matches."""
 
 	@patch("frappe.friday_core.tasks.dispatcher._match_profiles")
 	@patch("frappe.friday_core.tasks.dispatcher.frappe")
@@ -115,7 +157,13 @@ class TestClaimAndDispatchWithProfile(unittest.TestCase):
 
 	@patch("frappe.friday_core.tasks.dispatcher._match_profiles")
 	@patch("frappe.friday_core.tasks.dispatcher.frappe")
-	def test_emits_realtime_event(self, mock_frappe, mock_match):
+	def test_transitions_to_assigned_state(self, mock_frappe, mock_match):
+		"""
+		The dispatcher must move the task Pending → Assigned. That transition
+		is what fires ``workflow.on_state_change`` (which enqueues the runner).
+		Setting only the profile — as the original code did — left the task in
+		Pending and nothing ever picked it up.
+		"""
 		from frappe.friday_core.tasks.dispatcher import _claim_and_dispatch
 
 		mock_match.return_value = ["note_taker"]
@@ -125,16 +173,28 @@ class TestClaimAndDispatchWithProfile(unittest.TestCase):
 
 		_claim_and_dispatch(task_doc)
 
-		mock_frappe.publish_realtime.assert_called_once_with(
-			event="agent_task.assigned",
-			message={
-				"task_name": "AT-000042",
-				"assigned_to_profile": "note_taker",
-				"workflow_state": "Assigned",
-			},
-			doctype="Task",
-			after_commit=True,
-		)
+		self.assertEqual(task_doc.workflow_state, "Assigned")
+
+	@patch("frappe.friday_core.tasks.dispatcher._match_profiles")
+	@patch("frappe.friday_core.tasks.dispatcher.frappe")
+	def test_does_not_emit_realtime_directly(self, mock_frappe, mock_match):
+		"""
+		The dispatcher no longer publishes/enqueues itself — the single trigger
+		chokepoint lives in ``workflow.on_state_change``. The dispatcher's only
+		job is the state transition; double-triggering here would double-run
+		the task.
+		"""
+		from frappe.friday_core.tasks.dispatcher import _claim_and_dispatch
+
+		mock_match.return_value = ["note_taker"]
+
+		task_doc = MagicMock()
+		task_doc.name = "AT-000042"
+
+		_claim_and_dispatch(task_doc)
+
+		mock_frappe.publish_realtime.assert_not_called()
+		mock_frappe.enqueue.assert_not_called()
 
 
 class TestMatchProfilesExact(unittest.TestCase):
@@ -238,7 +298,9 @@ class TestLoadPermittedSkillsFromProfile(unittest.TestCase):
 
 		profile_doc = MagicMock()
 		profile_doc.permitted_skills = []
-		profile_doc.agent_role_profile = "admin_role"
+		# agent_role_profile is read via .get() (it is not a guaranteed column),
+		# so wire the mock's .get rather than the attribute.
+		profile_doc.get.return_value = "admin_role"
 		mock_frappe.get_doc.return_value = profile_doc
 
 		role_doc = MagicMock()
@@ -248,6 +310,8 @@ class TestLoadPermittedSkillsFromProfile(unittest.TestCase):
 		result = _load_permitted_skills("note_taker")
 
 		self.assertIn("create_note", result)
+		# The role profile is fetched using the value returned by .get().
+		mock_frappe.get_doc.assert_any_call("Agent Role Profile", "admin_role")
 
 
 if __name__ == "__main__":
