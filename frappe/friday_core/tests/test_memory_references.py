@@ -184,10 +184,12 @@ class TestPromptBuilderSeams(unittest.TestCase):
 		profile.system_prompt = "Be Friday."
 		profile.model_name = None
 		profile.name = "Friday"
-		with patch(f"{_PB}.frappe") as mock_frappe, \
-		     patch(f"{_PB}.recall_block", return_value=recall), \
-		     patch(f"{_PB}.expand_references", return_value=refs), \
-		     patch(f"{_PB}.latest_summary", return_value=None):
+		with (
+			patch(f"{_PB}.frappe") as mock_frappe,
+			patch(f"{_PB}.recall_block", return_value=recall),
+			patch(f"{_PB}.expand_references", return_value=refs),
+			patch(f"{_PB}.latest_summary", return_value=None),
+		):
 			mock_frappe.get_doc.return_value = profile
 			mock_frappe.get_all.return_value = []
 			return build("Friday", "S-1", "hello @BB-0001", tools=None)

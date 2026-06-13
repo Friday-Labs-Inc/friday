@@ -4,10 +4,10 @@
 """Human-in-the-loop approval workflow (Feature H2). See `workflow.py`."""
 
 from frappe.friday_core.approvals.workflow import (
-    approve,
-    create_request,
-    reject,
-    requires_approval,
+	approve,
+	create_request,
+	reject,
+	requires_approval,
 )
 
-__all__ = ["requires_approval", "create_request", "approve", "reject"]
+__all__ = ["approve", "create_request", "reject", "requires_approval"]

@@ -20,9 +20,10 @@ One dispatcher cycle (``tick()``) runs every 60 seconds and:
    will be retried on the next tick).
 """
 
+from __future__ import annotations
+
 import frappe
 from frappe.utils import now_datetime
-
 
 _logger = frappe.logger("friday.tasks.dispatcher")
 
@@ -178,11 +179,14 @@ def _match_profiles(task_doc: "Task") -> list[str]:
 
 	if not required:
 		# No required skills — any active profile can take it.
-		return [p.name for p in frappe.get_all(
-			"Agent Profile",
-			filters={"status": "Active"},
-			order_by="creation asc",
-		)]
+		return [
+			p.name
+			for p in frappe.get_all(
+				"Agent Profile",
+				filters={"status": "Active"},
+				order_by="creation asc",
+			)
+		]
 
 	active = frappe.get_all(
 		"Agent Profile",
@@ -223,14 +227,8 @@ def _load_permitted_skills(profile_name: str) -> set[str]:
 	# Pending with no Error Log. .get() returns None instead of raising.
 	if not skills and profile.get("agent_role_profile"):
 		try:
-			role_profile = frappe.get_doc(
-				"Agent Role Profile", profile.get("agent_role_profile")
-			)
-			skills |= {
-				row.skill
-				for row in role_profile.get("assigned_roles", [])
-				if row.skill
-			}
+			role_profile = frappe.get_doc("Agent Role Profile", profile.get("agent_role_profile"))
+			skills |= {row.skill for row in role_profile.get("assigned_roles", []) if row.skill}
 		except Exception:
 			# Role profile may not exist or have no assigned_roles — ignore.
 			pass

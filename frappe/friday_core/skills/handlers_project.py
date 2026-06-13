@@ -17,7 +17,6 @@ report. The agent supplies the judgment; the rows carry the audit.
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
 
 
@@ -77,9 +76,13 @@ def project_status(skill_name: str, parameters: dict) -> dict:
 	)
 	lines = [f"Project {project} — status: {status}, {len(tasks)} tasks:"]
 	for t in tasks:
-		marker = "⏳" if t.workflow_state in ("Pending", "Assigned") else (
-			"▶️" if t.workflow_state == "Executing" else (
-				"✅" if t.workflow_state == "Completed" else "⛔"
+		marker = (
+			"⏳"
+			if t.workflow_state in ("Pending", "Assigned")
+			else (
+				"▶️"
+				if t.workflow_state == "Executing"
+				else ("✅" if t.workflow_state == "Completed" else "⛔")
 			)
 		)
 		lines.append(f"{marker} [{t.name}] {t.title} — {t.workflow_state} ({t.execution_mode})")

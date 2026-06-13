@@ -77,8 +77,11 @@ class TestRecordUsage(unittest.TestCase):
 		doc = MagicMock()
 		mock_frappe.get_doc.return_value = doc
 		record_usage(
-			profile_name="P", session_id="s", provider=_provider(),
-			model="m", usage={"prompt_tokens": 10, "completion_tokens": 5},
+			profile_name="P",
+			session_id="s",
+			provider=_provider(),
+			model="m",
+			usage={"prompt_tokens": 10, "completion_tokens": 5},
 		)
 		self.assertEqual(mock_frappe.get_doc.call_args[0][0]["total_tokens"], 15)
 
@@ -87,8 +90,11 @@ class TestRecordUsage(unittest.TestCase):
 		doc = MagicMock()
 		mock_frappe.get_doc.return_value = doc
 		record_usage(
-			profile_name="P", session_id="s", provider=_provider(),
-			model="m", usage={"prompt_tokens": 10, "completion_tokens": 5},
+			profile_name="P",
+			session_id="s",
+			provider=_provider(),
+			model="m",
+			usage={"prompt_tokens": 10, "completion_tokens": 5},
 		)
 		self.assertIsNone(mock_frappe.get_doc.call_args[0][0]["estimated_cost"])
 
@@ -97,15 +103,19 @@ class TestRecordUsage(unittest.TestCase):
 		mock_frappe.get_doc.side_effect = RuntimeError("table missing")
 		mock_frappe.logger.side_effect = RuntimeError("logging broken too")
 		result = record_usage(
-			profile_name="P", session_id="s", provider=_provider(),
-			model="m", usage={},
+			profile_name="P",
+			session_id="s",
+			provider=_provider(),
+			model="m",
+			usage={},
 		)
 		self.assertIsNone(result)  # swallowed — the turn must continue
 
 
 class TestRunnerWiring(unittest.TestCase):
 	def test_runner_records_usage_once_per_chat_call(self):
-		from frappe.friday_core.tests.test_react_loop import _provider as _chat_provider, _resp, _run
+		from frappe.friday_core.tests.test_react_loop import _provider as _chat_provider
+		from frappe.friday_core.tests.test_react_loop import _resp, _run
 
 		prov = _chat_provider(_resp(content="Hello!"))
 		prov.get_default_model.return_value = "MiniMax-M2"

@@ -43,10 +43,12 @@ class TestRouterWorkerPath(unittest.TestCase):
 		from frappe.friday_core.gateway import service
 
 		doc = _inbound()
-		with patch(f"{_S}._get_dispatch_mode", return_value="async"), \
-		     patch(f"{_S}._friday_worker_alive", return_value=True), \
-		     patch(f"{_S}._run_pipeline") as mock_inline, \
-		     patch(f"{_S}.frappe") as mock_frappe:
+		with (
+			patch(f"{_S}._get_dispatch_mode", return_value="async"),
+			patch(f"{_S}._friday_worker_alive", return_value=True),
+			patch(f"{_S}._run_pipeline") as mock_inline,
+			patch(f"{_S}.frappe") as mock_frappe,
+		):
 			service.handle_inbound(doc)
 
 		mock_inline.assert_not_called()
@@ -63,10 +65,12 @@ class TestRouterWorkerPath(unittest.TestCase):
 		from frappe.friday_core.gateway import service
 
 		doc = _inbound(name="CM-42")
-		with patch(f"{_S}._get_dispatch_mode", return_value="async"), \
-		     patch(f"{_S}._friday_worker_alive", return_value=True), \
-		     patch(f"{_S}._run_pipeline"), \
-		     patch(f"{_S}.frappe") as mock_frappe:
+		with (
+			patch(f"{_S}._get_dispatch_mode", return_value="async"),
+			patch(f"{_S}._friday_worker_alive", return_value=True),
+			patch(f"{_S}._run_pipeline"),
+			patch(f"{_S}.frappe") as mock_frappe,
+		):
 			service.handle_inbound(doc)
 
 		expected_id = "friday-gw::CM-42::lock0"
@@ -80,10 +84,12 @@ class TestRouterWorkerPath(unittest.TestCase):
 		from frappe.friday_core.gateway import service
 
 		doc = _inbound()
-		with patch(f"{_S}._get_dispatch_mode", return_value="async"), \
-		     patch(f"{_S}._friday_worker_alive", return_value=False), \
-		     patch(f"{_S}._run_pipeline") as mock_inline, \
-		     patch(f"{_S}.frappe") as mock_frappe:
+		with (
+			patch(f"{_S}._get_dispatch_mode", return_value="async"),
+			patch(f"{_S}._friday_worker_alive", return_value=False),
+			patch(f"{_S}._run_pipeline") as mock_inline,
+			patch(f"{_S}.frappe") as mock_frappe,
+		):
 			service.handle_inbound(doc)
 
 		mock_inline.assert_called_once_with(doc)
@@ -94,10 +100,12 @@ class TestRouterWorkerPath(unittest.TestCase):
 		from frappe.friday_core.gateway import service
 
 		doc = _inbound()
-		with patch(f"{_S}._get_dispatch_mode", return_value="sync"), \
-		     patch(f"{_S}._friday_worker_alive") as mock_alive, \
-		     patch(f"{_S}._run_pipeline") as mock_inline, \
-		     patch(f"{_S}.frappe") as mock_frappe:
+		with (
+			patch(f"{_S}._get_dispatch_mode", return_value="sync"),
+			patch(f"{_S}._friday_worker_alive") as mock_alive,
+			patch(f"{_S}._run_pipeline") as mock_inline,
+			patch(f"{_S}.frappe") as mock_frappe,
+		):
 			service.handle_inbound(doc)
 
 		mock_inline.assert_called_once_with(doc)
@@ -111,8 +119,7 @@ class TestRouterWorkerPath(unittest.TestCase):
 		outbound.direction = "outbound"
 		done = _inbound()
 		done.processed = 1
-		with patch(f"{_S}._run_pipeline") as mock_inline, \
-		     patch(f"{_S}.frappe") as mock_frappe:
+		with patch(f"{_S}._run_pipeline") as mock_inline, patch(f"{_S}.frappe") as mock_frappe:
 			service.handle_inbound(outbound)
 			service.handle_inbound(done)
 		mock_inline.assert_not_called()
@@ -128,11 +135,13 @@ class TestBusySessionRequeue(unittest.TestCase):
 		doc = _inbound()
 		lock = MagicMock()
 		lock.acquire.return_value = False  # session lock denied
-		with patch(f"{_S}.frappe") as mock_frappe, \
-		     patch(f"{_S}.flush_batch", side_effect=AssertionError("pipeline must not run")), \
-		     patch(f"{_S}._enqueue_pipeline") as mock_requeue, \
-		     patch(f"{_S}._write_outbound") as mock_out, \
-		     patch(f"{_S}._mark_processed") as mock_mark:
+		with (
+			patch(f"{_S}.frappe") as mock_frappe,
+			patch(f"{_S}.flush_batch", side_effect=AssertionError("pipeline must not run")),
+			patch(f"{_S}._enqueue_pipeline") as mock_requeue,
+			patch(f"{_S}._write_outbound") as mock_out,
+			patch(f"{_S}._mark_processed") as mock_mark,
+		):
 			mock_frappe.cache.return_value.lock.return_value = lock
 			service._run_pipeline(doc, in_worker=in_worker, lock_retry=lock_retry)
 		return mock_requeue, mock_out, mock_mark
@@ -140,13 +149,13 @@ class TestBusySessionRequeue(unittest.TestCase):
 	def test_worker_first_failure_requeues_once_no_busy_message(self):
 		requeue, out, mark = self._run_with_lock_denied(in_worker=True, lock_retry=0)
 		requeue.assert_called_once_with("CM-1", lock_retry=1)
-		out.assert_not_called()       # no busy message yet
-		mark.assert_not_called()      # row stays processed=0 for the retry
+		out.assert_not_called()  # no busy message yet
+		mark.assert_not_called()  # row stays processed=0 for the retry
 
 	def test_worker_second_failure_writes_busy(self):
 		requeue, out, mark = self._run_with_lock_denied(in_worker=True, lock_retry=1)
-		requeue.assert_not_called()   # the one allowed requeue is spent
-		out.assert_called_once()      # busy outbound written
+		requeue.assert_not_called()  # the one allowed requeue is spent
+		out.assert_called_once()  # busy outbound written
 		mark.assert_called_once()
 
 	def test_inline_failure_goes_straight_to_busy(self):

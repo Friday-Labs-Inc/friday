@@ -31,15 +31,18 @@ class TestDispatchableStates(unittest.TestCase):
 
 	def test_dispatchable_states_is_frozenset(self):
 		from frappe.friday_core.tasks.workflow import DISPATCHABLE_STATES
+
 		self.assertIsInstance(DISPATCHABLE_STATES, frozenset)
 
 	def test_dispatchable_states_contains_pending_and_assigned(self):
 		from frappe.friday_core.tasks.workflow import DISPATCHABLE_STATES
+
 		self.assertIn("Pending", DISPATCHABLE_STATES)
 		self.assertIn("Assigned", DISPATCHABLE_STATES)
 
 	def test_dispatchable_states_does_not_contain_other_states(self):
 		from frappe.friday_core.tasks.workflow import DISPATCHABLE_STATES
+
 		for state in ("Executing", "Blocked", "Review", "Completed", "Cancelled"):
 			self.assertNotIn(state, DISPATCHABLE_STATES)
 

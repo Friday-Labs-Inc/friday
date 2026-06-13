@@ -25,8 +25,9 @@ Auth: Frappe token auth (`Authorization: token key:secret`) — the backend's
 
 from __future__ import annotations
 
-import frappe
 import requests
+
+import frappe
 
 _TIMEOUT_SECONDS = 20
 PENDING_REVIEW = "Pending Review"  # the locked needs-human status
@@ -69,15 +70,11 @@ def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
 				url, data=payload, files=files, headers=_headers(settings), timeout=_TIMEOUT_SECONDS
 			)
 		else:
-			response = requests.post(
-				url, json=payload, headers=_headers(settings), timeout=_TIMEOUT_SECONDS
-			)
+			response = requests.post(url, json=payload, headers=_headers(settings), timeout=_TIMEOUT_SECONDS)
 		response.raise_for_status()
 		return response.json()
-	except Exception as exc:  # noqa: BLE001 — outbound outage must not break a turn
-		frappe.logger("friday.randompack").warning(
-			f"Outbound {method!r} failed: {type(exc).__name__}"
-		)
+	except Exception as exc:
+		frappe.logger("friday.randompack").warning(f"Outbound {method!r} failed: {type(exc).__name__}")
 		frappe.log_error(title=f"friday.randompack outbound failed: {method}")
 		return None
 
@@ -97,7 +94,9 @@ def enqueue_send(method: str, payload: dict) -> None:
 # ── The contract calls ──────────────────────────────────────────────────────
 
 
-def update_task_progress(task_ref: str, status: str | None = None, progress: int | None = None, note: str | None = None) -> dict | None:
+def update_task_progress(
+	task_ref: str, status: str | None = None, progress: int | None = None, note: str | None = None
+) -> dict | None:
 	"""Heartbeat-safe per contract: progress alone never touches status."""
 	payload: dict = {"task": task_ref}
 	if status is not None:
@@ -119,7 +118,9 @@ def signal_pending_review(task_ref: str, issue_name: str, summary: str) -> None:
 	)
 
 
-def attach_deliverable(project_ref: str, file_name: str, content: bytes, description: str = "") -> dict | None:
+def attach_deliverable(
+	project_ref: str, file_name: str, content: bytes, description: str = ""
+) -> dict | None:
 	"""Two-step per contract: upload_file (multipart, token auth) → attach by file_url."""
 	uploaded = send(
 		"upload_file",

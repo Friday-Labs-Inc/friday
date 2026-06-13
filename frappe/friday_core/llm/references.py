@@ -21,7 +21,6 @@ from __future__ import annotations
 import re
 
 import frappe
-
 from frappe.friday_core.llm.memory import sanitize_context
 
 # Ported from Hermes context_references.TRAILING_PUNCTUATION.

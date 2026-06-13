@@ -40,9 +40,18 @@ _SKILL = {
 	"parameters_schema": {
 		"type": "object",
 		"properties": {
-			"title": {"type": "string", "description": "Short name for the subtask, e.g. 'Draft taglines for Loop Coffee'."},
-			"instructions": {"type": "string", "description": "Complete, self-contained instructions for the specialist — include all context it needs; it cannot see this conversation."},
-			"profile": {"type": "string", "description": "The specialist Agent Profile to use, e.g. 'Copywriter'. Omit to auto-match by required_skills."},
+			"title": {
+				"type": "string",
+				"description": "Short name for the subtask, e.g. 'Draft taglines for Loop Coffee'.",
+			},
+			"instructions": {
+				"type": "string",
+				"description": "Complete, self-contained instructions for the specialist — include all context it needs; it cannot see this conversation.",
+			},
+			"profile": {
+				"type": "string",
+				"description": "The specialist Agent Profile to use, e.g. 'Copywriter'. Omit to auto-match by required_skills.",
+			},
 			"required_skills": {
 				"type": "array",
 				"items": {"type": "string"},

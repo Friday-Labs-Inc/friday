@@ -56,8 +56,11 @@ class TestCreateRequest(unittest.TestCase):
 		mock_frappe.get_doc.return_value = doc
 
 		name = create_request(
-			agent_profile="P", skill_name="danger-skill",
-			parameters={"x": 1}, session_id="S", tool_call_id="c1",
+			agent_profile="P",
+			skill_name="danger-skill",
+			parameters={"x": 1},
+			session_id="S",
+			tool_call_id="c1",
 		)
 
 		self.assertEqual(name, "WR-7")
@@ -77,8 +80,14 @@ class TestApprove(unittest.TestCase):
 		mock_frappe.ValidationError = _ValErr
 		mock_frappe.as_json = lambda x: json.dumps(x)
 		mock_frappe.parse_json = lambda x: json.loads(x) if isinstance(x, str) else x
-		req = MagicMock(status="Pending", parameters='{"x": 1}', skill="danger-skill",
-		                tool_call_id="c1", agent_profile="P", session_id="S")
+		req = MagicMock(
+			status="Pending",
+			parameters='{"x": 1}',
+			skill="danger-skill",
+			tool_call_id="c1",
+			agent_profile="P",
+			session_id="S",
+		)
 		mock_frappe.get_doc.return_value = req
 		mock_dispatch.return_value = MagicMock(execution_log_name="EL-1")
 
@@ -149,17 +158,13 @@ class TestDispatcherApprovalGate(unittest.TestCase):
 	@patch(f"{_D}.create_request")
 	@patch(f"{_D}.requires_approval")
 	@patch(f"{_D}.matrix_check")
-	def test_skip_approval_bypasses_the_gate(
-		self, mock_matrix, mock_req, mock_create, mock_log
-	):
+	def test_skip_approval_bypasses_the_gate(self, mock_matrix, mock_req, mock_create, mock_log):
 		mock_matrix.return_value = MagicMock(allowed=True, reason="ok")
 		# Unknown skill → the execution path returns early, but the point is the
 		# gate is never consulted when skip_approval=True.
 		tool_call = {"id": "c1", "name": "unknown-skill", "arguments": "{}"}
 
-		result = dispatch(
-			tool_call=tool_call, agent_profile="P", session_id="S", skip_approval=True
-		)
+		result = dispatch(tool_call=tool_call, agent_profile="P", session_id="S", skip_approval=True)
 
 		mock_req.assert_not_called()  # short-circuited by skip_approval
 		mock_create.assert_not_called()

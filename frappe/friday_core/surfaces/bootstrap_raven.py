@@ -22,7 +22,6 @@ installed on the site:
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.surfaces.raven_adapter import FRIDAY_BOT_NAME, RAVEN_PLATFORM
 
 WAR_ROOM_CHANNEL_NAME = "FRIDAY_WAR_ROOM"  # must match warroom/publisher.CHANNEL_NAME
@@ -138,9 +137,7 @@ def _ensure_war_room(workspace: str) -> str:
 	idempotency and lookups must use the lowercased slug — not the constant.
 	"""
 	slug = WAR_ROOM_CHANNEL_NAME.strip().lower().replace(" ", "-")
-	existing = frappe.db.get_value(
-		"Raven Channel", {"channel_name": slug, "workspace": workspace}, "name"
-	)
+	existing = frappe.db.get_value("Raven Channel", {"channel_name": slug, "workspace": workspace}, "name")
 	if existing:
 		return existing
 	channel = frappe.get_doc(

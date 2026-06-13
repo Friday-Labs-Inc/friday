@@ -14,7 +14,6 @@ attributed to the agent that learned it and the session it was learned in.
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
 
 REMEMBER = "remember"

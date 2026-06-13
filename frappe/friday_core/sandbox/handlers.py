@@ -17,7 +17,8 @@ Each handler returns:
     dict — the skill's structured output (serialised into the result JSON)
 """
 
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 D = TypeVar("D")
 
@@ -30,64 +31,68 @@ _HANDLERS: dict[str, Callable[[dict], dict]] = {}
 
 
 def register(skill_name: str) -> Callable:
-    """
-    Decorator to register a skill handler.
+	"""
+	Decorator to register a skill handler.
 
-    Usage:
-        @register("create_note")
-        def handle_create_note(parameters: dict) -> dict:
-            ...
-    """
-    def decorator(fn: Callable) -> Callable:
-        _HANDLERS[skill_name] = fn
-        return fn
-    return decorator
+	Usage:
+	    @register("create_note")
+	    def handle_create_note(parameters: dict) -> dict:
+	        ...
+	"""
+
+	def decorator(fn: Callable) -> Callable:
+		_HANDLERS[skill_name] = fn
+		return fn
+
+	return decorator
 
 
 def get(skill_name: str) -> Callable | None:
-    return _HANDLERS.get(skill_name)
+	return _HANDLERS.get(skill_name)
 
 
 # ---------------------------------------------------------------------------
 # Phase 1 skill handlers
 # ---------------------------------------------------------------------------
 
+
 @register("create_note")
 def handle_create_note(parameters: dict) -> dict:
-    """
-    Create a Note document via the Frappe REST API.
+	"""
+	Create a Note document via the Frappe REST API.
 
-    The container uses FRIDAY_API_KEY (env) to authenticate
-    against the Frappe REST API at FRIDAY_FRAPPE_BASE (env).
-    """
-    import os
-    import requests
+	The container uses FRIDAY_API_KEY (env) to authenticate
+	against the Frappe REST API at FRIDAY_FRAPPE_BASE (env).
+	"""
+	import os
 
-    frappe_base = os.environ.get("FRIDAY_FRAPPE_BASE", "http://frappe:8000")
-    api_key = os.environ.get("FRIDAY_API_KEY", "")
+	import requests
 
-    title = parameters.get("title")
-    content = parameters.get("content", "")
+	frappe_base = os.environ.get("FRIDAY_FRAPPE_BASE", "http://frappe:8000")
+	api_key = os.environ.get("FRIDAY_API_KEY", "")
 
-    if not title:
-        raise ValueError("title is required")
+	title = parameters.get("title")
+	content = parameters.get("content", "")
 
-    resp = requests.post(
-        f"{frappe_base}/api/resource/Note",
-        headers={
-            "Authorization": f"token {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "doctype": "Note",
-            "title": title,
-            "content": content,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    doc = resp.json().get("data", {})
-    return {"name": doc.get("name"), "title": doc.get("title")}
+	if not title:
+		raise ValueError("title is required")
+
+	resp = requests.post(
+		f"{frappe_base}/api/resource/Note",
+		headers={
+			"Authorization": f"token {api_key}",
+			"Content-Type": "application/json",
+		},
+		json={
+			"doctype": "Note",
+			"title": title,
+			"content": content,
+		},
+		timeout=30,
+	)
+	resp.raise_for_status()
+	doc = resp.json().get("data", {})
+	return {"name": doc.get("name"), "title": doc.get("title")}
 
 
-__all__ = ["register", "get"]
+__all__ = ["get", "register"]

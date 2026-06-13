@@ -27,7 +27,6 @@ from __future__ import annotations
 import re
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
 
 DELEGATE_TASK = "delegate-task"
@@ -69,9 +68,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 		raise ValueError("delegate-task requires an 'instructions' parameter")
 
 	required_skills = _normalise_skill_list(parameters.get("required_skills"))
-	child_profile = _resolve_child_profile(
-		(parameters.get("profile") or "").strip() or None, required_skills
-	)
+	child_profile = _resolve_child_profile((parameters.get("profile") or "").strip() or None, required_skills)
 
 	# Q1 — the durable audit record, created BEFORE the child runs. State
 	# "Executing" (not "Assigned") so the mechanical task machinery does not
@@ -81,8 +78,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 			"doctype": "Task",
 			"title": title,
 			"description": (
-				f"{instructions}\n\n[delegated by {parent_profile!r} "
-				f"from session {parent_session!r}]"
+				f"{instructions}\n\n[delegated by {parent_profile!r} from session {parent_session!r}]"
 			),
 			"assigned_to_profile": child_profile,
 			"required_skills": [{"skill": s} for s in required_skills],
@@ -107,7 +103,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 			session_id=child_session,
 			inbound_content=framing,
 		)
-	except Exception as exc:  # noqa: BLE001 — child failure must not crash the parent turn
+	except Exception as exc:
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"
 		task.save(ignore_permissions=True)
@@ -155,9 +151,7 @@ def _resolve_child_profile(named: str | None, required_skills: list[str]) -> str
 	# duplicating it (it only reads `.required_skills` rows off the doc).
 	from frappe.friday_core.tasks.dispatcher import _match_profiles
 
-	probe = frappe._dict(
-		required_skills=[frappe._dict(skill=s) for s in required_skills]
-	)
+	probe = frappe._dict(required_skills=[frappe._dict(skill=s) for s in required_skills])
 	matches = _match_profiles(probe)
 	if not matches:
 		raise ValueError(

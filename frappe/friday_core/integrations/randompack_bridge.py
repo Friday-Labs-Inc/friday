@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 
 import frappe
-
 from frappe.friday_core.integrations import randompack_client as client
 
 # gate-prep phase slug → the gate it prepares.
@@ -80,7 +79,7 @@ def on_task_transition(task, state: str) -> None:
 				client.request_gate_open(
 					project_ref, gate=gate, summary=f"{task.title} is ready for client review."
 				)
-	except Exception:  # noqa: BLE001 — write-back must never break a task save
+	except Exception:
 		frappe.log_error(title="friday.randompack bridge failed")
 
 

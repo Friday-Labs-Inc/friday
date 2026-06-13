@@ -54,9 +54,7 @@ class TestStripReasoning(unittest.TestCase):
 		self.assertEqual(strip_reasoning('before<tool_call>{"n":1}</tool_call>after'), "beforeafter")
 
 	def test_function_call_xml_at_boundary_stripped(self):
-		self.assertEqual(
-			strip_reasoning('\n<function name="f">args</function>\nReply'), "Reply"
-		)
+		self.assertEqual(strip_reasoning('\n<function name="f">args</function>\nReply'), "Reply")
 
 	def test_plain_text_unchanged(self):
 		self.assertEqual(strip_reasoning("Just a normal reply."), "Just a normal reply.")

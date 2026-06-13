@@ -43,56 +43,56 @@ _DOTALL_I = re.DOTALL | re.IGNORECASE
 
 
 def strip_reasoning(text: str | None) -> str:
-    """Remove reasoning blocks + inline tool-call XML from a complete string."""
-    if not text:
-        return ""
-    content = text
+	"""Remove reasoning blocks + inline tool-call XML from a complete string."""
+	if not text:
+		return ""
+	content = text
 
-    # 1. Closed tag pairs — per variant, case-insensitive.
-    content = re.sub(r"<think>.*?</think>", "", content, flags=_DOTALL_I)
-    content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=_DOTALL_I)
-    content = re.sub(r"<reasoning>.*?</reasoning>", "", content, flags=_DOTALL_I)
-    content = re.sub(r"<REASONING_SCRATCHPAD>.*?</REASONING_SCRATCHPAD>", "", content, flags=_DOTALL_I)
-    content = re.sub(r"<thought>.*?</thought>", "", content, flags=_DOTALL_I)
+	# 1. Closed tag pairs — per variant, case-insensitive.
+	content = re.sub(r"<think>.*?</think>", "", content, flags=_DOTALL_I)
+	content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=_DOTALL_I)
+	content = re.sub(r"<reasoning>.*?</reasoning>", "", content, flags=_DOTALL_I)
+	content = re.sub(r"<REASONING_SCRATCHPAD>.*?</REASONING_SCRATCHPAD>", "", content, flags=_DOTALL_I)
+	content = re.sub(r"<thought>.*?</thought>", "", content, flags=_DOTALL_I)
 
-    # 1b. Inline tool-call XML blocks (generic names, no boundary gating).
-    for _tc in ("tool_call", "tool_calls", "tool_result", "function_call", "function_calls"):
-        content = re.sub(rf"<{_tc}\b[^>]*>.*?</{_tc}>", "", content, flags=_DOTALL_I)
+	# 1b. Inline tool-call XML blocks (generic names, no boundary gating).
+	for _tc in ("tool_call", "tool_calls", "tool_result", "function_call", "function_calls"):
+		content = re.sub(rf"<{_tc}\b[^>]*>.*?</{_tc}>", "", content, flags=_DOTALL_I)
 
-    # 1c. <function name="...">...</function> — boundary-gated (start, newline,
-    #     or sentence-ending punctuation) AND carrying a name="..." attribute.
-    content = re.sub(
-        r"(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*"
-        r"<function\b[^>]*\bname\s*=[^>]*>"
-        r"(?:(?:(?!</function>).)*)</function>",
-        "",
-        content,
-        flags=_DOTALL_I,
-    )
+	# 1c. <function name="...">...</function> — boundary-gated (start, newline,
+	#     or sentence-ending punctuation) AND carrying a name="..." attribute.
+	content = re.sub(
+		r"(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*"
+		r"<function\b[^>]*\bname\s*=[^>]*>"
+		r"(?:(?:(?!</function>).)*)</function>",
+		"",
+		content,
+		flags=_DOTALL_I,
+	)
 
-    # 2. Unterminated reasoning block — open tag at a block boundary, no close.
-    content = re.sub(
-        r"(?:^|\n)[ \t]*<(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)\b[^>]*>.*$",
-        "",
-        content,
-        flags=_DOTALL_I,
-    )
+	# 2. Unterminated reasoning block — open tag at a block boundary, no close.
+	content = re.sub(
+		r"(?:^|\n)[ \t]*<(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)\b[^>]*>.*$",
+		"",
+		content,
+		flags=_DOTALL_I,
+	)
 
-    # 3. Stray orphan open/close tags.
-    content = re.sub(
-        r"</?(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)>\s*",
-        "",
-        content,
-        flags=re.IGNORECASE,
-    )
+	# 3. Stray orphan open/close tags.
+	content = re.sub(
+		r"</?(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)>\s*",
+		"",
+		content,
+		flags=re.IGNORECASE,
+	)
 
-    # 3b. Stray tool-call closers (we do NOT strip bare/unterminated <function>,
-    #     matching Hermes' intentional asymmetry).
-    content = re.sub(
-        r"</(?:tool_call|tool_calls|tool_result|function_call|function_calls|function)>\s*",
-        "",
-        content,
-        flags=re.IGNORECASE,
-    )
+	# 3b. Stray tool-call closers (we do NOT strip bare/unterminated <function>,
+	#     matching Hermes' intentional asymmetry).
+	content = re.sub(
+		r"</(?:tool_call|tool_calls|tool_result|function_call|function_calls|function)>\s*",
+		"",
+		content,
+		flags=re.IGNORECASE,
+	)
 
-    return content.strip()
+	return content.strip()

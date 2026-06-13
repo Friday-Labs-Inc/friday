@@ -37,7 +37,10 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"brief": {"type": "string", "description": "The Brand Brief ID, e.g. 'BB-0005'."},
 				"title": {"type": "string", "description": "Optional project title."},
-				"backend_ref": {"type": "string", "description": "Optional RandomPack backend project id (enables write-back)."},
+				"backend_ref": {
+					"type": "string",
+					"description": "Optional RandomPack backend project id (enables write-back).",
+				},
 			},
 			"required": ["brief"],
 		},

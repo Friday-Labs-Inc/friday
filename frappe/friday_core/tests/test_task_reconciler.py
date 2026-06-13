@@ -78,9 +78,7 @@ class TestReconcilerExecutingStale(unittest.TestCase):
 	@patch("frappe.friday_core.tasks.reconciler._raise_runner_lost_issue")
 	@patch("frappe.friday_core.tasks.reconciler.get_jobs")
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
-	def test_blocks_executing_task_with_stale_heartbeat(
-		self, mock_frappe, mock_get_jobs, mock_issue
-	):
+	def test_blocks_executing_task_with_stale_heartbeat(self, mock_frappe, mock_get_jobs, mock_issue):
 		from frappe.friday_core.tasks.reconciler import _reconcile_executing_stale
 
 		mock_frappe.db.sql.return_value = [{"name": "TASK-2"}]
@@ -98,9 +96,7 @@ class TestReconcilerExecutingStale(unittest.TestCase):
 	@patch("frappe.friday_core.tasks.reconciler._raise_runner_lost_issue")
 	@patch("frappe.friday_core.tasks.reconciler.get_jobs")
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
-	def test_skips_executing_task_with_inflight_job(
-		self, mock_frappe, mock_get_jobs, mock_issue
-	):
+	def test_skips_executing_task_with_inflight_job(self, mock_frappe, mock_get_jobs, mock_issue):
 		"""A long-running task that's truly executing must not be killed."""
 		from frappe.friday_core.tasks.reconciler import _reconcile_executing_stale
 
@@ -222,9 +218,7 @@ class TestTickWiring(unittest.TestCase):
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_executing_stale")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_assigned_orphans")
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
-	def test_one_phase_failing_does_not_abort_the_rest(
-		self, mock_frappe, mock_a, mock_e, mock_b, mock_r
-	):
+	def test_one_phase_failing_does_not_abort_the_rest(self, mock_frappe, mock_a, mock_e, mock_b, mock_r):
 		"""Reconciler is the heartbeat; a failure in one sweep must not kill the others."""
 		from frappe.friday_core.tasks.reconciler import tick
 

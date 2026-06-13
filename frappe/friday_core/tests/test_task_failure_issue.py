@@ -23,16 +23,16 @@ class TestFailureIssueWrapper(unittest.TestCase):
 	@patch(f"{_T}.raise_failure_issue", return_value="ISS-1")
 	def test_wrapper_calls_through(self, mock_raise):
 		from frappe.friday_core.tasks.runner import _raise_failure_issue
+
 		name = _raise_failure_issue("T1", "oom", details="d", execution_log="EL-1")
 		self.assertEqual(name, "ISS-1")
-		mock_raise.assert_called_once_with(
-			"T1", error_type="oom", details="d", execution_log="EL-1"
-		)
+		mock_raise.assert_called_once_with("T1", error_type="oom", details="d", execution_log="EL-1")
 
 	@patch(f"{_T}.raise_failure_issue", side_effect=RuntimeError("boom"))
 	def test_wrapper_never_raises(self, mock_raise):
 		# Best-effort: a hiccup raising the Issue must not mask the task failure.
 		from frappe.friday_core.tasks.runner import _raise_failure_issue
+
 		self.assertIsNone(_raise_failure_issue("T1", "error"))
 
 
@@ -45,6 +45,7 @@ class TestBlockTaskRaisesFailureIssue(unittest.TestCase):
 		self, mock_frappe, _mock_trans, mock_raise, mock_warroom
 	):
 		from frappe.friday_core.tasks.runner import _block_task
+
 		mock_frappe.as_json = lambda x: "json"
 		task = MagicMock()
 		task.name = "T1"
@@ -68,6 +69,7 @@ class TestRunnerCrashRaisesFailureIssue(unittest.TestCase):
 	@patch(f"{_T}._run_task", side_effect=RuntimeError("kaboom"))
 	def test_unexpected_crash_raises_failure_issue(self, _mock_run, mock_raise, mock_warroom):
 		from frappe.friday_core.tasks.runner import on_agent_task_assigned
+
 		on_agent_task_assigned({"task_name": "T1", "assigned_to_profile": "P"})
 		mock_raise.assert_called_once()
 		self.assertEqual(mock_raise.call_args.kwargs["error_type"], "error")

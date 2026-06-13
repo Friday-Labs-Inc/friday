@@ -173,7 +173,7 @@ def run_repl(profile_name: str) -> None:
 		try:
 			reply = handle_user_message(profile_name, session_id, line)
 			print(reply)
-		except Exception as exc:  # noqa: BLE001 — REPL: surface, don't crash
+		except Exception as exc:
 			frappe.log_error(title="friday chat turn failure")
 			print(f"[error] {exc}", file=sys.stderr)
 
@@ -298,5 +298,5 @@ def _current_user_label() -> str:
 	"""
 	try:
 		return getpass.getuser() or "cli-user"
-	except Exception:  # noqa: BLE001
+	except Exception:
 		return "cli-user"

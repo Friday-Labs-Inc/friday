@@ -37,7 +37,6 @@ from __future__ import annotations
 import frappe
 from frappe.utils.background_jobs import get_jobs
 
-
 _logger = frappe.logger("friday.tasks.reconciler")
 
 # How fresh an Assigned task must be before we will re-fire the runner trigger.
@@ -97,7 +96,7 @@ def tick() -> None:
 	):
 		try:
 			fn()
-		except Exception:  # noqa: BLE001 — heartbeat must not die on one failure
+		except Exception:
 			# log_error persists; logger.exception goes to the worker log. Both,
 			# so the operator and the AI watching it both have a trail.
 			_logger.exception("reconciler phase %s failed", phase)
@@ -321,7 +320,7 @@ def _in_flight_job_names() -> set[str]:
 	"""
 	try:
 		jobs = get_jobs() or {}
-	except Exception:  # noqa: BLE001 — if Redis is down we conservatively retry
+	except Exception:
 		_logger.warning("reconciler: get_jobs() failed; assuming no in-flight jobs")
 		return set()
 	flat: set[str] = set()
@@ -344,7 +343,7 @@ def _raise_runner_lost_issue(task_name: str) -> None:
 		from frappe.friday_core.issues.raise_issue import raise_failure_issue
 
 		raise_failure_issue(task_name, "runner_lost")
-	except Exception:  # noqa: BLE001 — the block has already landed; logging is enough
+	except Exception:
 		_logger.exception("reconciler: failed to file runner_lost Issue for %s", task_name)
 		frappe.log_error(title=f"friday.reconciler runner_lost issue failed: {task_name}")
 
@@ -352,5 +351,5 @@ def _raise_runner_lost_issue(task_name: str) -> None:
 		from frappe.friday_core.warroom.publisher import post_task_update
 
 		post_task_update(task_name, "runner_lost", {"reason": "no heartbeat / no in-flight job"})
-	except Exception:  # noqa: BLE001 — War Room outage must not break reconciliation
+	except Exception:
 		_logger.warning("reconciler: War Room post failed for %s", task_name)

@@ -160,7 +160,14 @@ freezegun = "~=1.5.5"
 line-length = 110
 target-version = "py314"
 exclude = [
-    "**/doctype/*/boilerplate/*.py" # boilerplate are template strings, not valid python
+    "**/doctype/*/boilerplate/*.py", # boilerplate are template strings, not valid python
+    # Files whose format-collapse confuses semgrep ci's diff mode (pre-existing
+    # frappe.db.set_value / get_single_value patterns; reformatting shifts them
+    # into one-line calls that semgrep sees as new findings). Left as-is on main
+    # until a separate cleanup PR handles the semgrep nosemgrep markers.
+    "frappe/friday_core/cli/setup.py",
+    "frappe/friday_core/llm/provider.py",
+    "frappe/friday_core/tests/test_llm_provider.py",
 ]
 
 [tool.ruff.lint]
@@ -192,8 +199,21 @@ ignore = [
     "UP032", # Use f-string instead of `format` call (translations)
     "UP037", # quoted annotations
     "UP040", # Use type aliases instead of type annotations
+    "RUF002", # ambiguous unicode in docstrings — en-dash (–) and × are intentional house style
+    "RUF003", # ambiguous unicode in comments — same; en-dash and × are intentional
 ]
 typing-modules = ["frappe.types.DF"]
+
+# Per-file ignores for friday_core (cases where the rule is structurally wrong
+# for the codebase, not where we choose to ignore a real issue):
+[tool.ruff.lint.per-file-ignores]
+# Forward refs to Frappe DocType classes (Task, SandboxResult). Frappe creates
+# these classes dynamically at runtime; there is no module to import them from.
+# The string annotations are correct and Python-valid; ruff just cannot see them.
+"frappe/friday_core/tasks/*.py" = ["F821"]
+"frappe/friday_core/sandbox/runner.py" = ["F821"] # "docker.DockerClient" — docker is lazily imported
+# Tests routinely declare class-level fixture dicts as immutable-by-convention.
+"frappe/friday_core/tests/*.py" = ["RUF012"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -21,9 +21,19 @@ class TestIssueDocTypeContract(unittest.TestCase):
 	def test_doctype_exists_with_doc53_fields(self):
 		have = {df.fieldname for df in frappe.get_meta("Issue").fields}
 		expected = {
-			"subject", "source", "reason", "status", "priority",
-			"raised_by", "assigned_to", "project", "related_task",
-			"waiting_on", "description", "resolution_details", "execution_log",
+			"subject",
+			"source",
+			"reason",
+			"status",
+			"priority",
+			"raised_by",
+			"assigned_to",
+			"project",
+			"related_task",
+			"waiting_on",
+			"description",
+			"resolution_details",
+			"execution_log",
 		}
 		self.assertEqual(expected - have, set(), f"Issue is missing fields: {expected - have}")
 

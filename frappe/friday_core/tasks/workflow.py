@@ -21,16 +21,20 @@ Responsibilities
    every state transition (graceful degradation if Raven is not installed).
 """
 
+from __future__ import annotations
+
 import frappe
 
 # Lazy import to avoid circular imports — warroom itself doesn't import tasks.
 _warroom = None
+
 
 def _get_warroom():
 	global _warroom
 	if _warroom is None:
 		try:
 			from frappe.friday_core import warroom
+
 			_warroom = warroom
 		except Exception:
 			_warroom = None

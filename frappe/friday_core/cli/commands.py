@@ -42,7 +42,6 @@ import click
 # site context (the wrapping `bench --site <name>` invocation sets that
 # up before our command body runs).
 from frappe.commands import pass_context
-
 from frappe.friday_core.cli.chat import run_repl
 
 
@@ -89,7 +88,9 @@ def chat(context, profile):
 @click.option("--base-url", default=None, help="Override the provider base URL.")
 @click.option("--system-prompt", default=None, help="The agent's system prompt.")
 @pass_context
-def setup(context, provider_type, default_model, provider_name, profile_name, api_key, base_url, system_prompt):
+def setup(
+	context, provider_type, default_model, provider_name, profile_name, api_key, base_url, system_prompt
+):
 	"""Configure a model provider + agent profile in one step (the `hermes setup` twin).
 
 	Creates an LLM Provider (key stored ENCRYPTED) and an Agent Profile, then
@@ -101,7 +102,6 @@ def setup(context, provider_type, default_model, provider_name, profile_name, ap
 	import os
 
 	import frappe
-
 	from frappe.friday_core.cli.setup import DEFAULT_MODELS, run_setup
 
 	# Key precedence: --api-key > FRIDAY_API_KEY env > hidden prompt. Never logged.
@@ -123,9 +123,11 @@ def setup(context, provider_type, default_model, provider_name, profile_name, ap
 				base_url=base_url,
 				system_prompt=system_prompt,
 			)
-			click.echo(f"✓ LLM Provider '{result['provider']}' ({provider_type}, {result['model']}) configured.")
+			click.echo(
+				f"✓ LLM Provider '{result['provider']}' ({provider_type}, {result['model']}) configured."
+			)
 			click.echo(f"✓ Agent Profile '{result['profile']}' is Active.")
-			click.echo(f"\nTalk to it:\n  bench --site {site} friday chat --profile \"{result['profile']}\"")
+			click.echo(f'\nTalk to it:\n  bench --site {site} friday chat --profile "{result["profile"]}"')
 		finally:
 			frappe.destroy()
 

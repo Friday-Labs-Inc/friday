@@ -25,19 +25,22 @@ runner (``friday_core.sandbox.runner``) but differ in lifecycle:
 - Task flow: event-driven, cron-dispatched, persistent.
 """
 
-import frappe
-from frappe.utils import now_datetime
+from __future__ import annotations
 
+import frappe
 from frappe.friday_core.issues.raise_issue import raise_failure_issue
+from frappe.utils import now_datetime
 
 # Lazy import to avoid circular dependency with the warroom module.
 _warroom = None
+
 
 def _get_warroom():
 	global _warroom
 	if _warroom is None:
 		try:
 			from frappe.friday_core import warroom
+
 			_warroom = warroom
 		except Exception:
 			_warroom = None
@@ -50,6 +53,7 @@ _logger = frappe.logger("friday.tasks.runner")
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def register_task_runner() -> None:
 	"""
@@ -89,9 +93,7 @@ def on_agent_task_assigned(message: dict) -> None:
 	profile_name = message.get("assigned_to_profile")
 
 	if not task_name or not profile_name:
-		_logger.error(
-			"Malformed agent_task.assigned message: %s", message
-		)
+		_logger.error("Malformed agent_task.assigned message: %s", message)
 		return
 
 	try:
@@ -106,9 +108,7 @@ def on_agent_task_assigned(message: dict) -> None:
 		# exist (the sandbox signals oom/timeout via `status`, handled in
 		# _block_task). Evaluating the missing name raised AttributeError and
 		# MASKED the real error. Collapsed to one correct handler.
-		_logger.exception(
-			"Task runner crashed for task %s on profile %s", task_name, profile_name
-		)
+		_logger.exception("Task runner crashed for task %s on profile %s", task_name, profile_name)
 		issue_name = _raise_failure_issue(task_name, "error")
 		_post_warroom(task_name, "error", {"profile": profile_name, "issue": issue_name})
 
@@ -117,7 +117,8 @@ def on_agent_task_assigned(message: dict) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _post_warroom(task_name: str, event: str, details: dict = None) -> None:
+
+def _post_warroom(task_name: str, event: str, details: dict | None = None) -> None:
 	"""
 	Post a status update to the Raven War Room channel.
 
@@ -182,7 +183,7 @@ def _claim_task(task_name: str) -> str | None:
 	token = frappe.generate_hash(length=16)
 	# COALESCE collapses NULL/'' so an empty-string token left over from an
 	# older row (pre-migration) does not falsely lock the task.
-	claimed = frappe.db.sql(
+	frappe.db.sql(
 		"""
 		UPDATE `tabTask`
 		SET workflow_state = 'Executing',
@@ -213,7 +214,7 @@ def _heartbeat(task_name: str) -> None:
 	"""
 	try:
 		frappe.db.set_value("Task", task_name, "last_heartbeat_at", now_datetime(), update_modified=False)
-	except Exception:  # noqa: BLE001 — heartbeat is best-effort observability
+	except Exception:
 		_logger.warning("heartbeat update failed for %s", task_name)
 
 
@@ -280,9 +281,8 @@ def _run_task(task_name: str, profile_name: str) -> None:
 
 	# Post "completed" to War Room.
 	import datetime
-	duration_ms = int(
-		(datetime.datetime.utcnow() - started_at).total_seconds() * 1000
-	)
+
+	duration_ms = int((datetime.datetime.utcnow() - started_at).total_seconds() * 1000)
 	_post_warroom(
 		task_name,
 		"completed",
@@ -290,9 +290,7 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	)
 
 
-def _execute_skill_in_sandbox(
-	skill_name: str, task: "Task", profile_name: str
-) -> "SandboxResult":
+def _execute_skill_in_sandbox(skill_name: str, task: "Task", profile_name: str) -> "SandboxResult":
 	"""
 	Execute one skill from a task's required_skills in a Docker sandbox.
 
@@ -307,8 +305,8 @@ def _execute_skill_in_sandbox(
 	Returns:
 		``SandboxResult`` dataclass from sandbox.runner.
 	"""
-	from frappe.friday_core.sandbox import runner as sandbox_runner
 	from frappe.friday_core.sandbox import credentials as sandbox_creds
+	from frappe.friday_core.sandbox import runner as sandbox_runner
 
 	parameters = _parse_task_parameters(task, skill_name)
 	creds = sandbox_creds.resolve_credentials(profile_name, skill_name)
@@ -439,7 +437,7 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			session_id=f"task::{task.name}",
 			inbound_content=framing,
 		)
-	except Exception as exc:  # noqa: BLE001 — the task row is the failure ledger
+	except Exception as exc:
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"

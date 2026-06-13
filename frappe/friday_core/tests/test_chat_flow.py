@@ -51,7 +51,6 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import frappe
-
 from frappe.friday_core.agent_runner.runner import run_turn
 from frappe.friday_core.cli.chat import (
 	CLI_PLATFORM_NAME,
@@ -215,7 +214,7 @@ class TestChatFlow(unittest.TestCase):
 
 	def test_run_turn_pure_function_returns_reply_with_tool_count(self):
 		"""run_turn is pure: no DB writes, deterministic reply text.
-		
+
 		Slice 5 update: run_turn calls the real LLM via get_provider_for_profile.
 		We patch MinimaxProvider.chat directly so no HTTP or DB calls are made.
 		"""

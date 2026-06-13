@@ -128,9 +128,7 @@ class TestCreateBrandDirection(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.get_doc.return_value = MagicMock(name="BD-0002")
 		raw = '[{"hex": "#FFFFFF", "name": "White", "role": "background"}]'
-		handlers_brand.create_brand_direction(
-			"create-brand-direction", self._params(color_palette=raw)
-		)
+		handlers_brand.create_brand_direction("create-brand-direction", self._params(color_palette=raw))
 		self.assertEqual(mock_frappe.get_doc.call_args[0][0]["color_palette"], raw)
 
 
@@ -138,9 +136,7 @@ class TestRegistration(unittest.TestCase):
 	def test_both_skills_registered_with_dispatcher(self):
 		from frappe.friday_core.agent_runner import dispatcher
 
-		self.assertIs(
-			dispatcher._SKILL_HANDLERS.get("get-brand-brief"), handlers_brand.get_brand_brief
-		)
+		self.assertIs(dispatcher._SKILL_HANDLERS.get("get-brand-brief"), handlers_brand.get_brand_brief)
 		self.assertIs(
 			dispatcher._SKILL_HANDLERS.get("create-brand-direction"),
 			handlers_brand.create_brand_direction,

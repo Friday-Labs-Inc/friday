@@ -131,9 +131,7 @@ class TestBriefIngestion(unittest.TestCase):
 		mock_frappe.as_json.side_effect = json.dumps
 		event = MagicMock()
 		event.event_id = "evt-9"
-		randompack.handle_payment_received(
-			{"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event
-		)
+		randompack.handle_payment_received({"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event)
 		payload = mock_frappe.get_doc.call_args[0][0]
 		self.assertEqual(payload["business_name"], "Loop Coffee")
 		self.assertEqual(payload["brand_personality"], "warm, crafted, honest")
@@ -145,9 +143,7 @@ class TestBriefIngestion(unittest.TestCase):
 	def test_frozen_snapshot_never_overwrites(self, mock_frappe):
 		mock_frappe.db.get_value.return_value = "BB-0042"  # already ingested
 		event = MagicMock()
-		randompack.handle_payment_received(
-			{"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event
-		)
+		randompack.handle_payment_received({"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event)
 		mock_frappe.get_doc.assert_not_called()
 
 	@patch(f"{_S}.frappe")

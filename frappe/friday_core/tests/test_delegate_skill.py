@@ -107,15 +107,11 @@ class TestProfileResolution(unittest.TestCase):
 	def test_no_match_raises_actionable_error(self, mock_frappe, mock_match):
 		_ctx_frappe(mock_frappe)
 		with self.assertRaises(ValueError) as ctx:
-			handlers_delegate.delegate_task(
-				"delegate-task", _params(profile="", required_skills=["x-skill"])
-			)
+			handlers_delegate.delegate_task("delegate-task", _params(profile="", required_skills=["x-skill"]))
 		self.assertIn("x-skill", str(ctx.exception))
 
 	def test_skill_list_normalisation_accepts_string(self):
-		self.assertEqual(
-			handlers_delegate._normalise_skill_list("a, b\nc"), ["a", "b", "c"]
-		)
+		self.assertEqual(handlers_delegate._normalise_skill_list("a, b\nc"), ["a", "b", "c"])
 		self.assertEqual(handlers_delegate._normalise_skill_list(["a", " b "]), ["a", "b"])
 		self.assertEqual(handlers_delegate._normalise_skill_list(None), [])
 
@@ -145,9 +141,7 @@ class TestHappyPath(unittest.TestCase):
 
 		# Q2 — summary stored (JSON envelope — Task.result is a JSON column)
 		# and returned to the parent.
-		mock_frappe.as_json.assert_called_with(
-			{"status": "success", "summary": "Taglines drafted: A, B, C."}
-		)
+		mock_frappe.as_json.assert_called_with({"status": "success", "summary": "Taglines drafted: A, B, C."})
 		self.assertEqual(task.result, mock_frappe.as_json.return_value)
 		self.assertEqual(task.workflow_state, "Completed")
 		task.save.assert_called_with(ignore_permissions=True)
@@ -186,9 +180,7 @@ class TestRegistrationAndBootstrap(unittest.TestCase):
 		_json.dumps(schema)
 		for required_field in schema["required"]:
 			self.assertIn(required_field, schema["properties"])
-		self.assertEqual(
-			_SKILL["required_doctypes"], [{"target_doctype": "Task", "operation": "create"}]
-		)
+		self.assertEqual(_SKILL["required_doctypes"], [{"target_doctype": "Task", "operation": "create"}])
 
 
 if __name__ == "__main__":

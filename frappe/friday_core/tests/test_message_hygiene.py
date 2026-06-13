@@ -18,9 +18,9 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_surrogates,
 )
 
-SUR = chr(0xD800)          # a lone surrogate (invalid on its own)
-SUR2 = chr(0xDFFF)         # another lone surrogate
-FFFD = chr(0xFFFD)         # the Unicode replacement character
+SUR = chr(0xD800)  # a lone surrogate (invalid on its own)
+SUR2 = chr(0xDFFF)  # another lone surrogate
+FFFD = chr(0xFFFD)  # the Unicode replacement character
 
 
 class TestSanitizeSurrogates(unittest.TestCase):
@@ -52,9 +52,12 @@ class TestSanitizeMessagesSurrogates(unittest.TestCase):
 		self.assertEqual(msgs[0]["content"][0]["text"], "a" + FFFD)
 
 	def test_tool_call_function_args_sanitized(self):
-		msgs = [{"role": "assistant", "tool_calls": [
-			{"id": "c1", "function": {"name": "f", "arguments": '{"x":"' + SUR + '"}'}}
-		]}]
+		msgs = [
+			{
+				"role": "assistant",
+				"tool_calls": [{"id": "c1", "function": {"name": "f", "arguments": '{"x":"' + SUR + '"}'}}],
+			}
+		]
 		self.assertTrue(sanitize_messages_surrogates(msgs))
 		self.assertEqual(msgs[0]["tool_calls"][0]["function"]["arguments"], '{"x":"' + FFFD + '"}')
 

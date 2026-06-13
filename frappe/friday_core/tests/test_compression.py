@@ -203,7 +203,9 @@ class TestMaybeCompressSession(unittest.TestCase):
 		self.assertIsNone(maybe_compress_session("P", "S"))
 		mock_persist.assert_not_called()
 
-	def test_previous_summary_is_fed_into_recompression(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_previous_summary_is_fed_into_recompression(
+		self, mock_load, mock_resolve, mock_latest, mock_persist
+	):
 		mock_load.return_value = self._big_history()
 		mock_latest.return_value = "PRIOR"
 		prov = self._provider()
@@ -218,7 +220,7 @@ class TestMaybeCompressSession(unittest.TestCase):
 
 class TestPromptBuilderCompaction(unittest.TestCase):
 	@patch("frappe.get_all")
-	@patch(f"frappe.friday_core.llm.prompt_builder.latest_summary", return_value="THE SUMMARY")
+	@patch("frappe.friday_core.llm.prompt_builder.latest_summary", return_value="THE SUMMARY")
 	def test_summary_leads_history_with_prefix(self, _mock_latest, mock_get_all):
 		mock_get_all.return_value = [
 			{"direction": "inbound", "content": "recent question"},
@@ -234,14 +236,14 @@ class TestPromptBuilderCompaction(unittest.TestCase):
 		self.assertEqual(msgs[2], {"role": "assistant", "content": "recent answer"})
 
 	@patch("frappe.get_all")
-	@patch(f"frappe.friday_core.llm.prompt_builder.latest_summary", return_value=None)
+	@patch("frappe.friday_core.llm.prompt_builder.latest_summary", return_value=None)
 	def test_no_summary_means_no_lead_message(self, _mock_latest, mock_get_all):
 		mock_get_all.return_value = [{"direction": "inbound", "content": "hi"}]
 		msgs = _load_history("S", 10)
 		self.assertEqual(msgs, [{"role": "user", "content": "hi"}])
 
 	@patch("frappe.get_all")
-	@patch(f"frappe.friday_core.llm.prompt_builder.latest_summary", return_value=None)
+	@patch("frappe.friday_core.llm.prompt_builder.latest_summary", return_value=None)
 	def test_history_query_excludes_compacted_rows(self, _mock_latest, mock_get_all):
 		mock_get_all.return_value = []
 		_load_history("S", 10)

@@ -169,8 +169,8 @@ class PermissionMatrix:
 	  operation names}`. Example::
 
 	      {
-	          "Note":          frozenset({"read", "write", "create"}),
-	          "ToDo":          frozenset({"read"}),
+	          "Note": frozenset({"read", "write", "create"}),
+	          "ToDo": frozenset({"read"}),
 	          "Contact": frozenset(),  # explicitly nothing
 	      }
 

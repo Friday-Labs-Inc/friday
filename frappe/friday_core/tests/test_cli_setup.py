@@ -31,8 +31,10 @@ class TestProvisionProvider(unittest.TestCase):
 		mock_frappe.new_doc.return_value = doc
 
 		name = provision_provider(
-			provider_name="Minimax", provider_type="minimax",
-			api_key="sk-secret", default_model="MiniMax-M2",
+			provider_name="Minimax",
+			provider_type="minimax",
+			api_key="sk-secret",
+			default_model="MiniMax-M2",
 		)
 
 		self.assertEqual(name, "Minimax")
@@ -50,8 +52,10 @@ class TestProvisionProvider(unittest.TestCase):
 		mock_frappe.get_doc.return_value = doc
 
 		provision_provider(
-			provider_name="Minimax", provider_type="minimax",
-			api_key="sk-new", default_model="MiniMax-M2",
+			provider_name="Minimax",
+			provider_type="minimax",
+			api_key="sk-new",
+			default_model="MiniMax-M2",
 		)
 
 		mock_frappe.new_doc.assert_not_called()
@@ -79,13 +83,18 @@ class TestRunSetup(unittest.TestCase):
 	@patch(f"{_S}.frappe")
 	def test_provisions_both_and_commits(self, mock_frappe):
 		mock_frappe.db.exists.return_value = False
-		prov = MagicMock(); prov.name = "Minimax"
-		prof = MagicMock(); prof.name = "Friday"
+		prov = MagicMock()
+		prov.name = "Minimax"
+		prof = MagicMock()
+		prof.name = "Friday"
 		mock_frappe.new_doc.side_effect = [prov, prof]
 
 		result = run_setup(
-			provider_name="Minimax", provider_type="minimax", api_key="sk-x",
-			default_model="MiniMax-M2", profile_name="Friday",
+			provider_name="Minimax",
+			provider_type="minimax",
+			api_key="sk-x",
+			default_model="MiniMax-M2",
+			profile_name="Friday",
 		)
 
 		self.assertEqual(result, {"provider": "Minimax", "profile": "Friday", "model": "MiniMax-M2"})
@@ -96,13 +105,18 @@ class TestRunSetup(unittest.TestCase):
 	@patch(f"{_S}.frappe")
 	def test_summary_never_leaks_the_key(self, mock_frappe):
 		mock_frappe.db.exists.return_value = False
-		prov = MagicMock(); prov.name = "P"
-		prof = MagicMock(); prof.name = "A"
+		prov = MagicMock()
+		prov.name = "P"
+		prof = MagicMock()
+		prof.name = "A"
 		mock_frappe.new_doc.side_effect = [prov, prof]
 
 		result = run_setup(
-			provider_name="P", provider_type="minimax", api_key="sk-SENSITIVE",
-			default_model="m", profile_name="A",
+			provider_name="P",
+			provider_type="minimax",
+			api_key="sk-SENSITIVE",
+			default_model="m",
+			profile_name="A",
 		)
 
 		self.assertNotIn("sk-SENSITIVE", str(result))
