@@ -65,9 +65,11 @@
    "options": "Task Skill"
   },
   {
+   "description": "Pipeline state. A Select over the canonical state set so it validates on save and powers the Task Pipeline Kanban (design 65b). Driven by the dispatcher/runner/reconciler, not by hand.",
    "fieldname": "workflow_state",
-   "fieldtype": "Data",
-   "label": "Workflow State"
+   "fieldtype": "Select",
+   "label": "Workflow State",
+   "options": "Pending\nAssigned\nExecuting\nReview\nCompleted\nBlocked\nCancelled"
   },
   {
    "default": "0",
