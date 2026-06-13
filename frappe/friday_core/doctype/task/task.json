@@ -23,7 +23,15 @@
   "blocked_reason",
   "retry_count",
   "originating_session",
-  "originating_platform"
+  "originating_platform",
+  "gantt_section",
+  "exp_start_date",
+  "exp_end_date",
+  "progress",
+  "color",
+  "is_milestone",
+  "duration_ms",
+  "cost_usd"
  ],
  "fields": [
   {
@@ -159,6 +167,60 @@
    "fieldname": "originating_platform",
    "fieldtype": "Data",
    "label": "Originating Platform",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gantt_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline & Display"
+  },
+  {
+   "description": "Planned start (from the pipeline plan or derived from dependencies). Drives the Gantt view.",
+   "fieldname": "exp_start_date",
+   "fieldtype": "Date",
+   "label": "Expected Start Date"
+  },
+  {
+   "description": "Planned finish. Drives the Gantt view.",
+   "fieldname": "exp_end_date",
+   "fieldtype": "Date",
+   "label": "Expected End Date"
+  },
+  {
+   "default": "0",
+   "description": "0/50/100 by workflow_state (Pending / Executing / terminal). Powers Gantt + Kanban progress bars (design 65d).",
+   "fieldname": "progress",
+   "fieldtype": "Percent",
+   "label": "Progress",
+   "read_only": 1
+  },
+  {
+   "description": "Bar color in Gantt/Kanban, defaulted from the assigned agent profile.",
+   "fieldname": "color",
+   "fieldtype": "Color",
+   "label": "Color"
+  },
+  {
+   "default": "0",
+   "description": "Mirrors execution_mode == milestone. A milestone is a gate, not work.",
+   "fieldname": "is_milestone",
+   "fieldtype": "Check",
+   "label": "Is Milestone",
+   "read_only": 1
+  },
+  {
+   "description": "Execution duration in milliseconds, from the result envelope on completion.",
+   "fieldname": "duration_ms",
+   "fieldtype": "Int",
+   "label": "Duration (ms)",
+   "read_only": 1
+  },
+  {
+   "description": "LLM spend for this task's run, from the result envelope (design 65d). Renders blank when usage telemetry is absent — never a fabricated 0.",
+   "fieldname": "cost_usd",
+   "fieldtype": "Currency",
+   "label": "Cost (USD)",
+   "options": "USD",
    "read_only": 1
   }
  ],

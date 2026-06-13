@@ -202,6 +202,7 @@ doc_events = {
 		"on_update": "frappe.cache_manager.build_domain_restricted_page_cache",
 	},
 	"Agent Profile": {
+		"after_insert": "frappe.friday_core.identity.agent_identity.on_agent_profile_after_insert",
 		"on_update": [
 			"frappe.friday_core.permissions.cache.invalidate_for_profile",
 			"frappe.friday_core.skills.loader.invalidate_for_profile",
@@ -362,6 +363,10 @@ after_migrate = [
 	# Friday: register the task runner real-time handler after every migrate
 	# so it can receive agent_task.assigned pub/sub events.
 	"frappe.friday_core.tasks.runner.register_task_runner",
+	# Friday (design 65a, Q4): backfill a no-login system Frappe User for every
+	# Agent Profile so each agent is a first-class, assignable, @-mentionable
+	# actor in Desk. Idempotent + failure-isolated per profile.
+	"frappe.friday_core.identity.agent_identity.provision_all_agent_users",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]
