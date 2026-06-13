@@ -140,24 +140,36 @@ def _post_warroom_update(doc: "Task", state: str) -> None:
 
 def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
 	"""
-	Publish an ``agent_task.assigned`` real-time event.
+	Enqueue the background runner to execute a newly-assigned task.
 
-	The task runner subscribes to this event and resumes a warm container
-	to execute the task.  Publishing happens after the save transaction
-	commits via ``doctype=True`` so it is outside the DB write path.
+	This is the single trigger that bridges a Pending → Assigned transition
+	to the task runner (architecture decision, 2026-06-13). It deliberately
+	does NOT use ``frappe.publish_realtime``: Frappe's realtime layer is
+	publish-only on the server side (subscriptions live in browser clients
+	over socket.io), so a backend worker never receives the event and the
+	task stalls in Assigned forever. Instead we push a real RQ job.
+
+	Details that matter:
+	  - ``queue="default"`` — a standard bench only runs ``default``/``short``/
+	    ``long`` workers; a job on a non-existent queue is never consumed.
+	  - ``enqueue_after_commit=True`` — defer the job until the surrounding
+	    save transaction commits, so the runner always reads the committed
+	    ``Assigned`` row instead of racing the writer.
+	  - ``now`` under test — run the job inline during tests so assertions
+	    see the effect synchronously; in production it runs on the worker.
 
 	Args:
 		task_name: Task document name (e.g. ``AT-000042``).
 		assigned_to_profile: The agent profile assigned to the task.
 	"""
-	message = {
-		"task_name": task_name,
-		"assigned_to_profile": assigned_to_profile,
-		"workflow_state": "Assigned",
-	}
-	frappe.publish_realtime(
-		event="agent_task.assigned",
-		message=message,
-		doctype="Task",
-		after_commit=True,
+	frappe.enqueue(
+		"frappe.friday_core.tasks.runner.on_agent_task_assigned",
+		queue="default",
+		enqueue_after_commit=True,
+		now=bool(frappe.flags.in_test),
+		message={
+			"task_name": task_name,
+			"assigned_to_profile": assigned_to_profile,
+			"workflow_state": "Assigned",
+		},
 	)

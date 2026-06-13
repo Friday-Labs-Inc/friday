@@ -155,11 +155,16 @@ class TestAssignedToProfileClearing(unittest.TestCase):
 		self.assertIsNone(doc.assigned_to_profile)
 
 
-class TestPublishRealtime(unittest.TestCase):
-	"""Redis pub/sub is emitted when transitioning to Assigned with profile change."""
+class TestRunnerEnqueue(unittest.TestCase):
+	"""The runner is enqueued when transitioning to Assigned with a profile change.
+
+	This is the single trigger chokepoint. It is an RQ ``frappe.enqueue`` — NOT
+	``publish_realtime`` (which is browser-only on the server side and would
+	leave the task stalled in Assigned forever).
+	"""
 
 	@patch("frappe.friday_core.tasks.workflow.frappe")
-	def test_emits_realtime_on_pending_to_assigned(self, mock_frappe):
+	def test_enqueues_runner_on_pending_to_assigned(self, mock_frappe):
 		from frappe.friday_core.tasks.workflow import on_state_change
 
 		doc = _mock_doc(
@@ -176,15 +181,37 @@ class TestPublishRealtime(unittest.TestCase):
 
 		on_state_change(doc, "on_update")
 
-		# Extract the actual task_name string from the call args
-		call_args = mock_frappe.publish_realtime.call_args
+		mock_frappe.enqueue.assert_called_once()
+		call_args = mock_frappe.enqueue.call_args
+		self.assertEqual(
+			call_args.args[0],
+			"frappe.friday_core.tasks.runner.on_agent_task_assigned",
+		)
+		self.assertEqual(call_args.kwargs["queue"], "default")
+		self.assertTrue(call_args.kwargs["enqueue_after_commit"])
 		actual_message = call_args.kwargs["message"]
 		self.assertEqual(actual_message["task_name"], "AT-000042")
 		self.assertEqual(actual_message["assigned_to_profile"], "note_taker")
 		self.assertEqual(actual_message["workflow_state"], "Assigned")
 
 	@patch("frappe.friday_core.tasks.workflow.frappe")
-	def test_no_emit_when_assigned_but_profile_unchanged(self, mock_frappe):
+	def test_uses_enqueue_not_publish_realtime(self, mock_frappe):
+		from frappe.friday_core.tasks.workflow import on_state_change
+
+		doc = _mock_doc(
+			workflow_state="Assigned",
+			assigned_to_profile="note_taker",
+			completed_at=None,
+		)
+		type(doc).name = property(lambda self: "AT-000042")
+		doc.has_value_changed.side_effect = lambda key: True
+
+		on_state_change(doc, "on_update")
+
+		mock_frappe.publish_realtime.assert_not_called()
+
+	@patch("frappe.friday_core.tasks.workflow.frappe")
+	def test_no_enqueue_when_assigned_but_profile_unchanged(self, mock_frappe):
 		from frappe.friday_core.tasks.workflow import on_state_change
 
 		doc = _mock_doc(
@@ -198,14 +225,18 @@ class TestPublishRealtime(unittest.TestCase):
 
 		on_state_change(doc, "on_update")
 
-		mock_frappe.publish_realtime.assert_not_called()
+		mock_frappe.enqueue.assert_not_called()
 
 
-class TestSaveCalled(unittest.TestCase):
-	"""doc.save(ignore_permissions=True) is always called."""
+class TestSideEffectsPersisted(unittest.TestCase):
+	"""Derived/side-effect fields are persisted via db_set even without a state change.
+
+	on_state_change runs ON on_update, so it uses db_set (not save) to avoid
+	re-firing on_update → infinite recursion.
+	"""
 
 	@patch("frappe.friday_core.tasks.workflow.frappe")
-	def test_save_called_even_when_no_state_change(self, mock_frappe):
+	def test_db_set_called_even_when_no_state_change(self, mock_frappe):
 		from frappe.friday_core.tasks.workflow import on_state_change
 
 		doc = _mock_doc(workflow_state="Executing", dispatchable=False)
@@ -213,7 +244,8 @@ class TestSaveCalled(unittest.TestCase):
 
 		on_state_change(doc, "on_update")
 
-		doc.save.assert_called_once_with(ignore_permissions=True)
+		doc.db_set.assert_called_once()
+		doc.save.assert_not_called()
 
 
 if __name__ == "__main__":

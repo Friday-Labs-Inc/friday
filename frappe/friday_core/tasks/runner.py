@@ -4,9 +4,10 @@
 """
 Task runner — executes assigned Tasks inside Docker sandboxes.
 
-Consumes ``agent_task.assigned`` real-time events emitted by the
-workflow hook and the task dispatcher.  Transitions task state through
-Executing → Review (success) or Executing → Blocked (failure).
+Executes a Task as a background RQ job enqueued by the workflow hook
+(``tasks.workflow.on_state_change``) when the task enters ``Assigned``.
+Transitions task state through Executing → Review (success) or
+Executing → Blocked (failure).
 
 Registration
 ------------
@@ -61,17 +62,12 @@ def register_task_runner() -> None:
 	breaks every site migrate. This stub exists so the ``after_migrate``
 	hook entry in ``hooks.py`` doesn't fail.
 
-	The real handler ``on_agent_task_assigned()`` remains usable — it
-	just needs a different trigger. Options for the actual subscription:
-
-	  - A ``doc_events["Task"]["on_update"]`` hook that calls it
-	    when the workflow_state transitions to "Assigned".
-	  - An RQ job enqueued by ``tasks.workflow.on_state_change`` when
-	    the assignment happens.
-	  - A scheduled ``tasks.dispatcher.tick`` poll (already wired in
-	    ``hooks.scheduler_events``).
-
-	Pick one in a follow-up Slice 8.x; until then the runner is dormant.
+	The real handler ``on_agent_task_assigned()`` is now triggered by
+	``tasks.workflow.on_state_change``: when a Task transitions into
+	``Assigned`` it enqueues that handler as an RQ job on the ``default``
+	queue (decision 2026-06-13). This stub therefore stays a no-op — it
+	exists only so the ``after_migrate`` hook entry in ``hooks.py`` does
+	not fail. No realtime subscription is needed or possible server-side.
 	"""
 	# Intentional no-op. See docstring above for the real fix.
 	pass
@@ -79,11 +75,11 @@ def register_task_runner() -> None:
 
 def on_agent_task_assigned(message: dict) -> None:
 	"""
-	Handle an ``agent_task.assigned`` real-time event.
+	Execute a task that has just been assigned.
 
-	Executed asynchronously by the Frappe realtime worker after the
-	``agent_task.assigned`` pub/sub message is published by the workflow
-	hook or the dispatcher.
+	Runs as an RQ background job enqueued by ``tasks.workflow.on_state_change``
+	when a Task transitions into ``Assigned`` (on the ``default`` queue, after
+	the assigning transaction commits).
 
 	Args:
 		message: Dict with keys ``task_name``, ``assigned_to_profile``,
