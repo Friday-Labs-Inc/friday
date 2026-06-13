@@ -268,7 +268,11 @@ def _ensure_workspace() -> bool:
 	for spec in DASHBOARD_CHARTS:
 		ws.append("charts", {"chart_name": spec["chart_name"], "label": spec["chart_name"]})
 
-	# Shortcuts: jump straight to the Project list and the Task Kanban.
+	# Shortcuts: the live console first, then the Project list and Task Kanban.
+	ws.append(
+		"shortcuts",
+		{"type": "Page", "link_to": "project-console", "label": "Project Console", "color": "Green"},
+	)
 	ws.append(
 		"shortcuts",
 		{"type": "DocType", "link_to": "Project", "label": "Projects", "doc_view": "List", "color": "Blue"},
