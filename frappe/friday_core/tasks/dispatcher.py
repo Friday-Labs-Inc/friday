@@ -150,8 +150,13 @@ def _claim_and_dispatch(task_doc: "Task") -> None:
 	# up. Setting the state directly mirrors the runner's own transitions
 	# (``runner._task_transition`` falls back to a direct set when no Frappe
 	# Workflow is configured on the Task DocType).
+	#
+	# ``assigned_at`` is the timestamp the durability reconciler reads to
+	# detect Assigned-but-never-picked-up tasks (lost enqueue) — without it
+	# the reconciler can't tell a brand-new assignment from a stale one.
 	task_doc.assigned_to_profile = chosen_profile
 	task_doc.workflow_state = "Assigned"
+	task_doc.assigned_at = frappe.utils.now_datetime()
 	task_doc.save(ignore_permissions=True)
 
 

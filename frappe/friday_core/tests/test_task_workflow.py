@@ -187,7 +187,10 @@ class TestRunnerEnqueue(unittest.TestCase):
 			call_args.args[0],
 			"frappe.friday_core.tasks.runner.on_agent_task_assigned",
 		)
-		self.assertEqual(call_args.kwargs["queue"], "default")
+		# Design 61 Q4 (LOCKED): dedicated 'friday' queue isolates agent work
+		# from Frappe housekeeping and matches what RandomPack already uses.
+		self.assertEqual(call_args.kwargs["queue"], "friday")
+		self.assertEqual(call_args.kwargs["job_name"], "task:AT-000042")
 		self.assertTrue(call_args.kwargs["enqueue_after_commit"])
 		actual_message = call_args.kwargs["message"]
 		self.assertEqual(actual_message["task_name"], "AT-000042")

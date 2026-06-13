@@ -150,8 +150,16 @@ def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
 	task stalls in Assigned forever. Instead we push a real RQ job.
 
 	Details that matter:
-	  - ``queue="default"`` — a standard bench only runs ``default``/``short``/
-	    ``long`` workers; a job on a non-existent queue is never consumed.
+	  - ``queue="friday"`` (design 61, Q4 LOCKED) — agent work is minutes-long
+	    LLM/sandbox runs; isolating it from Frappe's housekeeping (email,
+	    link-count, etc.) keeps both pipelines responsive. The bench bring-up
+	    docs register the queue, and ``pipeline_health`` (61b) flags an
+	    absent ``friday`` worker as ``down`` within 60s so a forgotten setup
+	    step is loud, not silent.
+	  - ``job_name="task:<name>"`` — the durability reconciler uses this to
+	    detect "is this task already in flight" before re-firing a lost
+	    enqueue, so a duplicate trigger is a cheap no-op instead of a
+	    double-run.
 	  - ``enqueue_after_commit=True`` — defer the job until the surrounding
 	    save transaction commits, so the runner always reads the committed
 	    ``Assigned`` row instead of racing the writer.
@@ -164,7 +172,9 @@ def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:
 	"""
 	frappe.enqueue(
 		"frappe.friday_core.tasks.runner.on_agent_task_assigned",
-		queue="default",
+		queue="friday",
+		timeout=600,
+		job_name=f"task:{task_name}",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.in_test),
 		message={

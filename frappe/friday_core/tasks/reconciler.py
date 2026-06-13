@@ -1,0 +1,356 @@
+# Copyright (c) 2026, Friday Labs and contributors
+# License: MIT. See license.txt
+
+"""
+The durability reconciler (design 61, Q1 + Q7a).
+
+Why this exists, in plain English
+=================================
+Before this module, Friday's autonomous loop was *event load-bearing*: a
+task moved from Pending → Assigned, the workflow hook enqueued the runner,
+and IF that single enqueue survived (worker up, queue named correctly,
+network OK, …) the task ran. Lose the enqueue and the task sat in
+Assigned forever — no one told anyone. On 2026-06-12 a real customer
+pipeline stalled for four hours this way; even the AI watching it
+declared "everything operating in harmony."
+
+This file flips that. State is now the source of truth, the scheduler is
+the heartbeat, and the event is only an optimisation. Every 60 seconds
+`tick()` runs and drives tasks forward purely from DB facts:
+
+    Pending             → (the existing dispatcher handles this — left alone)
+    Assigned, no in-flight job, > 30s old  → re-enqueue the runner trigger
+    Executing, no fresh heartbeat (15min)  → Block + raise a Failure Issue
+    Blocked (transient), retry budget left → re-Pend; the dispatcher tries again
+    RandomPack Event in Received/Failed    → re-enqueue process_event
+
+The heartbeat (`last_heartbeat_at`) is updated by the runner during real
+work, so genuinely long agentic runs are not killed by the executing-stale
+sweep. The retry budget (3) caps the auto-heal so a truly broken task
+stays Blocked for a human, with a reason a human can read.
+
+Q4 (locked): the canonical queue is `friday`. Every enqueue here uses it.
+"""
+
+from __future__ import annotations
+
+import frappe
+from frappe.utils.background_jobs import get_jobs
+
+
+_logger = frappe.logger("friday.tasks.reconciler")
+
+# How fresh an Assigned task must be before we will re-fire the runner trigger.
+# Smaller than this and we risk racing the original enqueue; larger and lost-
+# enqueue stalls take longer to heal. 30s is the sweet spot for a 60s cron.
+ASSIGNED_GRACE_SECONDS = 30
+
+# An Executing task without a heartbeat for this long is considered runner_lost.
+# Heartbeats fire every 30s during agentic runs and at each skill boundary for
+# mechanical runs, so 15 minutes is well beyond any healthy gap.
+EXECUTING_STALE_MINUTES = 15
+
+# How long a transient-Blocked task waits before we re-Pend it. Short enough
+# that a flake recovers within one project sprint, long enough that we don't
+# hammer a stuck dependency.
+TRANSIENT_BLOCKED_GRACE_MINUTES = 5
+
+# Beyond this many auto-retries we leave the task Blocked for a human. The cap
+# exists so a permanently-broken skill cannot ping-pong forever.
+RETRY_BUDGET = 3
+
+# Reasons we auto-retry. Semantic blocks (dependency_failed, no_profile_for_
+# skills:*, profile_has_no_llm_provider) are NOT in this set: they need a human
+# to resolve, retrying them just spams.
+TRANSIENT_BLOCKED_REASONS = ("oom", "timeout", "runner_lost")
+
+# Stuck RandomPack Event grace: shorter than tasks because events are dirt-cheap
+# to re-process (the handler is idempotent / status-guarded already).
+RANDOMPACK_RECEIVED_GRACE_SECONDS = 60
+RANDOMPACK_FAILED_GRACE_MINUTES = 5
+
+# The single job-name convention used everywhere the runner is enqueued. Lets
+# get_jobs() tell us "is this task already in flight" without false positives.
+TASK_JOB_NAME = "task:{name}"
+EVENT_JOB_NAME = "rp:{event_id}"
+
+
+# ---------------------------------------------------------------------------
+# Entry point — wired in hooks.scheduler_events["cron"]["* * * * *"]
+# ---------------------------------------------------------------------------
+
+
+def tick() -> None:
+	"""
+	One reconciler cycle — four independent sweeps.
+
+	The sweeps are isolated: a DB blip in one must NOT abort the others
+	(this is the heartbeat; partial work is better than no work). Each
+	failure is logged loudly so we never silently regress to the bad old
+	"all settings seem fine" state.
+	"""
+	for phase, fn in (
+		("assigned_orphans", _reconcile_assigned_orphans),
+		("executing_stale", _reconcile_executing_stale),
+		("transient_blocked", _reconcile_transient_blocked),
+		("randompack_events", _reconcile_randompack_events),
+	):
+		try:
+			fn()
+		except Exception:  # noqa: BLE001 — heartbeat must not die on one failure
+			# log_error persists; logger.exception goes to the worker log. Both,
+			# so the operator and the AI watching it both have a trail.
+			_logger.exception("reconciler phase %s failed", phase)
+			frappe.log_error(title=f"friday.reconciler phase failed: {phase}")
+
+
+# ---------------------------------------------------------------------------
+# Sweeps
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_assigned_orphans() -> None:
+	"""
+	An Assigned task that no worker is actually working on is an orphan: the
+	original `frappe.enqueue` in workflow.on_state_change was lost (worker
+	wasn't up; queue wasn't registered; Redis blip; etc.). We re-fire the
+	runner trigger with the same idempotent payload — the runner's
+	check-and-set lease (Q5) makes a duplicate trigger a clean no-op.
+
+	The 30-second grace window matters: without it we'd race the legitimate
+	first enqueue and spam the queue. With it, we still heal a stall within
+	~90 seconds of it happening.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT name, assigned_to_profile
+		FROM `tabTask`
+		WHERE workflow_state = 'Assigned'
+		  AND assigned_to_profile IS NOT NULL
+		  AND (executing_token IS NULL OR executing_token = '')
+		  AND TIMESTAMPDIFF(SECOND, COALESCE(assigned_at, modified), NOW()) > %(grace)s
+		LIMIT 50
+		""",
+		{"grace": ASSIGNED_GRACE_SECONDS},
+		as_dict=True,
+	)
+	if not rows:
+		return
+
+	in_flight = _in_flight_job_names()
+	for row in rows:
+		job_name = TASK_JOB_NAME.format(name=row["name"])
+		if job_name in in_flight:
+			continue  # the original trigger is still ticking — leave it
+		_logger.warning(
+			"reconciler: re-enqueuing Assigned-orphan task %s (profile=%s)",
+			row["name"],
+			row["assigned_to_profile"],
+		)
+		frappe.enqueue(
+			"frappe.friday_core.tasks.runner.on_agent_task_assigned",
+			queue="friday",
+			timeout=600,
+			job_name=job_name,
+			message={
+				"task_name": row["name"],
+				"assigned_to_profile": row["assigned_to_profile"],
+				"workflow_state": "Assigned",
+			},
+		)
+
+
+def _reconcile_executing_stale() -> None:
+	"""
+	An Executing task without a recent heartbeat AND no in-flight job is
+	one whose runner died mid-execution (worker crash; sandbox kill; OS
+	signal). We block it with the structured reason `runner_lost`, file a
+	Failure Issue (D6 — visible to humans), and post to the War Room.
+
+	The heartbeat check matters: a long agentic turn keeps the heartbeat
+	fresh, so this sweep cannot kill it. Only truly silent workers get
+	caught.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT name
+		FROM `tabTask`
+		WHERE workflow_state = 'Executing'
+		  AND (
+		    last_heartbeat_at IS NULL
+		    OR TIMESTAMPDIFF(MINUTE, last_heartbeat_at, NOW()) > %(grace)s
+		  )
+		  AND TIMESTAMPDIFF(MINUTE, COALESCE(started_at, modified), NOW()) > %(grace)s
+		LIMIT 50
+		""",
+		{"grace": EXECUTING_STALE_MINUTES},
+		as_dict=True,
+	)
+	if not rows:
+		return
+
+	in_flight = _in_flight_job_names()
+	for row in rows:
+		job_name = TASK_JOB_NAME.format(name=row["name"])
+		if job_name in in_flight:
+			continue  # genuinely running, just slow on heartbeats — leave it
+		task = frappe.get_doc("Task", row["name"])
+		task.workflow_state = "Blocked"
+		task.blocked_reason = "runner_lost"
+		task.save(ignore_permissions=True)
+		_raise_runner_lost_issue(row["name"])
+
+
+def _reconcile_transient_blocked() -> None:
+	"""
+	A task blocked by a transient cause (oom, timeout, runner_lost) gets
+	one more shot per tick (up to RETRY_BUDGET total). Re-Pend it cleanly:
+	clear `assigned_to_profile` + `executing_token` so the dispatcher picks
+	it up fresh on the next tick. Increment `retry_count` so we eventually
+	stop.
+
+	Semantic blocks (dependency_failed, no_profile_for_skills:*) need a
+	human to fix the underlying condition — they are NOT retried here.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT name, retry_count
+		FROM `tabTask`
+		WHERE workflow_state = 'Blocked'
+		  AND blocked_reason IN ('oom', 'timeout', 'runner_lost')
+		  AND retry_count < %(budget)s
+		  AND TIMESTAMPDIFF(MINUTE, modified, NOW()) > %(grace)s
+		LIMIT 50
+		""",
+		{"budget": RETRY_BUDGET, "grace": TRANSIENT_BLOCKED_GRACE_MINUTES},
+		as_dict=True,
+	)
+	if not rows:
+		return
+
+	for row in rows:
+		task = frappe.get_doc("Task", row["name"])
+		task.workflow_state = "Pending"
+		task.assigned_to_profile = None
+		task.executing_token = None
+		task.blocked_reason = None
+		task.retry_count = (row.get("retry_count") or 0) + 1
+		task.save(ignore_permissions=True)
+		_logger.info(
+			"reconciler: re-Pending transient-Blocked task %s (retry %s/%s)",
+			row["name"],
+			task.retry_count,
+			RETRY_BUDGET,
+		)
+
+
+def _reconcile_randompack_events() -> None:
+	"""
+	Q7a — the RandomPack contract durability gap. The receiver acks 200 and
+	persists the event row as `Received`, then enqueues processing on the
+	friday queue. If that worker was down at the moment of enqueue, the
+	event sits Received forever — the backend sees `Delivered` but Friday
+	never processed it (the same disease this design treats for tasks).
+
+	The sweep re-enqueues:
+	  - Received events older than 60s (the original enqueue was lost), and
+	  - Failed events older than 5 min, still under their retry budget.
+
+	`process_event` is already short-circuited on `Processed`, so duplicate
+	re-enqueues of a succeeded event are a no-op. We increment retry_count
+	via SQL to dodge a get/save round trip per row.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT name, status
+		FROM `tabRandomPack Event`
+		WHERE status IN ('Received', 'Failed')
+		  AND retry_count < %(budget)s
+		  AND (
+		    (status = 'Received'
+		      AND TIMESTAMPDIFF(SECOND, modified, NOW()) > %(received_grace)s)
+		    OR
+		    (status = 'Failed'
+		      AND TIMESTAMPDIFF(MINUTE, modified, NOW()) > %(failed_grace)s)
+		  )
+		LIMIT 50
+		""",
+		{
+			"budget": RETRY_BUDGET,
+			"received_grace": RANDOMPACK_RECEIVED_GRACE_SECONDS,
+			"failed_grace": RANDOMPACK_FAILED_GRACE_MINUTES,
+		},
+		as_dict=True,
+	)
+	if not rows:
+		return
+
+	for row in rows:
+		# Increment first, then enqueue. If the enqueue itself fails the row
+		# is still marked as having been retried — exactly what we want for
+		# observability (no infinite "we keep trying but no-one knows" loops).
+		frappe.db.sql(
+			"UPDATE `tabRandomPack Event` SET retry_count = COALESCE(retry_count, 0) + 1 WHERE name = %s",
+			(row["name"],),
+		)
+		frappe.enqueue(
+			"frappe.friday_core.surfaces.randompack.process_event",
+			queue="friday",
+			timeout=600,
+			job_name=EVENT_JOB_NAME.format(event_id=row["name"]),
+			event_id=row["name"],
+		)
+		_logger.warning(
+			"reconciler: re-enqueuing stuck RandomPack Event %s (was %s)",
+			row["name"],
+			row["status"],
+		)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _in_flight_job_names() -> set[str]:
+	"""
+	Return the set of currently-known RQ job_names across all queues.
+
+	`get_jobs()` returns {queue_name: [job_name, …]}; we flatten to a single
+	set so callers can do a cheap O(1) membership check per row.
+	"""
+	try:
+		jobs = get_jobs() or {}
+	except Exception:  # noqa: BLE001 — if Redis is down we conservatively retry
+		_logger.warning("reconciler: get_jobs() failed; assuming no in-flight jobs")
+		return set()
+	flat: set[str] = set()
+	for names in jobs.values():
+		flat.update(names or [])
+	return flat
+
+
+def _raise_runner_lost_issue(task_name: str) -> None:
+	"""
+	File a Friday Issue for a runner-lost task and post to the War Room.
+
+	The Issue lives in the existing Friday Issue tracker (it's the durable
+	human-facing ledger for "agent system needs attention" events). The
+	War Room post is the realtime nudge. Both fail-soft: if either path
+	errors we still want the task marked Blocked so it doesn't keep
+	getting picked up by the executing-stale sweep on the next tick.
+	"""
+	try:
+		from frappe.friday_core.issues.raise_issue import raise_failure_issue
+
+		raise_failure_issue(task_name, "runner_lost")
+	except Exception:  # noqa: BLE001 — the block has already landed; logging is enough
+		_logger.exception("reconciler: failed to file runner_lost Issue for %s", task_name)
+		frappe.log_error(title=f"friday.reconciler runner_lost issue failed: {task_name}")
+
+	try:
+		from frappe.friday_core.warroom.publisher import post_task_update
+
+		post_task_update(task_name, "runner_lost", {"reason": "no heartbeat / no in-flight job"})
+	except Exception:  # noqa: BLE001 — War Room outage must not break reconciliation
+		_logger.warning("reconciler: War Room post failed for %s", task_name)

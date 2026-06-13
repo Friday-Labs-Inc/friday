@@ -272,7 +272,16 @@ def handle_project_created(data: dict, event) -> None:
 		doc.insert(ignore_permissions=True)
 		project = doc.name
 
+	# Design 61, Q7b — explicit replay narration. ``instantiate_pipeline`` is
+	# already idempotent per-task (it dedupes against existing backend_ref
+	# slugs on the project — templates.py:150), so a replay returns an empty
+	# list of newly-created names rather than double-planning. Make that
+	# safety visible in the War Room so a replay is observably a no-op,
+	# instead of looking like a successful "0 tasks created" plan.
 	tasks = instantiate_pipeline(project, ref, brief)
+	if not tasks:
+		_warroom(f"**[PRJ {ref}]** project.created replay — pipeline already planned; no-op.")
+		return
 	_warroom(f"**[PRJ {ref}]** pipeline planned — {len(tasks)} tasks created (brief {brief}).")
 
 	from frappe.friday_core.integrations.randompack_client import post_project_note

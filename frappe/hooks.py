@@ -270,9 +270,14 @@ scheduler_events = {
 		"0 6 * * *": [
 			"frappe.core.doctype.security_settings.security_settings_alert.check_security_txt_expiry",
 		],
-		# Every 60 seconds — Slice 8 task dispatcher.
+		# Every 60 seconds — Slice 8 task dispatcher + Design 61 durability
+		# reconciler. The dispatcher moves Pending → Assigned; the reconciler
+		# heals every other seam (lost enqueues, stale executors, transient
+		# blocks, stuck RandomPack events). Together: state is the source of
+		# truth, the scheduler is the heartbeat, events are an optimisation.
 		"*/1 * * * *": [
 			"frappe.friday_core.tasks.dispatcher.tick",
+			"frappe.friday_core.tasks.reconciler.tick",
 		],
 	},
 	"all": [

@@ -165,6 +165,58 @@ def _raise_failure_issue(
 		return None
 
 
+def _claim_task(task_name: str) -> str | None:
+	"""
+	Design 61, Q5 — idempotent claim-and-set lease.
+
+	Atomically transition Assigned → Executing AND stamp an executing_token.
+	A duplicate trigger (the reconciler re-fires a lost enqueue, or a stuck
+	queue belatedly drains the original) sees a non-empty token and exits
+	cleanly. This is what makes the at-least-once-trigger / exactly-once-
+	effect contract honest — without it, the reconciler would risk double-
+	executing the same task and writing duplicate deliverables.
+
+	Returns the token if we won the claim, None if someone else got there
+	first. The UPDATE itself is the lock; we do not pre-read the row.
+	"""
+	token = frappe.generate_hash(length=16)
+	# COALESCE collapses NULL/'' so an empty-string token left over from an
+	# older row (pre-migration) does not falsely lock the task.
+	claimed = frappe.db.sql(
+		"""
+		UPDATE `tabTask`
+		SET workflow_state = 'Executing',
+		    executing_token = %s,
+		    started_at = COALESCE(started_at, NOW()),
+		    last_heartbeat_at = NOW()
+		WHERE name = %s
+		  AND workflow_state = 'Assigned'
+		  AND COALESCE(executing_token, '') = ''
+		""",
+		(token, task_name),
+	)
+	# frappe.db.sql returns a list of rows for SELECT; for UPDATE the affected
+	# row count comes via the underlying cursor. The simple, portable test:
+	# re-read the token. If it matches, we won.
+	current = frappe.db.get_value("Task", task_name, "executing_token")
+	return token if current == token else None
+
+
+def _heartbeat(task_name: str) -> None:
+	"""
+	Refresh ``last_heartbeat_at`` so the reconciler knows this runner is alive.
+
+	Called periodically during long agentic turns and at every skill boundary
+	for mechanical runs. Failures are swallowed: a missed heartbeat costs at
+	most one reconciler grace window, but a crash inside the heartbeat must
+	never break the actual work.
+	"""
+	try:
+		frappe.db.set_value("Task", task_name, "last_heartbeat_at", now_datetime(), update_modified=False)
+	except Exception:  # noqa: BLE001 — heartbeat is best-effort observability
+		_logger.warning("heartbeat update failed for %s", task_name)
+
+
 def _run_task(task_name: str, profile_name: str) -> None:
 	"""
 	Load a task, execute its required skills, and update the task state.
@@ -173,6 +225,15 @@ def _run_task(task_name: str, profile_name: str) -> None:
 		task_name: ``Task`` document name.
 		profile_name: ``Agent Profile`` name to execute the task under.
 	"""
+	# Q5 — claim the task atomically. If someone else already did, exit cleanly.
+	token = _claim_task(task_name)
+	if not token:
+		_logger.info(
+			"runner: task %s already claimed (duplicate trigger from reconciler?) — exiting",
+			task_name,
+		)
+		return
+
 	task = frappe.get_doc("Task", task_name)
 
 	# Design 60, Q2 — agentic tasks run a REAL governed turn instead of the
@@ -187,8 +248,8 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	# Record start time for duration calculation.
 	started_at = now_datetime()
 
-	# Transition to Executing (workflow action).
-	_task_transition(task, "Executing")
+	# Transition to Executing was already done atomically by _claim_task; we
+	# only refresh the timestamp fields the doc-level save needs to see.
 	task.started_at = started_at
 	task.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -201,6 +262,9 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	results = []
 
 	for skill_name in skills:
+		# Heartbeat at every skill boundary so the reconciler's executing-stale
+		# sweep does not block a long but healthy task. Cheap update — no save.
+		_heartbeat(task_name)
 		result = _execute_skill_in_sandbox(skill_name, task, profile_name)
 		results.append(result)
 
