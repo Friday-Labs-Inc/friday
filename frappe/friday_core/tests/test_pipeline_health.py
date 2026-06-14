@@ -208,5 +208,39 @@ class TestFailLoud(unittest.TestCase):
 		self.assertIn("error", out)
 
 
+class TestSchedulerTickAge(unittest.TestCase):
+	"""``_scheduler_tick_age`` reads liveness from Scheduled Job Type.last_execution.
+
+	Real-DB (not mocked): the rest of the suite mocks this function away, which is
+	exactly how the original bug shipped — it read the sparse ``Scheduled Job
+	Log`` (only written for ``create_log=1`` types), so a healthy scheduler whose
+	last *logged* job was minutes old looked stale and forced a false ``down``.
+	This pins the source to ``max(Scheduled Job Type.last_execution)``.
+	"""
+
+	def test_tick_age_matches_max_job_type_last_execution(self):
+		import frappe
+		from frappe.friday_core.health.pipeline_health import _scheduler_tick_age
+		from frappe.query_builder.functions import Max
+		from frappe.utils import now_datetime, time_diff_in_seconds
+
+		job_type = frappe.qb.DocType("Scheduled Job Type")
+		expected_last = (
+			frappe.qb.from_(job_type).select(Max(job_type.last_execution)).where(job_type.stopped == 0)
+		).run()[0][0]
+
+		age = _scheduler_tick_age()
+
+		if expected_last is None:
+			# fresh site, scheduler never fired — None (which maps to verdict=down)
+			self.assertIsNone(age)
+		else:
+			expected_age = int(time_diff_in_seconds(now_datetime(), expected_last))
+			self.assertIsNotNone(age)
+			# small clock drift between the two now() reads is fine; the point is
+			# it tracks last_execution, not the (staler) Scheduled Job Log.
+			self.assertLessEqual(abs(age - expected_age), 5)
+
+
 if __name__ == "__main__":
 	unittest.main()

@@ -165,28 +165,39 @@ def _verdict(*, tick_age, workers, stuck, pending, open_issues) -> str:
 
 def _scheduler_tick_age() -> int | None:
 	"""
-	Seconds since the most recent scheduled job ran. None if we cannot tell.
+	Seconds since the scheduler last fired ANY enabled job. None if we can't tell.
 
-	Uses ``Scheduled Job Log`` (Frappe's own audit row per fire). Anything
-	older than SCHEDULER_TICK_MAX_AGE_SECONDS means the scheduler probably
-	is not running — the Legion ``bench serve`` trap. The age applies to
-	the WHOLE scheduler (any job), not just ours, because if the scheduler
-	is dead nothing fires.
+	Truth source is ``max(Scheduled Job Type.last_execution)`` over enabled
+	(``stopped = 0``) job types — Frappe stamps ``last_execution`` on EVERY
+	fire. Anything older than SCHEDULER_TICK_MAX_AGE_SECONDS means the scheduler
+	probably is not running — the Legion ``bench serve`` trap. The age applies
+	to the WHOLE scheduler (any job), because if the scheduler is dead nothing
+	fires.
+
+	WHY NOT ``Scheduled Job Log`` (the original 61b implementation): a log row is
+	only written for job types with ``create_log = 1``. Most jobs (including the
+	frequent per-minute ones) run with ``create_log = 0``, so the log is sparse —
+	a perfectly healthy scheduler whose last *logged* job ran 20 min ago looked
+	stale and forced a false ``down``. Caught on a live bench 2026-06-14 when the
+	reconciler was firing every minute (last_execution ~50s) yet the log was
+	~19 min old. ``last_execution`` updates on every fire, logged or not.
+
+	We read it with a ``Max(last_execution)`` aggregate (query builder), which
+	ignores never-run types whose ``last_execution`` is NULL — and avoids the
+	``("is", "set")`` filter form, which Frappe compiles to ``last_execution !=
+	''`` and Postgres rejects for a timestamp column (MariaDB tolerates it).
 	"""
 	try:
-		row = frappe.db.get_value(
-			"Scheduled Job Log",
-			filters={},
-			fieldname=["creation"],
-			order_by="creation desc",
-		)
+		from frappe.query_builder.functions import Max
+
+		job_type = frappe.qb.DocType("Scheduled Job Type")
+		rows = (
+			frappe.qb.from_(job_type).select(Max(job_type.last_execution)).where(job_type.stopped == 0)
+		).run()
 	except Exception:
 		return None
-	if not row:
-		return None
-	# get_value returns the creation Datetime when a single field is asked.
-	last = row[0] if isinstance(row, (list, tuple)) else row
-	if last is None:
+	last = rows[0][0] if rows and rows[0] else None
+	if not last:
 		return None
 	from frappe.utils import now_datetime, time_diff_in_seconds
 
