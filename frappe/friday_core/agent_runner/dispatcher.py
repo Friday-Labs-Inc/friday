@@ -293,6 +293,14 @@ def dispatch(
 	try:
 		handler = _SKILL_HANDLERS.get(skill_name)
 		if handler is None:
+			# MCP skills (design 67) have dynamic names, so they aren't in the
+			# static registry — fall back to the generic MCP handler when the
+			# Skill row is MCP-backed. Everything before this (matrix_check,
+			# approval, logging) already ran, so the call stays governed.
+			from frappe.friday_core.skills.handlers_mcp import resolve_handler
+
+			handler = resolve_handler(skill_name)
+		if handler is None:
 			# Unknown skill — write error log, return DispatchResult.
 			log_name = _write_execution_log(
 				agent_profile=agent_profile,

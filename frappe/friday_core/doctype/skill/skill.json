@@ -18,7 +18,9 @@
   "status",
   "usage_count",
   "last_used",
-  "created_by_agent"
+  "created_by_agent",
+  "mcp_server",
+  "mcp_tool_name"
  ],
  "fields": [
   {"fieldname": "skill_name", "fieldtype": "Data", "in_list_view": 1, "label": "Skill Name", "reqd": 1, "unique": 1},
@@ -34,7 +36,9 @@
   {"fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "Draft\nExperimental\nActive\nRetired\nArchived", "reqd": 1},
   {"default": "0", "fieldname": "usage_count", "fieldtype": "Int", "label": "Usage Count", "read_only": 1},
   {"fieldname": "last_used", "fieldtype": "Datetime", "label": "Last Used", "read_only": 1},
-  {"fieldname": "created_by_agent", "fieldtype": "Link", "label": "Created By Agent", "options": "Agent Profile"}
+  {"fieldname": "created_by_agent", "fieldtype": "Link", "label": "Created By Agent", "options": "Agent Profile"},
+  {"description": "Set on skills synced from an MCP server (design 67). When set, dispatch routes the call to that server instead of a first-party handler.", "fieldname": "mcp_server", "fieldtype": "Link", "label": "MCP Server", "options": "MCP Server", "read_only": 1},
+  {"description": "The original (unprefixed) tool name on the MCP server, used at call time. The skill_name is mcp_<server>_<tool>.", "fieldname": "mcp_tool_name", "fieldtype": "Data", "label": "MCP Tool Name", "read_only": 1}
  ],
  "links": [],
  "module": "Friday Core",

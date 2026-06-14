@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:server_name",
+ "creation": "2026-06-13 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "server_name",
+  "base_url",
+  "transport",
+  "enabled",
+  "auth_section",
+  "auth_token",
+  "headers_json",
+  "filter_section",
+  "tool_include",
+  "tool_exclude",
+  "status_section",
+  "last_synced",
+  "last_sync_status"
+ ],
+ "fields": [
+  {
+   "description": "Identifier used in the synced skill names (mcp_<server>_<tool>). Sanitized to [a-z0-9_].",
+   "fieldname": "server_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Server Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "The remote MCP endpoint URL (https). Streamable-HTTP / remote MCP only in v1.",
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Base URL",
+   "reqd": 1
+  },
+  {
+   "default": "streamable-http",
+   "fieldname": "transport",
+   "fieldtype": "Select",
+   "label": "Transport",
+   "options": "streamable-http"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "auth_section",
+   "fieldtype": "Section Break",
+   "label": "Authentication"
+  },
+  {
+   "description": "Optional bearer token sent as 'Authorization: Bearer <token>'. Encrypted at rest.",
+   "fieldname": "auth_token",
+   "fieldtype": "Password",
+   "label": "Auth Token (Bearer)"
+  },
+  {
+   "description": "Optional extra static request headers as a JSON object, e.g. {\"X-Api-Version\": \"1\"}.",
+   "fieldname": "headers_json",
+   "fieldtype": "JSON",
+   "label": "Extra Headers (JSON)"
+  },
+  {
+   "fieldname": "filter_section",
+   "fieldtype": "Section Break",
+   "label": "Tool Filter"
+  },
+  {
+   "description": "Optional allowlist (newline/comma separated tool names). If set, only these tools are synced.",
+   "fieldname": "tool_include",
+   "fieldtype": "Small Text",
+   "label": "Include Tools"
+  },
+  {
+   "description": "Optional denylist (newline/comma separated). Applied when no include list is set.",
+   "fieldname": "tool_exclude",
+   "fieldtype": "Small Text",
+   "label": "Exclude Tools"
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": "Sync Status"
+  },
+  {
+   "fieldname": "last_synced",
+   "fieldtype": "Datetime",
+   "label": "Last Synced",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_sync_status",
+   "fieldtype": "Small Text",
+   "label": "Last Sync Status",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "MCP Server",
+ "naming_rule": "By fieldname",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
