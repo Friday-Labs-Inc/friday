@@ -62,10 +62,20 @@ Ran 71 tests in 0.091s
 OK
 ```
 
+## DB-backed verification — `test_skill_loader` (8/8 pass)
+
+Run under a bound site (role-gated skill visibility — the loader hides
+`delegate-task` from non-Orchestrators, the layer in front of the handler's
+role gate):
+
+```
+bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_skill_loader
+Ran 8 tests in 0.984s
+OK
+```
+
 ## Not covered here
 
-- `test_skill_loader` — DB-backed (role-gated skill visibility). Run under
-  `bench run-tests --site <site> --module frappe.friday_core.tests.test_skill_loader`.
 - End-to-end delegation through the live pipeline — see the Legion E2E v0.3
   addendum (`docs/testing/legion-e2e-v0.3-addendum-2026-06-14.md`), phases A0–A3.
 </content>
