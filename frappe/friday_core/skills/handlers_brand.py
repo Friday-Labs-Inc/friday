@@ -35,18 +35,20 @@ GET_BRAND_BRIEF = "get-brand-brief"
 CREATE_BRAND_DIRECTION = "create-brand-direction"
 
 # The brief fields the reader hands to the model — content only, no
-# system/audit fields.
+# system/audit fields. Mapped to readable labels because the agent sees the
+# `result` STRING, not the dict (the dispatcher surfaces only `result` —
+# dispatcher.py: `content=outcome.get("result", ...)`).
 _BRIEF_CONTENT_FIELDS = (
-	"business_name",
-	"industry",
-	"what_they_do",
-	"target_audience",
-	"brand_personality",
-	"competitors",
-	"color_preferences",
-	"inspirations",
-	"notes",
-	"status",
+	("business_name", "Business name"),
+	("industry", "Industry"),
+	("what_they_do", "What they do / differentiator"),
+	("target_audience", "Target audience"),
+	("brand_personality", "Brand personality"),
+	("competitors", "Competitors / avoid"),
+	("color_preferences", "Colour preferences"),
+	("inspirations", "Inspirations / references"),
+	("notes", "Notes"),
+	("status", "Status"),
 )
 
 
@@ -63,9 +65,22 @@ def get_brand_brief(skill_name: str, parameters: dict) -> dict:
 		raise ValueError(f"Brand Brief {brief_name!r} not found — check the ID in Desk")
 
 	doc = frappe.get_doc("Brand Brief", brief_name)
-	out = {field: (doc.get(field) or "") for field in _BRIEF_CONTENT_FIELDS}
+
+	# The agent only ever sees the `result` STRING (the dispatcher surfaces just
+	# `outcome["result"]`), so the brief content MUST live there — not in sibling
+	# dict keys, which get dropped. Previously this returned only "... loaded",
+	# leaving the agent with no content; it then (correctly) refused to fabricate.
+	lines = [f"Brand Brief {brief_name}:"]
+	for field, label in _BRIEF_CONTENT_FIELDS:
+		value = (doc.get(field) or "").strip()
+		if value:
+			lines.append(f"- {label}: {value}")
+	if len(lines) == 1:
+		lines.append("(no content captured on this brief)")
+
+	out = {field: (doc.get(field) or "") for field, _label in _BRIEF_CONTENT_FIELDS}
 	out["brief"] = brief_name
-	out["result"] = f"Brand Brief {brief_name} ({doc.business_name}) loaded"
+	out["result"] = "\n".join(lines)
 	return out
 
 

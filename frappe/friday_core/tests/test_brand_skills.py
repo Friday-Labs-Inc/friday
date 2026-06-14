@@ -67,7 +67,38 @@ class TestGetBrandBrief(unittest.TestCase):
 		self.assertEqual(out["brief"], "BB-0001")
 		self.assertEqual(out["business_name"], "Loop Coffee")
 		self.assertEqual(out["brand_personality"], "warm, crafted, honest")
-		self.assertIn("Loop Coffee", out["result"])
+		# The agent only sees out["result"] — the actual CONTENT must be in it,
+		# not just the name. Regression guard for the "...loaded" stub bug that
+		# left agents with no brief to work from.
+		result = out["result"]
+		self.assertIn("Loop Coffee", result)
+		self.assertIn("Specialty coffee", result)  # industry
+		self.assertIn("Urban 25-40", result)  # target audience
+		self.assertIn("warm, crafted, honest", result)  # personality
+		self.assertNotIn("loaded", result)  # no longer a content-free stub
+
+	@patch(f"{_H}.frappe")
+	def test_empty_brief_says_so_instead_of_looking_loaded(self, mock_frappe):
+		mock_frappe.db.exists.return_value = True
+		blank = {
+			f: ""
+			for f in (
+				"business_name",
+				"industry",
+				"what_they_do",
+				"target_audience",
+				"brand_personality",
+				"competitors",
+				"color_preferences",
+				"inspirations",
+				"notes",
+				"status",
+			)
+		}
+		doc = _brief_doc(**blank)
+		mock_frappe.get_doc.return_value = doc
+		out = handlers_brand.get_brand_brief("get-brand-brief", {"brief": "BB-0002"})
+		self.assertIn("no content", out["result"].lower())
 
 
 class TestCreateBrandDirection(unittest.TestCase):
