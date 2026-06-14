@@ -254,5 +254,66 @@ class TestSideEffectsPersisted(unittest.TestCase):
 		doc.save.assert_not_called()
 
 
+class TestExecutingTokenRelease(unittest.TestCase):
+	"""executing_token (the runner's claim) is released on every state but Executing.
+
+	A leftover token strands a reset task: the dispatcher's claim guard skips any
+	row where COALESCE(executing_token,'') != ''. Deriving the release in the hook
+	keeps the failure→Blocked and reset→Pending paths consistent.
+	"""
+
+	@patch("frappe.friday_core.tasks.workflow.frappe")
+	def test_non_executing_states_release_token(self, mock_frappe):
+		from frappe.friday_core.tasks.workflow import on_state_change
+
+		for state in ("Pending", "Assigned", "Blocked", "Review", "Completed", "Cancelled"):
+			doc = _mock_doc(workflow_state=state, executing_token="tok123")
+			doc.has_value_changed.return_value = False
+
+			on_state_change(doc, "on_update")
+
+			self.assertIsNone(doc.executing_token, f"{state} must release the token")
+			persisted = doc.db_set.call_args.args[0]
+			self.assertIn("executing_token", persisted, f"{state} must persist the release")
+			self.assertIsNone(persisted["executing_token"])
+
+	@patch("frappe.friday_core.tasks.workflow.frappe")
+	def test_executing_state_preserves_token(self, mock_frappe):
+		"""While Executing the hook must NOT touch the token — the runner's atomic
+		raw-SQL claim owns it; writing a stale in-memory value would clobber it."""
+		from frappe.friday_core.tasks.workflow import on_state_change
+
+		doc = _mock_doc(workflow_state="Executing", executing_token="tok123")
+		doc.has_value_changed.return_value = False
+
+		on_state_change(doc, "on_update")
+
+		self.assertEqual(doc.executing_token, "tok123")
+		persisted = doc.db_set.call_args.args[0]
+		self.assertNotIn("executing_token", persisted)
+
+	@patch("frappe.friday_core.tasks.workflow.frappe")
+	def test_retry_reset_blocked_to_pending_is_redispatchable(self, mock_frappe):
+		"""The reported bug: a Blocked task reset to Pending must clear the token
+		AND become dispatchable=1, or the dispatcher never re-claims it."""
+		from frappe.friday_core.tasks.workflow import on_state_change
+
+		# the reset moved state to Pending but a stale claim token lingers
+		doc = _mock_doc(
+			workflow_state="Pending",
+			executing_token="f0173bca820f90cc",
+			dispatchable=False,
+		)
+		doc.has_value_changed.return_value = True
+
+		on_state_change(doc, "on_update")
+
+		self.assertIsNone(doc.executing_token)  # claim released
+		self.assertTrue(doc.dispatchable)  # and re-dispatchable
+		persisted = doc.db_set.call_args.args[0]
+		self.assertEqual(persisted["dispatchable"], 1)
+		self.assertIsNone(persisted["executing_token"])
+
+
 if __name__ == "__main__":
 	unittest.main()

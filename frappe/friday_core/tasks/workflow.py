@@ -60,6 +60,22 @@ def on_state_change(doc: "Task", method: str) -> None:
 	# 1. dispatchable is a derived field — always recompute from live state.
 	doc.dispatchable = doc.workflow_state in DISPATCHABLE_STATES
 
+	# 1b. executing_token is the runner's claim on the row — valid ONLY while the
+	# task is Executing. Release it on every other state. This is the invariant
+	# that makes a task re-dispatchable after a reset: the dispatcher's claim
+	# (and the runner's own claim) skip any row whose executing_token is
+	# non-empty (`COALESCE(executing_token, '') = ''`), so a leftover token
+	# strands the task forever — exactly what bit a Blocked→Pending retry that
+	# re-set the state but kept the stale token (task sat Pending, undispatched,
+	# for 20+ min). Deriving the release HERE keeps the failure→Blocked path, the
+	# reconciler reset→Pending path, and any future/manual reset consistent,
+	# instead of relying on every caller to remember. We only ever CLEAR it (and
+	# only when NOT Executing), so the runner's atomic raw-SQL claim is never
+	# clobbered by a stale in-memory value.
+	release_token = doc.workflow_state != "Executing"
+	if release_token:
+		doc.executing_token = None
+
 	# Only act on actual workflow state transitions, not unrelated field saves.
 	if doc.has_value_changed("workflow_state"):
 		_watch_transition(doc)
@@ -72,17 +88,19 @@ def on_state_change(doc: "Task", method: str) -> None:
 	# runs ON on_update, so save() here re-fires on_update → this function →
 	# save() → RecursionError. db_set writes the columns directly and fires no
 	# document hooks (the Frappe idiom for persisting from inside a hook).
-	doc.db_set(
-		{
-			"dispatchable": 1 if doc.dispatchable else 0,
-			"started_at": doc.started_at,
-			"completed_at": doc.completed_at,
-			"assigned_to_profile": doc.assigned_to_profile,
-			"progress": progress_for_state(doc.workflow_state),
-			"is_milestone": 1 if (doc.get("execution_mode") == "milestone") else 0,
-		},
-		update_modified=False,
-	)
+	derived = {
+		"dispatchable": 1 if doc.dispatchable else 0,
+		"started_at": doc.started_at,
+		"completed_at": doc.completed_at,
+		"assigned_to_profile": doc.assigned_to_profile,
+		"progress": progress_for_state(doc.workflow_state),
+		"is_milestone": 1 if (doc.get("execution_mode") == "milestone") else 0,
+	}
+	# Persist the token release only when releasing — never write it while
+	# Executing (the in-memory value may be stale vs the raw-SQL claim).
+	if release_token:
+		derived["executing_token"] = None
+	doc.db_set(derived, update_modified=False)
 
 
 def _watch_transition(doc: "Task") -> None:
