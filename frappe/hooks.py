@@ -286,6 +286,12 @@ scheduler_events = {
 		"*/30 * * * *": [
 			"frappe.friday_core.llm.oauth_token_refresh.tick",
 		],
+		# Friday (design 67): daily re-sync of every enabled MCP server's tools
+		# into Skill rows, so a server that adds/removes tools stays reflected
+		# without a manual click. Failure-isolated per server.
+		"0 3 * * *": [
+			"frappe.friday_core.mcp.sync.sync_all_due",
+		],
 	},
 	"all": [
 		"frappe.email.queue.flush",
