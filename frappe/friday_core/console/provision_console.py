@@ -20,6 +20,13 @@ Native-view provisioner for the project console (design 65b).
   validation hardening — no task can be saved into a state outside the machine.
 - **A "Projects" Workspace** — the Desk landing that lays the cards, charts and
   shortcuts out in one place. The ERPNext-style "project dashboard."
+- **A "Friday" hub Workspace** — the top-level Desk landing that ties every
+  Friday surface together: shortcut tiles for the daily-use pages plus nav
+  cards grouping every Friday DocType by domain, so nothing has to be hunted
+  for in global search. It sorts above "Projects" in the sidebar, so it's the
+  first thing an operator lands on. (Frappe-native: Hermes, being a React app,
+  has no Desk/workspace concept to port — this is a pure platform win from the
+  fork, not a port.)
 
 All of it is created idempotently on every ``after_migrate`` and is failure-
 isolated: one artifact that errors is logged loudly and skipped, never aborting
@@ -67,6 +74,36 @@ _STATE_INDICATOR = {
 
 WORKSPACE_NAME = "Projects"
 KANBAN_NAME = "Task Pipeline"
+
+# The top-level "Friday" hub workspace — the Desk landing that ties every Friday
+# surface together for navigation. "Projects" (above) stays the monitoring
+# dashboard (number cards + charts); this one is the front door: quick-access
+# shortcut tiles for the daily-use surfaces, then nav cards grouping every
+# Friday DocType by domain so nothing has to be found via global search.
+HUB_WORKSPACE_NAME = "Friday"
+
+# Shortcut tiles (the big buttons), in display order. Pages link by route slug,
+# DocTypes by name; ``doc_view`` picks the list view they open into.
+HUB_SHORTCUTS: list[dict] = [
+	{"type": "Page", "label": "Project Console", "link_to": "project-console", "color": "Green"},
+	{"type": "DocType", "label": "Projects", "link_to": "Project", "doc_view": "List", "color": "Blue"},
+	{"type": "DocType", "label": "Tasks", "link_to": "Task", "doc_view": "List", "color": "Cyan"},
+	{"type": "DocType", "label": "Agents", "link_to": "Agent Profile", "doc_view": "List", "color": "Purple"},
+	{"type": "Page", "label": "Setup Friday", "link_to": "friday-setup", "color": "Orange"},
+]
+
+# Navigation cards: each is a titled group of DocType links. The link label is
+# the DocType name itself — one source of truth, no separate display string.
+HUB_CARDS: list[dict] = [
+	{"label": "Work", "links": ["Project", "Task", "Issue", "Task Dependency"]},
+	{"label": "Agents", "links": ["Agent Profile", "Agent Settings", "Agent Memory"]},
+	{"label": "Models & Skills", "links": ["LLM Provider", "LLM Usage Log", "Skill", "MCP Server"]},
+	{"label": "Conversations & Surfaces", "links": ["Chat Message", "Chat Platform", "RandomPack Settings"]},
+	{
+		"label": "Governance & Logs",
+		"links": ["Permission Decision Log", "Execution Log", "Workflow Request", "Compaction Summary"],
+	},
+]
 
 # --- artifact specs --------------------------------------------------------
 
@@ -156,6 +193,9 @@ def provision_console() -> dict:
 	for spec in DASHBOARD_CHARTS:
 		_attempt("Dashboard Chart", spec["chart_name"], lambda spec=spec: _ensure_dashboard_chart(spec))
 	_attempt("Kanban Board", KANBAN_NAME, _ensure_kanban_board)
+	# Hub before the monitoring workspace so both always land; order is otherwise
+	# free (the hub has no dependency on the cards/charts/kanban above).
+	_attempt("Workspace", HUB_WORKSPACE_NAME, _ensure_hub_workspace)
 	_attempt("Workspace", WORKSPACE_NAME, _ensure_workspace)
 
 	frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
@@ -338,6 +378,86 @@ def _build_content() -> str:
 				"id": f"fridaychart{i}",
 				"type": "chart",
 				"data": {"chart_name": spec["chart_name"], "col": 6},
+			}
+		)
+	return json.dumps(blocks)
+
+
+def _ensure_hub_workspace() -> bool:
+	"""Create the top-level "Friday" hub workspace (idempotent).
+
+	The hub is pure navigation — no number cards or charts of its own. It carries
+	the shortcut tiles (``HUB_SHORTCUTS``) and the nav cards (``HUB_CARDS``), and
+	sorts above "Projects" via a low ``sequence_id`` so it lands first in the
+	sidebar. Returns True only when it actually creates the record.
+	"""
+	if frappe.db.exists("Workspace", HUB_WORKSPACE_NAME):
+		return False
+	ws = frappe.get_doc(
+		{
+			"doctype": "Workspace",
+			"name": HUB_WORKSPACE_NAME,
+			"label": HUB_WORKSPACE_NAME,
+			"title": HUB_WORKSPACE_NAME,
+			"module": MODULE,
+			"type": "Workspace",
+			"icon": "dashboard",
+			"public": 1,
+			"is_hidden": 0,
+			# Negative so the hub sorts above every default workspace (min is 0).
+			"sequence_id": -1,
+			"content": _build_hub_content(),
+		}
+	)
+	for spec in HUB_SHORTCUTS:
+		ws.append("shortcuts", spec)
+	# Each card is a "Card Break" row followed by its DocType "Link" rows. The
+	# link label is the DocType name itself. We include only DocTypes that
+	# actually exist on this site: a renamed/removed DocType would otherwise
+	# raise LinkValidationError and — under failure-isolation — abort the whole
+	# hub, leaving the operator with no navigation at all. Skip the missing one,
+	# keep the rest. Cards left with no present links are dropped entirely.
+	for card in HUB_CARDS:
+		present = [dt for dt in card["links"] if frappe.db.exists("DocType", dt)]
+		if not present:
+			continue
+		ws.append("links", {"type": "Card Break", "label": card["label"], "hidden": 0})
+		for dt in present:
+			ws.append(
+				"links",
+				{"type": "Link", "label": dt, "link_type": "DocType", "link_to": dt, "hidden": 0},
+			)
+	ws.insert(ignore_permissions=True)
+	return True
+
+
+def _build_hub_content() -> str:
+	"""Build the hub Workspace ``content`` layout blob (a JSON-encoded string).
+
+	Layout: a "Friday" header, the shortcut tiles in a row (col 3 each), a
+	spacer, a "Navigate" header, then the nav cards (col 4 each = 3 per row).
+	Blocks reference shortcuts by label and cards by their Card-Break label,
+	which Frappe resolves at render time. Deterministic ids so re-runs are stable.
+	"""
+	blocks: list[dict] = [
+		{"id": "fridayhub00", "type": "header", "data": {"text": "Friday", "col": 12}},
+	]
+	for i, spec in enumerate(HUB_SHORTCUTS):
+		blocks.append(
+			{
+				"id": f"fridayhubsc{i}",
+				"type": "shortcut",
+				"data": {"shortcut_name": spec["label"], "col": 3},
+			}
+		)
+	blocks.append({"id": "fridayhubsp0", "type": "spacer", "data": {"col": 12}})
+	blocks.append({"id": "fridayhubh01", "type": "header", "data": {"text": "Navigate", "col": 12}})
+	for i, card in enumerate(HUB_CARDS):
+		blocks.append(
+			{
+				"id": f"fridayhubcd{i}",
+				"type": "card",
+				"data": {"card_name": card["label"], "col": 4},
 			}
 		)
 	return json.dumps(blocks)
