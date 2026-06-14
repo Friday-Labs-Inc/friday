@@ -268,7 +268,11 @@ def _ensure_workspace() -> bool:
 	for spec in DASHBOARD_CHARTS:
 		ws.append("charts", {"chart_name": spec["chart_name"], "label": spec["chart_name"]})
 
-	# Shortcuts: the live console first, then the Project list and Task Kanban.
+	# Shortcuts: setup wizard, the live console, then the Project list and Task Kanban.
+	ws.append(
+		"shortcuts",
+		{"type": "Page", "link_to": "friday-setup", "label": "Friday Setup", "color": "Orange"},
+	)
 	ws.append(
 		"shortcuts",
 		{"type": "Page", "link_to": "project-console", "label": "Project Console", "color": "Green"},

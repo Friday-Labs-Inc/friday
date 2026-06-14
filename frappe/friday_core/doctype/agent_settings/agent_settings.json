@@ -8,7 +8,8 @@
     "engine": "InnoDB",
     "field_order": [
         "default_provider",
-        "compression_model"
+        "compression_model",
+        "setup_complete"
     ],
     "fields": [
         {
@@ -31,6 +32,14 @@
             "label": "Compression (Aux) Model Provider",
             "options": "LLM Provider",
             "description": "Optional cheap/fast provider used to summarise old turns when a conversation is compressed (Feature C). Leave blank to reuse the agent's own provider. If neither resolves, compression is skipped with a logged warning (turns are never silently dropped)."
+        },
+        {
+            "default": "0",
+            "description": "Set by the Friday Setup wizard (design 64) when setup is finished AND verified (a live provider probe + a non-down pipeline health). A proxy for 'Friday is ready'; the minimum-viable signal is still default_provider + one Active Agent Profile.",
+            "fieldname": "setup_complete",
+            "fieldtype": "Check",
+            "label": "Setup Complete",
+            "read_only": 1
         }
     ],
     "links": [],
