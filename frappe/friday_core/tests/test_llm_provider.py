@@ -271,6 +271,33 @@ class TestMinimaxProviderChat(unittest.TestCase):
 
     @patch("frappe.friday_core.llm.provider.time.sleep")
     @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_llm_error_carries_retryable_reason(self, mock_post: MagicMock, _sleep: MagicMock):
+        """A retryable failure (500) → LLMError exposes reason + retryable=True, so
+        the runner records a retryable blocked_reason and the reconciler retries."""
+        mock_post.return_value = MagicMock(status_code=500)
+
+        p = self._make_provider()
+        with self.assertRaises(LLMError) as ctx:
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+
+        self.assertEqual(ctx.exception.reason, "server_error")
+        self.assertTrue(ctx.exception.retryable)
+
+    @patch("frappe.friday_core.llm.provider.requests.post")
+    def test_llm_error_carries_non_retryable_reason(self, mock_post: MagicMock):
+        """A non-retryable failure (400) → reason set, retryable=False, so the
+        reconciler leaves it Blocked for a human (no spammed retries)."""
+        mock_post.return_value = MagicMock(status_code=400)
+
+        p = self._make_provider()
+        with self.assertRaises(LLMError) as ctx:
+            p.chat(messages=[{"role": "user", "content": "hi"}])
+
+        self.assertEqual(ctx.exception.reason, "format_error")
+        self.assertFalse(ctx.exception.retryable)
+
+    @patch("frappe.friday_core.llm.provider.time.sleep")
+    @patch("frappe.friday_core.llm.provider.requests.post")
     def test_chat_429_respects_retry_after_header(self, mock_post: MagicMock, mock_sleep: MagicMock):
         """A 429 with Retry-After waits the header value (seconds), not backoff."""
         r429 = MagicMock(status_code=429)

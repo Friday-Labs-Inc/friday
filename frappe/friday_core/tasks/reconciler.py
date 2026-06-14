@@ -59,9 +59,22 @@ TRANSIENT_BLOCKED_GRACE_MINUTES = 5
 RETRY_BUDGET = 3
 
 # Reasons we auto-retry. Semantic blocks (dependency_failed, no_profile_for_
-# skills:*, profile_has_no_llm_provider) are NOT in this set: they need a human
-# to resolve, retrying them just spams.
-TRANSIENT_BLOCKED_REASONS = ("oom", "timeout", "runner_lost")
+# skills:*, profile_has_no_llm_provider) and non-retryable LLM failures (auth,
+# billing, model_not_found, format_error, context_overflow) are NOT in this set:
+# they need a human to resolve, retrying them just spams.
+#
+# The LLM transport transients (rate_limit/overloaded/server_error/timeout) are
+# the retryable FailoverReasons the runner records on Task.blocked_reason from an
+# LLMError — a provider hiccup that exhausted the in-call retries gets a few more
+# shots here (capped by RETRY_BUDGET). "timeout" also covers sandbox timeouts.
+TRANSIENT_BLOCKED_REASONS = (
+	"oom",
+	"timeout",
+	"runner_lost",
+	"rate_limit",
+	"overloaded",
+	"server_error",
+)
 
 # Stuck RandomPack Event grace: shorter than tasks because events are dirt-cheap
 # to re-process (the handler is idempotent / status-guarded already).
@@ -220,12 +233,12 @@ def _reconcile_transient_blocked() -> None:
 		SELECT name, retry_count
 		FROM `tabTask`
 		WHERE workflow_state = 'Blocked'
-		  AND blocked_reason IN ('oom', 'timeout', 'runner_lost')
+		  AND blocked_reason IN %(reasons)s
 		  AND retry_count < %(budget)s
 		  AND modified < %(cutoff)s
 		LIMIT 50
 		""",
-		{"budget": RETRY_BUDGET, "cutoff": cutoff},
+		{"reasons": TRANSIENT_BLOCKED_REASONS, "budget": RETRY_BUDGET, "cutoff": cutoff},
 		as_dict=True,
 	)
 	if not rows:

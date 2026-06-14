@@ -88,15 +88,40 @@ class LLMResponse(TypedDict):
 
 
 class LLMError(Exception):
-	"""Base exception for provider errors that bubble up to the gateway."""
+	"""Base exception for provider errors that bubble up to the gateway.
 
-	pass
+	When raised by the transport layer it carries the classifier's verdict so
+	callers can act on it without re-parsing the message string: ``reason`` is
+	the FailoverReason value (e.g. "timeout", "rate_limit", "auth") and
+	``retryable`` says whether a fresh attempt could plausibly succeed. The
+	runner maps ``reason`` onto ``Task.blocked_reason`` so the reconciler can
+	auto-retry transient transport failures. Class-level defaults keep LLMErrors
+	raised elsewhere (without classification) safe to read.
+	"""
+
+	reason: str | None = None
+	retryable: bool = False
 
 
 class LLMAuthError(LLMError):
 	"""Raised on 401 — invalid or missing API key."""
 
 	pass
+
+
+def _classified_llm_error(message: str, classified) -> LLMError:
+	"""Build an LLMError carrying the classifier's reason + retryable verdict.
+
+	``classified`` is a ClassifiedError, or None when no classification is
+	available. The reason value (e.g. "timeout", "rate_limit") flows onto
+	``Task.blocked_reason`` via the runner, so the reconciler can auto-retry
+	transient transport failures instead of stranding the task.
+	"""
+	err = LLMError(message)
+	if classified is not None:
+		err.reason = classified.reason.value
+		err.retryable = bool(classified.retryable)
+	return err
 
 
 def _retry_after_seconds(response: Any) -> float | None:
@@ -191,6 +216,7 @@ class LLMProvider(ABC):
 		Raises `LLMAuthError` on auth failure, `LLMError` otherwise.
 		"""
 		last_exc: Exception | None = None
+		classified = None  # last attempt's classification — attached to the raised LLMError
 		for attempt in range(self.MAX_RETRIES):
 			try:
 				response = requests.post(
@@ -233,16 +259,20 @@ class LLMProvider(ABC):
 				)
 				time.sleep(wait if wait is not None else 2**attempt)
 				continue
-			raise LLMError(
+			raise _classified_llm_error(
 				f"{self.PROVIDER_NAME} call failed: {classified.reason.value} "
-				f"(HTTP {response.status_code}) after {attempt + 1} attempt(s)."
+				f"(HTTP {response.status_code}) after {attempt + 1} attempt(s).",
+				classified,
 			)
 
-		# Transport retries exhausted. Type name only (redaction policy).
+		# Transport retries exhausted. Type name only (redaction policy); the
+		# classified reason (e.g. timeout) IS retained on the exception so the
+		# runner can set a retryable blocked_reason.
 		last_exc_type = type(last_exc).__name__ if last_exc else "Unknown"
-		raise LLMError(
+		raise _classified_llm_error(
 			f"{self.PROVIDER_NAME} call failed after {self.MAX_RETRIES} retries. "
-			f"Last error type: {last_exc_type}"
+			f"Last error type: {last_exc_type}",
+			classified,
 		)
 
 
