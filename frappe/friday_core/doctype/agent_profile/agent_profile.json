@@ -15,6 +15,7 @@
         "permitted_skills",
         "network_allowlist",
         "requires_approval_above_risk",
+        "max_concurrent_delegations",
         "status",
         "frappe_user"
     ],
@@ -80,6 +81,13 @@
             "fieldtype": "Select",
             "label": "Requires Approval Above Risk",
             "options": "low\nmedium\nhigh\nalways"
+        },
+        {
+            "default": "5",
+            "description": "Maximum active delegated children this profile can have running at once (design 69, Q10). Prevents one runaway orchestrator from flooding the friday queue.",
+            "fieldname": "max_concurrent_delegations",
+            "fieldtype": "Int",
+            "label": "Max Concurrent Delegations"
         },
         {
             "fieldname": "status",

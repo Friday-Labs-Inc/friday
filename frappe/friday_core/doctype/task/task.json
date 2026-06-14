@@ -24,6 +24,7 @@
   "retry_count",
   "originating_session",
   "originating_platform",
+  "parent_task",
   "gantt_section",
   "exp_start_date",
   "exp_end_date",
@@ -170,6 +171,15 @@
    "fieldtype": "Data",
    "label": "Originating Platform",
    "read_only": 1
+  },
+  {
+   "description": "The parent Task that delegated this one (design 69). NULL for top-level tasks and chat-originated delegations. The chain parent_task → parent_task forms the delegation graph, queryable via a recursive CTE.",
+   "fieldname": "parent_task",
+   "fieldtype": "Link",
+   "label": "Parent Task",
+   "options": "Task",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "gantt_section",

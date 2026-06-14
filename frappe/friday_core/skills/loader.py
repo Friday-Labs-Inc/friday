@@ -125,6 +125,14 @@ SKILLS_CACHE_KEY_PREFIX = "friday:skills:"
 # keep the worst-case staleness small in practice.
 SKILLS_CACHE_TTL_SECONDS = 300
 
+# Role-gated skills (design 69, Q4): skill_name -> required agent_role.
+# A profile whose agent_role does not match is excluded from seeing this skill
+# in its tool menu, even if permitted_skills contains it. Defense in depth —
+# the handler also enforces at call time.
+_ROLE_GATED_SKILLS: dict[str, str] = {
+	"delegate-task": "Orchestrator",
+}
+
 
 # ---------------------------------------------------------------------------
 # Public data types
@@ -340,6 +348,9 @@ def _load_uncached(profile_name: str) -> list[SkillDefinition]:
 	# Step 2: cache-aware matrix for the agent (reused for every skill below).
 	matrix = build_matrix(profile_name)
 
+	# Step 2b: role-gated skills (design 69, Q4).
+	agent_role = getattr(profile, "agent_role", None)
+
 	# Step 3: filter skill-by-skill and build SkillDefinitions.
 	result: list[SkillDefinition] = []
 	for skill_name in permitted_skill_names:
@@ -354,6 +365,11 @@ def _load_uncached(profile_name: str) -> list[SkillDefinition]:
 			continue
 
 		skill = frappe.get_doc("Skill", skill_name)
+
+		# Filter 0: role gate (design 69, Q4).
+		required_role = _ROLE_GATED_SKILLS.get(skill_name)
+		if required_role and agent_role != required_role:
+			continue
 
 		# Filter 1: status must be Active.
 		if skill.status != "Active":

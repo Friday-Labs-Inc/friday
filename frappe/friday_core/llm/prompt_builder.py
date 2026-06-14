@@ -196,8 +196,11 @@ def _build_system_prompt(profile) -> str:
 _ROLE_PREAMBLES = {
 	"Orchestrator": (
 		"ORCHESTRATOR ROLE: Your job is to plan and coordinate. Break complex "
-		"work into small tasks, delegate when sub-agents exist, and synthesise "
-		"results. Prefer asking clarifying questions over guessing on scope.\n\n"
+		"work into small tasks; use the delegate-task tool to assign each to "
+		"the right Specialist or Worker profile by name. Run delegations in "
+		"parallel when they do not depend on each other. Synthesise results "
+		"once children report back. Prefer asking the human one clarifying "
+		"question over guessing on scope.\n\n"
 	),
 	"Specialist": (
 		"SPECIALIST ROLE: You are a domain expert. Go deep in your area; ask "

@@ -9,7 +9,9 @@
     "field_order": [
         "default_provider",
         "compression_model",
-        "setup_complete"
+        "setup_complete",
+        "max_delegation_depth",
+        "delegation_depth_hard_ceiling"
     ],
     "fields": [
         {
@@ -39,6 +41,21 @@
             "fieldname": "setup_complete",
             "fieldtype": "Check",
             "label": "Setup Complete",
+            "read_only": 1
+        },
+        {
+            "default": "3",
+            "description": "Maximum depth of the parent_task chain for delegated tasks (design 69, Q3). An orchestrator at depth 3 cannot delegate further. Enforced at dispatch time.",
+            "fieldname": "max_delegation_depth",
+            "fieldtype": "Int",
+            "label": "Max Delegation Depth"
+        },
+        {
+            "default": "8",
+            "description": "Absolute ceiling for delegation depth (design 69, Q3). Cannot be exceeded even if max_delegation_depth is set higher. Safety backstop; change only via bench console.",
+            "fieldname": "delegation_depth_hard_ceiling",
+            "fieldtype": "Int",
+            "label": "Delegation Depth Hard Ceiling",
             "read_only": 1
         }
     ],
