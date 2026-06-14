@@ -9,7 +9,7 @@ Graceful degradation
 - If the ``Raven Channel`` DocType does not exist in the site schema,
   the function logs at INFO level and returns silently.
 - If the ``FRIDAY_WAR_ROOM`` channel is not found, logs at WARNING and returns.
-- If a network error occurs during the HTTP call, logs at ERROR and returns.
+- If posting the message to Raven raises, logs at ERROR and returns.
 - **Never raises an exception. Never blocks the task pipeline.**
 
 Activation
@@ -184,60 +184,31 @@ def _format_message_text(task_name: str, event: str, details: dict | None) -> st
 
 def _post_to_raven(channel_id: str, payload: dict) -> None:
 	"""
-	POST a message to the Raven channel via the Frappe RPC API.
+	Post a message to the Raven channel IN-PROCESS.
 
-	The standard Raven endpoint is::
+	Calls ``raven.api.raven_message.send_message`` directly — no HTTP round-trip.
+	The previous implementation POSTed to ``/api/method/raven.api.send_message``,
+	which is wrong two ways:
 
-	    /api/method/raven.api.send_message
+	  1. that method does not exist in Raven 2.x — the function lives at
+	     ``raven.api.raven_message.send_message`` (Frappe's RPC dispatcher raised
+	     "module 'raven.api' has no attribute 'send_message'" on every call), and
+	  2. it authenticated with ``Cookie: sid=<session>``, but the War Room post
+	     fires from a background worker / the task-transition hook, where there is
+	     no HTTP session — so even with the right path it would 403.
 
-	which accepts ``channel_id``, ``text``, ``message_type``, etc.
+	Net effect of the old path: every War Room post silently failed. The
+	in-process call inserts a Raven Message in the CURRENT transaction (it does
+	no commit of its own), firing Raven's own realtime hooks so the channel
+	updates live. ``send_message`` takes ``channel_id`` and ``text`` only;
+	``message_type`` is "Text" internally, so the old ``message_type`` /
+	``hide_in_message_history`` keys are dropped. Failures propagate to
+	``post_task_update``, which logs and degrades gracefully.
 
 	Args:
 		channel_id: The ``Raven Channel`` document name.
-		payload: The message dict built by _build_payload.
+		payload: The message dict built by _build_payload (only ``text`` is used).
 	"""
-	import requests
+	from raven.api.raven_message import send_message
 
-	endpoint = frappe.utils.get_url() + "/api/method/raven.api.send_message"
-
-	headers = {
-		"Content-Type": "application/json",
-		# Use the current session cookie if available; otherwise fall back to
-		# the API key header that the Frappe Realtime worker sets.
-		"Cookie": f"sid={frappe.session.sid}" if hasattr(frappe, "session") else "",
-	}
-
-	data = {
-		"channel_id": channel_id,
-		"text": payload["text"],
-		"message_type": payload["message_type"],
-		"hide_in_message_history": payload["hide_in_message_history"],
-	}
-
-	try:
-		requests.post(
-			endpoint,
-			json=data,
-			headers=headers,
-			timeout=5,
-		)
-	except requests.exceptions.Timeout:
-		_logger.error(
-			"War Room post timed out for task %s event %s",
-			_extract_task_name(payload.get("text", "")),
-			"timeout",
-		)
-	except requests.exceptions.RequestException as exc:
-		_logger.error(
-			"War Room post failed for task %s: %s",
-			_extract_task_name(payload.get("text", "")),
-			exc,
-		)
-
-
-def _extract_task_name(text: str) -> str:
-	"""Pull the task name out of the formatted message text for logging."""
-	# Message format: **[{task_name}]** — *{event}*
-	if text and "][" in text:
-		return text.split("][")[1].split("]")[0]
-	return "?"
+	send_message(channel_id=channel_id, text=payload["text"])

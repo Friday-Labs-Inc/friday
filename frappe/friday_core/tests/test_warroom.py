@@ -227,5 +227,38 @@ class TestBuildPayload(unittest.TestCase):
 		self.assertIn("web_search", payload["text"])
 
 
+class TestPostToRavenInProcess(unittest.TestCase):
+	"""_post_to_raven posts via raven's in-process send_message — not HTTP.
+
+	Regression guard for the bug where every War Room post silently failed: the
+	old code POSTed to the non-existent ``raven.api.send_message`` endpoint with a
+	session cookie a worker doesn't have.
+	"""
+
+	@patch("raven.api.raven_message.send_message")
+	def test_calls_send_message_with_channel_and_text(self, mock_send):
+		from frappe.friday_core.warroom.publisher import _post_to_raven
+
+		_post_to_raven(
+			"raven-channel-123",
+			{"text": "hello war room", "message_type": "Text", "hide_in_message_history": False},
+		)
+
+		# correct function (raven.api.raven_message.send_message), only the two
+		# real params — message_type / hide_in_message_history are NOT passed.
+		mock_send.assert_called_once_with(channel_id="raven-channel-123", text="hello war room")
+
+	def test_no_http_post(self):
+		import inspect
+
+		from frappe.friday_core.warroom import publisher
+
+		# regression: the old impl did an HTTP requests.post (to a dead endpoint,
+		# with a worker-less session cookie). The fix is a pure in-process call.
+		src = inspect.getsource(publisher._post_to_raven)
+		self.assertNotIn("requests.post", src)
+		self.assertIn("raven.api.raven_message", src)
+
+
 if __name__ == "__main__":
 	unittest.main()
