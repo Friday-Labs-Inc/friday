@@ -2,164 +2,224 @@
 # License: MIT. See license.txt
 
 """
-Unit tests for the delegate-task skill (design 57, LOCKED).
+Unit tests for the delegate-task skill (design 69a, LOCKED).
 
-Mock-based — no DB, no model. Pins the locked contract:
-  Q1 every delegation creates a Task row (state Executing — never Assigned,
-     so the mechanical task machinery doesn't double-run it)
-  Q2 sync: the child's summary lands on Task.result and returns to the parent
-  Q3 isolation: the child runs in a fresh `task::<name>` session and sees only
-     the task framing (never the parent's conversation)
-  Q4 depth cap: a child (task:: session) may not delegate
-  Q5 named profile wins; else the existing capability matcher; actionable
-     error when nothing matches
-  failure path: child error → Task Blocked + actionable ValueError (type
-     name only, redaction policy)
+Mock-based — no DB, no model. Design 69a rewrote the original design 57 handler
+from synchronous-inline to async-durable. Pins the new locked contract:
+
+  ROLE GATE   only agent_role == "Orchestrator" may delegate (Q4).
+  DEPTH GATE  the parent_task chain must be < max_delegation_depth (Q3).
+  CONCURRENCY each parent's active children must be < max_concurrent (Q10).
+  CREATE      a Pending child Task — parent_task set, project inherited (Q2/Q8);
+              the handler returns immediately, the pipeline runs the child.
 """
 
 import unittest
 from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 from frappe.friday_core.skills import handlers_delegate
 
 _H = "frappe.friday_core.skills.handlers_delegate"
-_RUN = "frappe.friday_core.agent_runner.runner.run_turn"
-_MATCH = "frappe.friday_core.tasks.dispatcher._match_profiles"
 
 
 def _params(**overrides):
 	p = {
-		"title": "Draft taglines",
-		"instructions": "Write 3 tagline options for Loop Coffee. Warm, crafted, honest.",
-		"profile": "Copywriter",
+		"agent_profile": "Copywriter",
+		"instruction": "Write 3 tagline options for Loop Coffee. Warm, crafted, honest.",
 	}
 	p.update(overrides)
 	return p
 
 
-def _ctx_frappe(mock_frappe, session="chat-session-1", profile="Friday"):
-	"""Wire the dispatch-context flags + a Task doc mock onto a patched frappe."""
-	mock_frappe.flags.get.return_value = {"session_id": session, "agent_profile": profile}
-	task = MagicMock()
-	task.name = "TASK-0007"
-	mock_frappe.get_doc.return_value = task
-	mock_frappe.db.exists.return_value = True
-	mock_frappe.db.get_value.return_value = "Active"
-	return task
+def _profile(role="Orchestrator", status="Active", max_concurrent=5):
+	p = MagicMock()
+	p.agent_role = role
+	p.status = status
+	p.max_concurrent_delegations = max_concurrent
+	return p
+
+
+def _settings(max_depth=3, hard_ceiling=8):
+	s = MagicMock()
+	s.max_delegation_depth = max_depth
+	s.delegation_depth_hard_ceiling = hard_ceiling
+	return s
+
+
+def _wire(
+	mock_frappe,
+	*,
+	session="chat-session-1",
+	parent_profile_name="Friday",
+	parent_role="Orchestrator",
+	target_name="Copywriter",
+	target_status="Active",
+	target_exists=True,
+	max_concurrent=5,
+	active_children=0,
+	max_depth=3,
+	hard_ceiling=8,
+	parent_chain=None,
+	project="PROJ-1",
+):
+	"""Wire a patched frappe for the 69a delegate_task contract.
+
+	Routes ``get_cached_doc`` by (doctype, name) — the handler asks for the
+	parent profile, Agent Settings, and the target profile in one call each.
+	``parent_chain`` maps task_name -> parent_task_name for the depth walk.
+	Returns a namespace with the mock docs so a test can tweak/assert them.
+	"""
+	mock_frappe.flags.get.return_value = {
+		"session_id": session,
+		"agent_profile": parent_profile_name,
+	}
+
+	parent_profile = _profile(role=parent_role, max_concurrent=max_concurrent)
+	target_profile = _profile(status=target_status)
+	settings = _settings(max_depth, hard_ceiling)
+
+	def get_cached_doc(doctype, name):
+		if doctype == "Agent Settings":
+			return settings
+		if doctype == "Agent Profile" and name == parent_profile_name:
+			return parent_profile
+		if doctype == "Agent Profile" and name == target_name:
+			return target_profile
+		return MagicMock()
+
+	mock_frappe.get_cached_doc.side_effect = get_cached_doc
+	mock_frappe.db.exists.return_value = target_exists
+	mock_frappe.db.count.return_value = active_children
+
+	chain = parent_chain or {}
+
+	def db_get_value(doctype, name, field):
+		if field == "parent_task":
+			return chain.get(name)
+		if field == "project":
+			return project
+		return None
+
+	mock_frappe.db.get_value.side_effect = db_get_value
+
+	child = MagicMock()
+	child.name = "TASK-CHILD-1"
+	mock_frappe.get_doc.return_value = child
+
+	return SimpleNamespace(
+		parent_profile=parent_profile,
+		target_profile=target_profile,
+		settings=settings,
+		child=child,
+	)
 
 
 class TestDepthAndValidation(unittest.TestCase):
 	@patch(f"{_H}.frappe")
 	def test_child_session_cannot_delegate(self, mock_frappe):
-		_ctx_frappe(mock_frappe, session="task::TASK-0001")
+		# A 3-deep parent_task chain reaches the default cap (max_delegation_depth=3).
+		_wire(
+			mock_frappe,
+			session="task::TASK-0001",
+			parent_chain={
+				"TASK-0001": "TASK-0002",
+				"TASK-0002": "TASK-0003",
+				"TASK-0003": "TASK-0004",
+			},
+		)
 		with self.assertRaises(ValueError) as ctx:
 			handlers_delegate.delegate_task("delegate-task", _params())
 		self.assertIn("depth", str(ctx.exception))
 
 	@patch(f"{_H}.frappe")
-	def test_missing_title_and_instructions_raise(self, mock_frappe):
-		_ctx_frappe(mock_frappe)
-		for missing in ("title", "instructions"):
+	def test_missing_required_params_raise(self, mock_frappe):
+		# 69a requires agent_profile + instruction; title is optional.
+		for missing in ("agent_profile", "instruction"):
+			_wire(mock_frappe)
 			with self.assertRaises(ValueError) as ctx:
 				handlers_delegate.delegate_task("delegate-task", _params(**{missing: ""}))
 			self.assertIn(missing, str(ctx.exception))
 
 	@patch(f"{_H}.frappe")
-	def test_unknown_named_profile_raises(self, mock_frappe):
-		_ctx_frappe(mock_frappe)
-		mock_frappe.db.exists.return_value = False
+	def test_unknown_target_profile_raises(self, mock_frappe):
+		_wire(mock_frappe, target_name="Ghost", target_exists=False)
 		with self.assertRaises(ValueError) as ctx:
-			handlers_delegate.delegate_task("delegate-task", _params(profile="Ghost"))
+			handlers_delegate.delegate_task("delegate-task", _params(agent_profile="Ghost"))
 		self.assertIn("Ghost", str(ctx.exception))
 
 	@patch(f"{_H}.frappe")
-	def test_inactive_named_profile_raises(self, mock_frappe):
-		_ctx_frappe(mock_frappe)
-		mock_frappe.db.get_value.return_value = "Draft"
+	def test_inactive_target_profile_raises(self, mock_frappe):
+		# Target exists but is not Active — 69a reads status off the cached doc.
+		_wire(mock_frappe, target_status="Draft")
 		with self.assertRaises(ValueError) as ctx:
 			handlers_delegate.delegate_task("delegate-task", _params())
 		self.assertIn("Active", str(ctx.exception))
 
 
-class TestProfileResolution(unittest.TestCase):
-	@patch(_MATCH)
-	@patch(_RUN, return_value="done")
+class TestGates(unittest.TestCase):
 	@patch(f"{_H}.frappe")
-	def test_named_profile_wins_matcher_not_called(self, mock_frappe, mock_run, mock_match):
-		_ctx_frappe(mock_frappe)
-		handlers_delegate.delegate_task("delegate-task", _params(profile="Copywriter"))
-		mock_match.assert_not_called()
-		self.assertEqual(mock_run.call_args.kwargs["profile_name"], "Copywriter")
-
-	@patch(_MATCH, return_value=["Copywriter", "Generalist"])
-	@patch(_RUN, return_value="done")
-	@patch(f"{_H}.frappe")
-	def test_auto_match_first_active_when_no_profile_named(self, mock_frappe, mock_run, mock_match):
-		_ctx_frappe(mock_frappe)
-		handlers_delegate.delegate_task(
-			"delegate-task", _params(profile="", required_skills=["create-brand-direction"])
-		)
-		mock_match.assert_called_once()
-		self.assertEqual(mock_run.call_args.kwargs["profile_name"], "Copywriter")
-
-	@patch(_MATCH, return_value=[])
-	@patch(f"{_H}.frappe")
-	def test_no_match_raises_actionable_error(self, mock_frappe, mock_match):
-		_ctx_frappe(mock_frappe)
+	def test_non_orchestrator_cannot_delegate(self, mock_frappe):
+		# ROLE GATE (Q4) — a Specialist must be refused even if it reaches the handler.
+		_wire(mock_frappe, parent_role="Specialist")
 		with self.assertRaises(ValueError) as ctx:
-			handlers_delegate.delegate_task("delegate-task", _params(profile="", required_skills=["x-skill"]))
-		self.assertIn("x-skill", str(ctx.exception))
+			handlers_delegate.delegate_task("delegate-task", _params())
+		self.assertIn("Orchestrator", str(ctx.exception))
 
-	def test_skill_list_normalisation_accepts_string(self):
-		self.assertEqual(handlers_delegate._normalise_skill_list("a, b\nc"), ["a", "b", "c"])
-		self.assertEqual(handlers_delegate._normalise_skill_list(["a", " b "]), ["a", "b"])
-		self.assertEqual(handlers_delegate._normalise_skill_list(None), [])
+	@patch(f"{_H}.frappe")
+	def test_concurrency_limit_blocks_delegation(self, mock_frappe):
+		# CONCURRENCY GATE (Q10) — 5 active children already == default cap.
+		_wire(mock_frappe, max_concurrent=5, active_children=5)
+		with self.assertRaises(ValueError) as ctx:
+			handlers_delegate.delegate_task("delegate-task", _params())
+		self.assertIn("concurrent", str(ctx.exception))
 
 
 class TestHappyPath(unittest.TestCase):
-	@patch(_RUN, return_value="Taglines drafted: A, B, C.")
 	@patch(f"{_H}.frappe")
-	def test_task_row_child_isolation_and_summary(self, mock_frappe, mock_run):
-		task = _ctx_frappe(mock_frappe, session="parent-session", profile="Friday")
+	def test_creates_pending_child_and_returns_queued(self, mock_frappe):
+		# Delegating from inside a parent task: child is Pending, parent_task set,
+		# project inherited (Q2/Q8), and the handler returns immediately (Q1 async).
+		w = _wire(
+			mock_frappe,
+			session="task::TASK-PARENT",
+			parent_chain={"TASK-PARENT": None},  # depth 0 — root parent
+			project="PROJ-1",
+		)
 
 		out = handlers_delegate.delegate_task("delegate-task", _params())
 
-		# Q1 — Task row created in Executing state (never Assigned).
+		# Child Task row shape.
 		payload = mock_frappe.get_doc.call_args[0][0]
 		self.assertEqual(payload["doctype"], "Task")
-		self.assertEqual(payload["workflow_state"], "Executing")
+		self.assertEqual(payload["workflow_state"], "Pending")
+		self.assertEqual(payload["execution_mode"], "agentic")
 		self.assertEqual(payload["assigned_to_profile"], "Copywriter")
-		self.assertIn("Friday", payload["description"])  # audit breadcrumb
-		task.insert.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(payload["parent_task"], "TASK-PARENT")
+		self.assertEqual(payload["project"], "PROJ-1")  # inherited from parent
+		self.assertEqual(payload["description"], _params()["instruction"])
+		w.child.insert.assert_called_once_with(ignore_permissions=True)
 
-		# Q3 — child isolation: fresh task:: session, framing only.
-		kwargs = mock_run.call_args.kwargs
-		self.assertEqual(kwargs["session_id"], "task::TASK-0007")
-		self.assertIn("Instructions:", kwargs["inbound_content"])
-		self.assertIn("Loop Coffee", kwargs["inbound_content"])
-		self.assertNotIn("parent-session", kwargs["inbound_content"])
-
-		# Q2 — summary stored (JSON envelope — Task.result is a JSON column)
-		# and returned to the parent.
-		mock_frappe.as_json.assert_called_with({"status": "success", "summary": "Taglines drafted: A, B, C."})
-		self.assertEqual(task.result, mock_frappe.as_json.return_value)
-		self.assertEqual(task.workflow_state, "Completed")
-		task.save.assert_called_with(ignore_permissions=True)
-		self.assertIn("Taglines drafted", out["result"])
-		self.assertEqual(out["record_name"], "TASK-0007")
+		# Return envelope — async/queued, never a completed result.
+		self.assertEqual(out["status"], "queued")
+		self.assertEqual(out["delegation_id"], "TASK-CHILD-1")
+		self.assertEqual(out["child_task_name"], "TASK-CHILD-1")
 		self.assertEqual(out["assigned_profile"], "Copywriter")
+		self.assertEqual(out["record_name"], "TASK-CHILD-1")
 
-	@patch(_RUN, side_effect=RuntimeError("model exploded with secret details"))
 	@patch(f"{_H}.frappe")
-	def test_child_failure_blocks_task_and_raises_actionably(self, mock_frappe, mock_run):
-		task = _ctx_frappe(mock_frappe)
-		with self.assertRaises(ValueError) as ctx:
-			handlers_delegate.delegate_task("delegate-task", _params())
-		self.assertEqual(task.workflow_state, "Blocked")
-		msg = str(ctx.exception)
-		self.assertIn("TASK-0007", msg)
-		self.assertIn("RuntimeError", msg)  # type name only...
-		self.assertNotIn("secret details", msg)  # ...never the raw message
+	def test_top_level_delegation_has_no_parent_task(self, mock_frappe):
+		# Delegating from a chat session (not task::) is a root delegation:
+		# parent_task is None, and an explicit project param is honoured.
+		_wire(mock_frappe, session="chat-session-1")
+		out = handlers_delegate.delegate_task(
+			"delegate-task", _params(project="PROJ-OVERRIDE")
+		)
+		payload = mock_frappe.get_doc.call_args[0][0]
+		self.assertIsNone(payload["parent_task"])
+		self.assertEqual(payload["project"], "PROJ-OVERRIDE")  # explicit wins
+		self.assertEqual(payload["originating_session"], "chat-session-1")
+		self.assertEqual(out["status"], "queued")
 
 
 class TestRegistrationAndBootstrap(unittest.TestCase):
