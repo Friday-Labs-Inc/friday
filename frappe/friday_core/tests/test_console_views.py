@@ -224,6 +224,82 @@ class TestWorkspace(unittest.TestCase):
 				self.assertIn(block["data"]["chart_name"], chart_labels)
 
 
+class TestHubWorkspace(unittest.TestCase):
+	"""The top-level "Friday" navigation hub workspace."""
+
+	def _provision_and_capture_hub(self, mock_frappe):
+		"""Run provision_console with frappe mocked; return the built hub doc.
+
+		Both the hub and the "Projects" workspace are Workspace docs, so we key
+		capture on the hub's title to grab the right one.
+		"""
+		from frappe.friday_core.console.provision_console import (
+			HUB_WORKSPACE_NAME,
+			provision_console,
+		)
+
+		built = {}
+
+		# DocType-existence checks (the hub's link guard) must read True so every
+		# curated link is included; every other exists() check (does this
+		# Workspace/Card/etc. already exist?) reads False so artifacts get created.
+		def _exists(doctype, name=None):
+			return doctype == "DocType"
+
+		mock_frappe.db.exists.side_effect = _exists
+
+		def _get_doc(spec):
+			doc = _FakeDoc(spec if isinstance(spec, dict) else {})
+			if isinstance(spec, dict) and spec.get("title") == HUB_WORKSPACE_NAME:
+				built["hub"] = doc
+			return doc
+
+		mock_frappe.get_doc.side_effect = _get_doc
+		provision_console()
+		return built["hub"]
+
+	@patch("frappe.friday_core.console.provision_console.frappe")
+	def test_hub_created_public_and_sorts_first(self, mock_frappe):
+		from frappe.friday_core.console.provision_console import HUB_WORKSPACE_NAME
+
+		hub = self._provision_and_capture_hub(mock_frappe)
+		self.assertEqual(hub["label"], HUB_WORKSPACE_NAME)
+		self.assertEqual(hub["public"], 1)
+		# Negative sequence so it lands above the default workspaces (min is 0).
+		self.assertLess(hub["sequence_id"], 0)
+
+	@patch("frappe.friday_core.console.provision_console.frappe")
+	def test_hub_has_all_shortcuts_and_cards(self, mock_frappe):
+		from frappe.friday_core.console.provision_console import HUB_CARDS, HUB_SHORTCUTS
+
+		hub = self._provision_and_capture_hub(mock_frappe)
+		# every shortcut tile present
+		self.assertEqual(
+			{s["label"] for s in hub["shortcuts"]},
+			{s["label"] for s in HUB_SHORTCUTS},
+		)
+		# every nav card present as a Card Break
+		breaks = {l["label"] for l in hub["links"] if l["type"] == "Card Break"}
+		self.assertEqual(breaks, {c["label"] for c in HUB_CARDS})
+		# every declared DocType link present under some card
+		link_targets = {l["link_to"] for l in hub["links"] if l["type"] == "Link"}
+		for card in HUB_CARDS:
+			for dt in card["links"]:
+				self.assertIn(dt, link_targets)
+
+	@patch("frappe.friday_core.console.provision_console.frappe")
+	def test_hub_content_references_resolve(self, mock_frappe):
+		hub = self._provision_and_capture_hub(mock_frappe)
+		content = json.loads(hub["content"])  # must be a valid JSON string
+		shortcut_labels = {s["label"] for s in hub["shortcuts"]}
+		card_labels = {l["label"] for l in hub["links"] if l["type"] == "Card Break"}
+		for block in content:
+			if block["type"] == "shortcut":
+				self.assertIn(block["data"]["shortcut_name"], shortcut_labels)
+			elif block["type"] == "card":
+				self.assertIn(block["data"]["card_name"], card_labels)
+
+
 class TestFailureIsolation(unittest.TestCase):
 	@patch("frappe.friday_core.console.provision_console.frappe")
 	def test_one_failure_does_not_abort_the_rest(self, mock_frappe):
