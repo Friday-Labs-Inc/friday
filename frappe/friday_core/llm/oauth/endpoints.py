@@ -44,6 +44,24 @@ def complete_claude_login(provider_name: str, pasted: str) -> dict:
 
 
 @frappe.whitelist()
+def start_codex_login(provider_name: str) -> dict:
+	"""Begin the Codex device login; return the user code + verification URL."""
+	frappe.only_for("System Manager")
+	from frappe.friday_core.llm.oauth import codex
+
+	return codex.start_device(provider_name)
+
+
+@frappe.whitelist()
+def poll_codex_login(provider_name: str) -> dict:
+	"""Poll the Codex device login once. ``{pending: true}`` until approved."""
+	frappe.only_for("System Manager")
+	from frappe.friday_core.llm.oauth import codex
+
+	return codex.poll_device(provider_name)
+
+
+@frappe.whitelist()
 def oauth_status(provider_name: str) -> dict:
 	"""Return the provider's OAuth status (never the token itself)."""
 	frappe.only_for("System Manager")

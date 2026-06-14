@@ -782,6 +782,170 @@ def get_provider_by_name(provider_name: str) -> LLMProvider:
     return _build_provider(row.as_dict())
 
 
+# ---------------------------------------------------------------------------
+# OpenAI Codex provider (Responses API, OAuth-only — design 63b-2)
+# ---------------------------------------------------------------------------
+
+
+class CodexProvider(LLMProvider):
+    """The ChatGPT/Codex subscription provider.
+
+    Unlike every other adapter, Codex speaks the OpenAI **Responses API**
+    (`/responses`, `store: false`) — NOT chat completions — and authenticates
+    with an OAuth bearer token plus the Cloudflare-passing headers OpenAI
+    requires from non-browser clients (`originator: codex_cli_rs`, a `codex_cli`
+    user-agent, and the `ChatGPT-Account-ID` taken from the token JWT). Without
+    those, `chatgpt.com/backend-api/codex` returns a Cloudflare challenge.
+    """
+
+    PROVIDER_NAME = "openai-codex"
+    DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
+    RESPONSES_PATH = "/responses"
+    USER_AGENT = "codex_cli_rs/0.0.0 (Friday Agent)"
+
+    def __init__(
+        self,
+        oauth_token: str,
+        account_id: str | None,
+        default_model: str,
+        base_url: str | None = None,
+        default_max_tokens: int | None = None,
+        default_temperature: float | None = None,
+    ):
+        self.oauth_token = oauth_token
+        self.account_id = account_id
+        self.default_model = default_model
+        self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.default_max_tokens = default_max_tokens
+        self.default_temperature = default_temperature
+
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        model: str | None = None,
+    ) -> LLMResponse:
+        model = model or self.default_model
+        url = f"{self.base_url}{self.RESPONSES_PATH}"
+        headers = {
+            "authorization": f"Bearer {self.oauth_token}",
+            "originator": "codex_cli_rs",  # non-negotiable: passes Cloudflare
+            "user-agent": self.USER_AGENT,
+            "content-type": "application/json",
+        }
+        if self.account_id:
+            headers["ChatGPT-Account-ID"] = self.account_id
+
+        instructions, input_items = _to_responses_input(messages)
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+            # The Responses API REQUIRES store:false for the Codex backend.
+            "store": False,
+            "stream": False,
+        }
+        if instructions:
+            payload["instructions"] = instructions
+        if tools:
+            payload["tools"] = _to_responses_tools(tools)
+        if self.default_temperature is not None:
+            payload["temperature"] = self.default_temperature
+
+        data = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model)
+        return _parse_responses(data)
+
+    def get_default_model(self) -> str:
+        return self.default_model
+
+
+def _to_responses_input(messages: list[dict]) -> tuple[str, list[dict]]:
+    """Canonical messages → (instructions, Responses `input` items).
+
+    System messages fold into the top-level `instructions` string (Responses has
+    no system role). User/assistant text become `message` items with
+    `input_text`/`output_text`; assistant tool calls become `function_call`
+    items; tool results become `function_call_output` items — the Responses
+    equivalents of OpenAI's tool-call protocol.
+    """
+    instructions_parts: list[str] = []
+    items: list[dict] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content") or ""
+        if role == "system":
+            if content:
+                instructions_parts.append(content)
+        elif role == "user":
+            items.append({"type": "message", "role": "user", "content": [{"type": "input_text", "text": content}]})
+        elif role == "assistant":
+            for tc in _normalize_tool_calls(msg.get("tool_calls")) or []:
+                items.append({
+                    "type": "function_call",
+                    "call_id": tc["id"],
+                    "name": tc["name"],
+                    "arguments": tc["arguments"],
+                })
+            if content:
+                items.append({"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": content}]})
+        elif role == "tool":
+            items.append({
+                "type": "function_call_output",
+                "call_id": msg.get("tool_call_id", ""),
+                "output": content,
+            })
+    return "\n\n".join(instructions_parts), items
+
+
+def _to_responses_tools(tools: list[dict]) -> list[dict]:
+    """OpenAI chat-completions tool shape → Responses flat function-tool shape."""
+    out: list[dict] = []
+    for tool in tools:
+        fn = tool.get("function") or tool
+        out.append({
+            "type": "function",
+            "name": fn.get("name", ""),
+            "description": fn.get("description", ""),
+            "parameters": fn.get("parameters", {}),
+        })
+    return out
+
+
+def _parse_responses(data: dict) -> LLMResponse:
+    """Responses API output → canonical `LLMResponse`.
+
+    The `output` array carries `message` items (text in `output_text` blocks) and
+    `function_call` items (flattened to canonical `{id, name, arguments}`).
+    """
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
+    for item in data.get("output", []) or []:
+        itype = item.get("type")
+        if itype == "message":
+            for block in item.get("content", []) or []:
+                if block.get("type") in ("output_text", "text"):
+                    text_parts.append(block.get("text", ""))
+        elif itype == "function_call":
+            tool_calls.append({
+                "id": item.get("call_id") or item.get("id", ""),
+                "name": item.get("name", ""),
+                "arguments": item.get("arguments", "{}"),
+            })
+
+    usage = data.get("usage", {}) or {}
+    input_tokens = usage.get("input_tokens", 0)
+    output_tokens = usage.get("output_tokens", 0)
+    return LLMResponse(
+        content="".join(text_parts),
+        finish_reason=data.get("status") or "stop",
+        usage={
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        },
+        tool_calls=tool_calls or None,
+    )
+
+
 def _build_provider(provider_row: dict) -> LLMProvider:
     """Construct a provider instance from an LLM Provider row dict.
 
@@ -823,8 +987,14 @@ def _build_provider(provider_row: dict) -> LLMProvider:
                 default_temperature=default_temperature,
             ))
         if flavor == "openai-codex":
-            # The Codex Responses-API transport lands in design 63b-2.
-            raise LLMError("OpenAI Codex OAuth is not available yet (design 63b-2).")
+            return _with_pricing(CodexProvider(
+                oauth_token=access_token,
+                account_id=provider_row.get("oauth_account_id"),
+                default_model=default_model,
+                base_url=base_url,
+                default_max_tokens=default_max_tokens,
+                default_temperature=default_temperature,
+            ))
         raise LLMError(f"LLM Provider has unknown oauth_flavor {flavor!r}")
 
     api_key = _get_api_key(provider_row)
