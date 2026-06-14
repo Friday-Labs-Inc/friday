@@ -44,6 +44,12 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe.friday_core.doctype.agent_settings.agent_settings import (
+	SETTINGS_DOCTYPE as _SETTINGS,
+)
+from frappe.friday_core.doctype.agent_settings.agent_settings import (
+	SETTINGS_NAME as _SETTINGS_NAME,
+)
 from frappe.friday_core.llm.provider import (
 	LLMError,
 	get_provider_by_name,
@@ -219,8 +225,8 @@ def _resolve_aux_provider(profile_name: str):
 	if nothing resolves (caller logs + skips — never drops turns).
 	"""
 	override = None
-	if frappe.db.exists("Agent Settings", "Agent Settings"):
-		override = frappe.db.get_value("Agent Settings", "Agent Settings", "compression_model")
+	if frappe.db.exists(_SETTINGS, {"name": _SETTINGS_NAME}):
+		override = frappe.db.get_value(_SETTINGS, _SETTINGS_NAME, "compression_model")
 	if override:
 		try:
 			provider = get_provider_by_name(override)

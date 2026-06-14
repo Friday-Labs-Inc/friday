@@ -203,6 +203,7 @@ frappe.friday_core.patches.v1_0.rename_tracker_doctypes
 frappe.friday_core.patches.v1_0.backfill_agent_role
 execute:frappe.get_doc('Role', 'Guest').save() # remove desk access
 frappe.friday_core.patches.v1_0.backfill_agent_role
+frappe.friday_core.patches.v1_0.create_agent_settings_singleton
 frappe.core.doctype.role.patches.v13_set_default_desk_properties
 frappe.patches.v14_0.update_workspace2 # 06.06.2023
 frappe.patches.v14_0.drop_data_import_legacy
