@@ -29,9 +29,14 @@ from __future__ import annotations
 
 import frappe
 from frappe.friday_core.cli import setup as cli_setup
+from frappe.friday_core.doctype.agent_settings.agent_settings import (
+	SETTINGS_DOCTYPE as _SETTINGS,
+)
+from frappe.friday_core.doctype.agent_settings.agent_settings import (
+	SETTINGS_NAME as _SETTINGS_NAME,
+)
 
 FRIDAY_PROFILE = "Friday"
-_SETTINGS = "Agent Settings"
 
 
 @frappe.whitelist()
@@ -41,10 +46,10 @@ def setup_status() -> dict:
 	from frappe.friday_core.health.pipeline_health import pipeline_health
 
 	providers = frappe.get_all("LLM Provider", pluck="name") or []
-	# Agent Settings is a regular single-row DocType (autoname-on-constant, NOT
-	# `issingle`), so it's read with get_cached_doc, not get_single_value (which
-	# reads tabSingles and would return nothing here).
-	settings = frappe.get_cached_doc(_SETTINGS, _SETTINGS)
+	# Agent Settings is a regular single-row DocType (NOT `issingle`), read with
+	# get_cached_doc by its canonical row name (_SETTINGS_NAME, "__default") —
+	# reading it as "Agent Settings" raises DoesNotExistError (see the controller).
+	settings = frappe.get_cached_doc(_SETTINGS, _SETTINGS_NAME)
 	default_provider = settings.get("default_provider")
 
 	profile = frappe.db.get_value(
@@ -195,7 +200,7 @@ def verify_and_complete(provider_name: str | None = None) -> dict:
 	from frappe.friday_core.health.pipeline_health import pipeline_health
 	from frappe.friday_core.llm.model_discovery import list_models
 
-	provider_name = provider_name or frappe.get_cached_doc(_SETTINGS, _SETTINGS).get("default_provider")
+	provider_name = provider_name or frappe.get_cached_doc(_SETTINGS, _SETTINGS_NAME).get("default_provider")
 
 	probe = list_models(provider_name=provider_name) if provider_name else {"source": "none", "models": []}
 	health = pipeline_health()
@@ -206,7 +211,7 @@ def verify_and_complete(provider_name: str | None = None) -> dict:
 	if ready:
 		# db_set on the cached doc (Agent Settings is a regular single-row DocType,
 		# not `issingle` — set_single_value would write to tabSingles, wrong here).
-		frappe.get_cached_doc(_SETTINGS, _SETTINGS).db_set("setup_complete", 1)
+		frappe.get_cached_doc(_SETTINGS, _SETTINGS_NAME).db_set("setup_complete", 1)
 		frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 
 	return {
