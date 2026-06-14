@@ -6,6 +6,7 @@
     "engine": "InnoDB",
     "field_order": [
         "profile_name",
+        "agent_role",
         "description",
         "assigned_roles",
         "model_provider",
@@ -25,6 +26,16 @@
             "label": "Profile Name",
             "reqd": 1,
             "unique": 1
+        },
+        {
+            "default": "Specialist",
+            "description": "The agent's role in the system (design 68). Orchestrators plan and delegate. Specialists go deep in one domain. Workers execute one narrow task precisely. The role drives the prompt frame, default approval threshold, and (for Orchestrators) a default read-tool seed on first insert.",
+            "fieldname": "agent_role",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Agent Role",
+            "options": "Orchestrator\nSpecialist\nWorker",
+            "reqd": 1
         },
         {
             "fieldname": "description",
