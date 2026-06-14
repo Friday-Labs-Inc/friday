@@ -166,9 +166,13 @@ def _build_system_prompt(profile) -> str:
 
 	The GOVERNANCE paragraph (design 66, Q3) is non-negotiable: it ends the
 	"agent fabricates records when it has no read tool" failure mode the
-	Legion validation transcript documented (L5142). The operator's
-	system_prompt rides after the frame, verbatim, so per-profile voice and
-	the governance contract compose instead of conflict.
+	Legion validation transcript documented (L5142).
+
+	After governance comes the ROLE PREAMBLE (design 68, Q3) — three to five
+	lines that frame how the agent should approach work based on its role
+	(Orchestrator / Specialist / Worker). The operator's system_prompt rides
+	after the role preamble, verbatim, so per-profile voice composes with the
+	role contract instead of conflicting.
 	"""
 	frame = (
 		"You are a Friday AI Agent. "
@@ -180,8 +184,36 @@ def _build_system_prompt(profile) -> str:
 		"records, files, or data you did not retrieve through a tool call. "
 		"Hallucination is a governance failure, not a creativity feature.\n\n"
 	)
+	role_preamble = _role_preamble(getattr(profile, "agent_role", None))
 	operator_prompt = profile.system_prompt or ""
-	return frame + operator_prompt
+	return frame + role_preamble + operator_prompt
+
+
+# Design 68 — role preambles. Short and operational: tells the agent how to
+# frame its work, not what to think. Unknown/blank role falls back to
+# Specialist (the gentlest frame, matches existing behaviour for pre-migration
+# profiles).
+_ROLE_PREAMBLES = {
+	"Orchestrator": (
+		"ORCHESTRATOR ROLE: Your job is to plan and coordinate. Break complex "
+		"work into small tasks, delegate when sub-agents exist, and synthesise "
+		"results. Prefer asking clarifying questions over guessing on scope.\n\n"
+	),
+	"Specialist": (
+		"SPECIALIST ROLE: You are a domain expert. Go deep in your area; ask "
+		"for help when a question falls outside it. Cite the records and files "
+		"you used.\n\n"
+	),
+	"Worker": (
+		"WORKER ROLE: Execute one task precisely. Do not expand scope. If the "
+		"request is ambiguous, ask one clarifying question; otherwise complete "
+		"and report.\n\n"
+	),
+}
+
+
+def _role_preamble(role: str | None) -> str:
+	return _ROLE_PREAMBLES.get(role or "Specialist", _ROLE_PREAMBLES["Specialist"])
 
 
 def _load_history(session_id: str, max_history_turns: int) -> list[dict[str, str]]:
