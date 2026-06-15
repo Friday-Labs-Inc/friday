@@ -83,7 +83,7 @@ from typing import Any
 
 import frappe
 from frappe.friday_core.llm.compression import SUMMARY_PREFIX, latest_summary
-from frappe.friday_core.llm.memory import recall_block
+from frappe.friday_core.llm.memory import project_for_session, recall_block
 from frappe.friday_core.llm.references import expand_references
 from frappe.friday_core.skills.loader import (
 	SkillDefinition,
@@ -123,11 +123,34 @@ def build(
 	system_text = _build_system_prompt(profile)
 	messages.append({"role": "system", "content": system_text})
 
+	# 1a. Project context (design 73) — when this turn happens in a project
+	# room (a Raven channel linked to a Project, or a task:: session), tell the
+	# agent which project it's in and to scope to it. Resolved from session_id,
+	# so no extra plumbing through the gateway is needed. Without this the agent
+	# is blind to the room it's standing in — it asks "which project?" and pulls
+	# in other clients' details.
+	project = project_for_session(session_id)
+	if project:
+		proj_name = frappe.db.get_value("Project", project, "project_name") or project
+		messages.append(
+			{
+				"role": "system",
+				"content": (
+					f"PROJECT CONTEXT: This conversation is the dedicated room for project "
+					f"'{proj_name}' ({project}). Scope every answer to THIS project. Treat "
+					f"'updates', 'status', and 'the brief' as referring to this project. Do "
+					f"NOT reference or pull in other projects' details unless explicitly asked."
+				),
+			}
+		)
+
 	# 1b. Memory recall (design 59, Q2) — the profile's Active memories in a
 	# fenced reference-only block, right after the system prompt. Same
 	# placement pattern as the compaction summary: durable context the model
-	# must know but never treat as instructions.
-	memories = recall_block(profile_name)
+	# must know but never treat as instructions. Design 73 — scoped to the
+	# project when in a project room (this project's memories + global ones,
+	# never another project's).
+	memories = recall_block(profile_name, project=project)
 	if memories:
 		messages.append({"role": "system", "content": memories})
 

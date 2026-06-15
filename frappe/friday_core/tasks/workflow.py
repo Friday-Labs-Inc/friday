@@ -213,6 +213,20 @@ def _watch_transition(doc: "Task") -> None:
 
 	report_back(doc, state)
 
+	# --- Deliverable materialization (design 73, slice 5) ------------------
+	# On completion, write the agent's output as attached artifact files
+	# (md + pdf) so a finished task produces a real, downloadable deliverable —
+	# not just text buried in `result`. Enqueued AFTER COMMIT (PDF rendering is
+	# slow and reads the committed result); `now` under test runs it inline.
+	if state == "Completed":
+		frappe.enqueue(
+			"frappe.friday_core.deliverables.materialize.on_task_completed",
+			queue="short",
+			enqueue_after_commit=True,
+			now=bool(frappe.flags.in_test),
+			task_name=doc.name,
+		)
+
 	# --- emit Redis pub/sub for task runner -------------------------------
 	# Only emit when we are moving INTO Assigned AND the profile actually
 	# changed (avoids duplicate events on re-save without assignment change).

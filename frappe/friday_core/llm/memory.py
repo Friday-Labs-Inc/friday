@@ -72,20 +72,67 @@ def build_memory_context_block(raw_context: str) -> str:
 # ── Recall (Friday-native: rows in, fence out) ──────────────────────────────
 
 
-def recall_block(profile_name: str, token_budget: int = RECALL_TOKEN_BUDGET) -> str | None:
+def project_for_session(session_id: str) -> "str | None":
+	"""Resolve the Project a conversation belongs to, from its session id.
+
+	The session id already encodes the surface, so no extra plumbing is needed
+	to carry the project through the gateway (Design 73):
+	  - Raven chat: ``session_id`` IS the Raven channel id, and a project room's
+	    channel links its Project (``linked_doctype``/``linked_document``,
+	    set by Slice 1).
+	  - Task turns: ``session_id`` is ``task::<task_name>`` → the task's project.
+
+	Returns the Project name, or None for a session with no project (a generic
+	DM, a non-project channel). Never raises.
+	"""
+	if not session_id:
+		return None
+	try:
+		if frappe.db.exists("Raven Channel", session_id):
+			link = frappe.db.get_value(
+				"Raven Channel", session_id, ["linked_doctype", "linked_document"], as_dict=True
+			)
+			if link and link.linked_doctype == "Project" and link.linked_document:
+				return link.linked_document
+	except Exception:
+		pass
+	if session_id.startswith("task::"):
+		try:
+			return frappe.db.get_value("Task", session_id.split("::", 1)[1], "project")
+		except Exception:
+			return None
+	return None
+
+
+def recall_block(
+	profile_name: str, project: "str | None" = None, token_budget: int = RECALL_TOKEN_BUDGET
+) -> str | None:
 	"""The fenced memory block for one profile's turn, or None when empty.
 
 	Newest-first; stops adding memories once the budget is spent (Q2). Recall
 	is strictly profile-scoped (Q5) — the query filters on agent_profile.
+
+	Project scoping (Design 73): when ``project`` is given (the turn is happening
+	in a project room), recall returns memories tagged with THAT project PLUS
+	untagged/global memories — and excludes memories tagged with a *different*
+	project. This stops one client's facts (e.g. "no serifs" for Loop Coffee)
+	bleeding into another's room. When ``project`` is None (a DM / non-project
+	session), all memories are returned (prior behavior, no regression).
 	"""
 	rows = frappe.get_all(
 		"Agent Memory",
 		filters={"agent_profile": profile_name, "status": "Active"},
-		fields=["memory", "subject"],
+		fields=["memory", "subject", "project"],
 		order_by="creation desc",
 	)
 	if not rows:
 		return None
+
+	if project:
+		# This project's memories + global (untagged); drop other projects'.
+		rows = [r for r in rows if not r.get("project") or r.get("project") == project]
+		if not rows:
+			return None
 
 	lines: list[str] = []
 	budget_chars = token_budget * _CHARS_PER_TOKEN
@@ -104,3 +151,29 @@ def recall_block(profile_name: str, token_budget: int = RECALL_TOKEN_BUDGET) -> 
 	if not lines:
 		return None
 	return build_memory_context_block("\n".join(lines))
+
+
+def backfill_memory_projects() -> int:
+	"""Tag existing untagged memories with the project of their source session.
+
+	One-time repair for memories created before project-scoping existed: if a
+	memory was learned in a project room (or a task turn), stamp it with that
+	project so it stops appearing as 'global' in other rooms. Memories learned
+	outside any project stay global. Returns the count updated. Never raises
+	per-row.
+	"""
+	rows = frappe.get_all(
+		"Agent Memory",
+		filters={"status": "Active", "project": ["in", [None, ""]]},
+		fields=["name", "source_session"],
+	)
+	updated = 0
+	for r in rows:
+		proj = project_for_session(r.get("source_session") or "")
+		if proj:
+			try:
+				frappe.db.set_value("Agent Memory", r["name"], "project", proj, update_modified=False)
+				updated += 1
+			except Exception:
+				pass
+	return updated

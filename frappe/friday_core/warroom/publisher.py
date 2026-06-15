@@ -197,18 +197,33 @@ def _post_to_raven(channel_id: str, payload: dict) -> None:
 	     fires from a background worker / the task-transition hook, where there is
 	     no HTTP session — so even with the right path it would 403.
 
-	Net effect of the old path: every War Room post silently failed. The
-	in-process call inserts a Raven Message in the CURRENT transaction (it does
-	no commit of its own), firing Raven's own realtime hooks so the channel
-	updates live. ``send_message`` takes ``channel_id`` and ``text`` only;
-	``message_type`` is "Text" internally, so the old ``message_type`` /
-	``hide_in_message_history`` keys are dropped. Failures propagate to
-	``post_task_update``, which logs and degrades gracefully.
+	Posts AS THE FRIDAY BOT, not as the session/worker user. This is correct
+	(War Room updates come *from Friday*) AND it dodges a Raven bug: the non-bot
+	message path runs ``track_channel_visit`` (raven/utils.py:44), which looks up
+	channel membership by the message ``owner`` but then inserts a member for
+	``frappe.session.user`` — throwing ``DuplicateEntryError`` ("You are already
+	a member of this channel") whenever that user is already in the channel. That
+	is exactly why War Room posts were intermittently lost. Bot messages skip
+	``track_channel_visit`` entirely (``raven_message.on_update`` gates it on
+	``not is_bot_message``), so they always land. (Found 2026-06-15, Design 73.)
+
+	Falls back to the plain ``send_message`` API only if the Friday bot is not
+	provisioned on this site. Failures propagate to ``post_task_update``, which
+	logs and degrades gracefully.
 
 	Args:
 		channel_id: The ``Raven Channel`` document name.
 		payload: The message dict built by _build_payload (only ``text`` is used).
 	"""
+	from frappe.friday_core.surfaces.raven_adapter import FRIDAY_BOT_NAME
+
+	if frappe.db.exists("Raven Bot", FRIDAY_BOT_NAME):
+		bot = frappe.get_doc("Raven Bot", FRIDAY_BOT_NAME)
+		bot.send_message(channel_id=channel_id, text=payload["text"], markdown=True)
+		return
+
+	# No bot on this site — fall back to the plain API (may hit the Raven
+	# membership bug above, but better than no post at all).
 	from raven.api.raven_message import send_message
 
 	send_message(channel_id=channel_id, text=payload["text"])

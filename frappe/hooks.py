@@ -208,6 +208,18 @@ doc_events = {
 			"frappe.friday_core.skills.loader.invalidate_for_profile",
 		],
 	},
+	# Design 73 — each project gets a dedicated Raven conversation channel,
+	# provisioned on creation and archived when the project closes. Both
+	# handlers are best-effort (savepoint-guarded) so a Raven hiccup never
+	# blocks a Project save.
+	"Project": {
+		"after_insert": "frappe.friday_core.conversation.project_channel.on_project_after_insert",
+		"on_update": [
+			"frappe.friday_core.conversation.project_channel.on_project_update",
+			# Design 73 Slice 5 — assemble the deliverable package when a project completes.
+			"frappe.friday_core.deliverables.materialize.on_project_doc_update",
+		],
+	},
 	"Role": {
 		"on_update": [
 			"frappe.friday_core.permissions.cache.invalidate_all",

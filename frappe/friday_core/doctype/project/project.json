@@ -16,6 +16,7 @@
   "expected_end_date",
   "actual_start_date",
   "actual_end_date",
+  "conversation_channel",
   "rollup_section",
   "percent_complete",
   "total_tasks",
@@ -93,6 +94,13 @@
    "fieldname": "actual_end_date",
    "fieldtype": "Date",
    "label": "Actual End Date",
+   "read_only": 1
+  },
+  {
+   "description": "The dedicated Raven channel for this project's team conversation (Design 73). Auto-provisioned on creation. Stored as the channel docname (Data, not Link, so friday_core stays installable without Raven).",
+   "fieldname": "conversation_channel",
+   "fieldtype": "Data",
+   "label": "Conversation Channel",
    "read_only": 1
   },
   {
