@@ -403,11 +403,16 @@ def _remember(memory: str, subject: str) -> None:
 	)
 	if not frappe.db.exists("Agent Profile", profile):
 		return
+	# Design 73 — scope the memory to its project. The subject is the backend_ref
+	# (e.g. FLI-001), so resolve the Project from it; recall in that project's
+	# room then sees this fact, and other rooms don't.
+	project = frappe.db.get_value("Project", {"backend_ref": subject}, "name") if subject else None
 	frappe.get_doc(
 		{
 			"doctype": "Agent Memory",
 			"memory": memory[:490],
 			"agent_profile": profile,
+			"project": project,
 			"subject": subject,
 			"source_session": "randompack-events",
 			"status": "Active",

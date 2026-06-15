@@ -228,24 +228,46 @@ class TestBuildPayload(unittest.TestCase):
 
 
 class TestPostToRavenInProcess(unittest.TestCase):
-	"""_post_to_raven posts via raven's in-process send_message — not HTTP.
+	"""_post_to_raven posts via the Friday BOT in-process — not HTTP, not as a user.
 
-	Regression guard for the bug where every War Room post silently failed: the
-	old code POSTed to the non-existent ``raven.api.send_message`` endpoint with a
-	session cookie a worker doesn't have.
+	Regression guard for two bugs:
+	1. the original HTTP POST to a non-existent endpoint with a worker-less cookie
+	   (every post silently failed), and
+	2. posting as the session user, which trips Raven's track_channel_visit
+	   "already a member" DuplicateEntryError (Design 73). Posting as the bot
+	   skips that path entirely.
 	"""
 
-	@patch("raven.api.raven_message.send_message")
-	def test_calls_send_message_with_channel_and_text(self, mock_send):
+	@patch("frappe.get_doc")
+	@patch("frappe.db.exists", return_value=True)
+	def test_posts_as_friday_bot(self, _mock_exists, mock_get_doc):
 		from frappe.friday_core.warroom.publisher import _post_to_raven
+
+		mock_bot = MagicMock()
+		mock_get_doc.return_value = mock_bot
 
 		_post_to_raven(
 			"raven-channel-123",
 			{"text": "hello war room", "message_type": "Text", "hide_in_message_history": False},
 		)
 
-		# correct function (raven.api.raven_message.send_message), only the two
-		# real params — message_type / hide_in_message_history are NOT passed.
+		# Posts through the bot's send_message, markdown=True, to the channel.
+		mock_bot.send_message.assert_called_once()
+		_, kwargs = mock_bot.send_message.call_args
+		self.assertEqual(kwargs["channel_id"], "raven-channel-123")
+		self.assertEqual(kwargs["text"], "hello war room")
+		self.assertTrue(kwargs.get("markdown"))
+
+	@patch("raven.api.raven_message.send_message")
+	@patch("frappe.db.exists", return_value=False)
+	def test_falls_back_to_api_when_no_bot(self, _mock_exists, mock_send):
+		"""When the Friday bot isn't provisioned, fall back to the plain API."""
+		from frappe.friday_core.warroom.publisher import _post_to_raven
+
+		_post_to_raven(
+			"raven-channel-123",
+			{"text": "hello war room", "message_type": "Text", "hide_in_message_history": False},
+		)
 		mock_send.assert_called_once_with(channel_id="raven-channel-123", text="hello war room")
 
 	def test_no_http_post(self):
@@ -257,7 +279,7 @@ class TestPostToRavenInProcess(unittest.TestCase):
 		# with a worker-less session cookie). The fix is a pure in-process call.
 		src = inspect.getsource(publisher._post_to_raven)
 		self.assertNotIn("requests.post", src)
-		self.assertIn("raven.api.raven_message", src)
+		self.assertIn("send_message", src)
 
 
 if __name__ == "__main__":

@@ -32,13 +32,19 @@ def remember(skill_name: str, parameters: dict) -> dict:
 	if not profile:
 		raise ValueError("remember could not determine the calling agent profile")
 
+	session_id = ctx.get("session_id") or ""
+	# Design 73 — tag the memory with the project it was learned in (if any), so
+	# recall in a project room stays scoped to that project. Blank = global.
+	from frappe.friday_core.llm.memory import project_for_session
+
 	doc = frappe.get_doc(
 		{
 			"doctype": "Agent Memory",
 			"memory": memory,
 			"agent_profile": profile,
+			"project": project_for_session(session_id),
 			"subject": (parameters.get("subject") or "").strip(),
-			"source_session": ctx.get("session_id") or "",
+			"source_session": session_id,
 			"status": "Active",
 		}
 	)

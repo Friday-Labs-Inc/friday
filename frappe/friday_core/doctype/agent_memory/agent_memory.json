@@ -5,6 +5,7 @@
     "field_order": [
         "memory",
         "agent_profile",
+        "project",
         "subject",
         "status",
         "source_session"
@@ -26,6 +27,13 @@
             "label": "Agent Profile",
             "options": "Agent Profile",
             "reqd": 1
+        },
+        {
+            "description": "Project this memory belongs to (Design 73). Set when the memory is learned in a project room. Recall in a project room returns THIS project's memories + untagged/global ones — never another project's. Blank = global.",
+            "fieldname": "project",
+            "fieldtype": "Link",
+            "label": "Project",
+            "options": "Project"
         },
         {
             "description": "Optional grouping tag — a client, a brief ID (e.g. 'BB-0001'), a topic. For filtering in Desk.",

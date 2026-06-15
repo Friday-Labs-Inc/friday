@@ -104,8 +104,16 @@ def _ensure_raven_user(user_id: str) -> str | None:
 		return None
 	existing = frappe.db.get_value("Raven User", {"user": user_id}, "name")
 	if existing:
+		# Ensure the Raven User is ENABLED. A disabled Raven User is silently
+		# filtered out of get_channel_members (it joins on raven_user.enabled=1),
+		# so get_channel_member misses an actual member — and Raven's
+		# track_channel_visit then tries to re-insert that member and throws
+		# DuplicateEntryError, surfacing as a 409 on get_messages and a blank
+		# channel in the UI. (Design 73 reliability fix, 2026-06-15.)
+		if not frappe.db.get_value("Raven User", existing, "enabled"):
+			frappe.db.set_value("Raven User", existing, "enabled", 1)
 		return existing
-	ru = frappe.get_doc({"doctype": "Raven User", "user": user_id, "type": "User"})
+	ru = frappe.get_doc({"doctype": "Raven User", "user": user_id, "type": "User", "enabled": 1})
 	ru.insert(ignore_permissions=True)
 	return ru.name
 

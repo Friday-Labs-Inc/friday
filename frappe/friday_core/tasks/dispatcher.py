@@ -25,6 +25,9 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime
 
+from frappe.friday_core.observability import emit
+from frappe.friday_core.observability.emit import emit_skip_deduped
+
 _logger = frappe.logger("friday.tasks.dispatcher")
 
 
@@ -69,14 +72,25 @@ def _ready_to_dispatch(task_doc) -> bool:
 	  gate.decided events or humans),
 	- AND-dependencies: every linked task must be Completed (Q3),
 	- a paused project ("On Hold") parks its whole pipeline.
+
+	Design 72 — every "not ready" path emits a deduped ``dispatcher.skip`` so
+	the Dispatcher Queue panel can answer *why* a task is sitting unclaimed.
+	Dedup window is 60s (one row per task per reason per tick).
 	"""
 	if (task_doc.get("execution_mode") or "mechanical") == "milestone":
+		emit_skip_deduped(task_doc.name, "milestone_not_dispatchable")
 		return False
 	for dep in task_doc.get("depends_on") or []:
 		if frappe.db.get_value("Task", dep.task, "workflow_state") != "Completed":
+			emit_skip_deduped(
+				task_doc.name,
+				"parent_pending",
+				payload={"waiting_on": dep.task},
+			)
 			return False
 	if task_doc.get("project"):
 		if frappe.db.get_value("Project", task_doc.project, "status") == "On Hold":
+			emit_skip_deduped(task_doc.name, "project_on_hold")
 			return False
 	return True
 
@@ -139,9 +153,22 @@ def _claim_and_dispatch(task_doc: "Task") -> None:
 			task_doc.name,
 			[trow.skill for trow in task_doc.required_skills],
 		)
+		# Design 72 — surface the skip reason so the operator can see *why*
+		# this task is sitting unclaimed. Deduped by (task, reason) within 60s.
+		emit_skip_deduped(
+			task_doc.name,
+			"no_profile_match",
+			payload={
+				"required_skills": [r.skill for r in task_doc.required_skills if r.skill],
+			},
+		)
 		return
 
 	chosen_profile = eligible[0]
+
+	# Design 72 — flag the upcoming save so the workflow hook can stamp the
+	# resulting workflow.state_change event with the honest source.
+	frappe.flags.dispatcher_event_source = "dispatcher_claim"
 
 	# Assign the profile AND transition Pending → Assigned in a single save.
 	# The state change is what fires ``tasks.workflow.on_state_change``, which
@@ -159,6 +186,21 @@ def _claim_and_dispatch(task_doc: "Task") -> None:
 	task_doc.workflow_state = "Assigned"
 	task_doc.assigned_at = frappe.utils.now_datetime()
 	task_doc.save(ignore_permissions=True)
+
+	# Design 72 — record the successful claim. The workflow.state_change event
+	# is also emitted by the hook (with the same trigger_source flag), so the
+	# claim_attempt event is the lower-level confirmation that this dispatcher
+	# tick was the actor (vs the runner's own atomic claim race).
+	emit(
+		"dispatcher.claim_attempt",
+		task=task_doc.name,
+		project=task_doc.get("project"),
+		agent_profile=chosen_profile,
+		trigger_source="won",
+		summary=f"{task_doc.name} claimed for {chosen_profile}",
+	)
+	# Clear the flag so subsequent saves in this tick don't inherit it.
+	frappe.flags.dispatcher_event_source = None
 
 
 def _match_profiles(task_doc: "Task") -> list[str]:

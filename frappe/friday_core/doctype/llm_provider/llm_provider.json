@@ -16,6 +16,8 @@
         "default_temperature",
         "input_cost_per_million",
         "output_cost_per_million",
+        "request_timeout_seconds",
+        "request_stale_seconds",
         "oauth_section",
         "oauth_flavor",
         "oauth_access_token",
@@ -106,6 +108,18 @@
             "label": "Output Cost per 1M Tokens (USD)",
             "precision": "6",
             "description": "Operator-set rate for output/completion tokens. Leave blank to skip cost estimation."
+        },
+        {
+            "fieldname": "request_timeout_seconds",
+            "fieldtype": "Int",
+            "label": "Request Timeout (seconds)",
+            "description": "Per-call wall-clock budget. Leave blank for the Hermes-parity default of 1800s (30 min) — appropriate for long goal-mode generations. Maps to httpx.Timeout.write and acts as an overall cap on the streaming session."
+        },
+        {
+            "fieldname": "request_stale_seconds",
+            "fieldtype": "Int",
+            "label": "Stream Stale Timeout (seconds)",
+            "description": "Streaming watchdog — kills the call if no token arrives for this many seconds. Maps to httpx.Timeout.read. Default 120s matches Hermes's HERMES_STREAM_READ_TIMEOUT. This is the knob that actually fires on a hung provider; the request_timeout_seconds is the total-session cap behind it. Lower it for fast-fail; raise it for slow-prefill local providers."
         },
         {
             "fieldname": "oauth_section",

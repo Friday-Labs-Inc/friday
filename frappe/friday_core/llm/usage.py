@@ -95,6 +95,48 @@ def record_usage(
 			}
 		)
 		doc.insert(ignore_permissions=True)
+
+		# Design 72 — emit one trace event per LLM call. Extract the task name
+		# from the session_id when it's a task-driven session (format:
+		# `task::<task_name>`). Other session shapes (chat, delegate sub-turns)
+		# emit without a task — still useful for global LLM cost auditing.
+		#
+		# Type-validate inputs at the boundary: tests routinely inject MagicMock
+		# objects for `session_id` / `profile_name`, and Postgres can't adapt
+		# those to query params. Validating here keeps a failed emit from
+		# poisoning the surrounding transaction with `InFailedSqlTransaction`.
+		try:
+			from frappe.friday_core.observability import emit
+
+			task_name = None
+			if isinstance(session_id, str) and session_id.startswith("task::"):
+				task_name = session_id.split("::", 1)[1]
+			safe_profile = profile_name if isinstance(profile_name, str) else None
+			safe_session = session_id if isinstance(session_id, str) else None
+			emit(
+				"llm.call_summary",
+				task=task_name,
+				agent_profile=safe_profile,
+				trigger_source="llm_call_succeeded",
+				summary=(
+					f"{getattr(provider, 'PROVIDER_NAME', 'unknown')}/{model or 'unknown'}: "
+					f"{prompt_tokens}+{completion_tokens}={total_tokens} tok, ${cost or 0:.4f}"
+				),
+				payload={
+					"provider": getattr(provider, "PROVIDER_NAME", ""),
+					"model": model or "",
+					"prompt_tokens": prompt_tokens,
+					"completion_tokens": completion_tokens,
+					"total_tokens": total_tokens,
+					"estimated_cost": cost,
+					"session_id": safe_session,
+				},
+			)
+		except Exception:
+			# emit() never raises, but the import path itself could fail if
+			# observability is removed entirely — keep usage recording bulletproof.
+			pass
+
 		return doc.name
 	except Exception:
 		try:

@@ -92,6 +92,23 @@ def raise_failure_issue(
 		}
 	)
 	issue.insert(ignore_permissions=True)
+
+	# Design 72 — record the Issue raise as a trace event so the Lifecycle Trace
+	# shows the link from a runner.error event to the Issue ticket without the
+	# operator hunting through Issue list.
+	try:
+		from frappe.friday_core.observability import emit
+
+		emit(
+			"issue.raised",
+			task=task_name,
+			trigger_source="failure",
+			summary=f"Issue raised: {subject}",
+			payload={"issue": issue.name, "error_type": error_type},
+		)
+	except Exception:
+		pass
+
 	return issue.name
 
 
@@ -115,4 +132,18 @@ def raise_dependency_wait_issue(task_name: str, blocking_task: str) -> str:
 		}
 	)
 	issue.insert(ignore_permissions=True)
+
+	try:
+		from frappe.friday_core.observability import emit
+
+		emit(
+			"issue.raised",
+			task=task_name,
+			trigger_source="dependency_wait",
+			summary=f"Issue raised: Dependency-Wait on {blocking_task}",
+			payload={"issue": issue.name, "waiting_on": blocking_task},
+		)
+	except Exception:
+		pass
+
 	return issue.name
