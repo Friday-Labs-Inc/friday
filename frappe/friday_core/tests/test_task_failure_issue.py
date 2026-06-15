@@ -76,5 +76,66 @@ class TestRunnerCrashRaisesFailureIssue(unittest.TestCase):
 		self.assertEqual(mock_warroom.call_args.args[2]["issue"], "ISS-3")
 
 
+class TestAgenticFailureRecordsBlockedReason(unittest.TestCase):
+	"""A failed agentic turn records the LLMError's classified reason on
+	Task.blocked_reason, so the reconciler can auto-retry transient failures."""
+
+	@patch("frappe.friday_core.tasks.rollup.task_cost_from_usage", return_value=None)
+	@patch("frappe.friday_core.agent_runner.runner.run_turn")
+	@patch(f"{_T}._post_warroom")
+	@patch(f"{_T}._raise_failure_issue", return_value="ISS-9")
+	@patch(f"{_T}._elapsed_ms", return_value=100)
+	@patch(f"{_T}.now_datetime", return_value="2026-01-01 00:00:00")
+	@patch(f"{_T}.frappe")
+	def test_retryable_llm_error_sets_transient_blocked_reason(
+		self, mock_frappe, _now, _elapsed, _issue, _warroom, mock_run_turn, _cost
+	):
+		from frappe.friday_core.llm.provider import LLMError
+		from frappe.friday_core.tasks.runner import _run_task_agentic
+
+		mock_frappe.as_json = lambda x: "json"
+		err = LLMError("minimax timed out")
+		err.reason = "timeout"
+		err.retryable = True
+		mock_run_turn.side_effect = err
+
+		task = MagicMock(name="task")
+		task.name = "T-AG"
+		task.title = "t"
+		task.description = "d"
+
+		_run_task_agentic(task, "P")
+
+		self.assertEqual(task.workflow_state, "Blocked")
+		# the fix: the classified reason is recorded → reconciler auto-retries it
+		self.assertEqual(task.blocked_reason, "timeout")
+
+	@patch("frappe.friday_core.tasks.rollup.task_cost_from_usage", return_value=None)
+	@patch("frappe.friday_core.agent_runner.runner.run_turn")
+	@patch(f"{_T}._post_warroom")
+	@patch(f"{_T}._raise_failure_issue", return_value="ISS-9")
+	@patch(f"{_T}._elapsed_ms", return_value=100)
+	@patch(f"{_T}.now_datetime", return_value="2026-01-01 00:00:00")
+	@patch(f"{_T}.frappe")
+	def test_unclassified_error_leaves_blocked_reason_none(
+		self, mock_frappe, _now, _elapsed, _issue, _warroom, mock_run_turn, _cost
+	):
+		from frappe.friday_core.tasks.runner import _run_task_agentic
+
+		mock_frappe.as_json = lambda x: "json"
+		mock_run_turn.side_effect = RuntimeError("a real bug, not transient")
+
+		task = MagicMock(name="task")
+		task.name = "T-AG2"
+		task.title = "t"
+		task.description = "d"
+
+		_run_task_agentic(task, "P")
+
+		self.assertEqual(task.workflow_state, "Blocked")
+		# non-LLM error has no reason → stays Blocked for a human, never auto-retried
+		self.assertIsNone(task.blocked_reason)
+
+
 if __name__ == "__main__":
 	unittest.main()

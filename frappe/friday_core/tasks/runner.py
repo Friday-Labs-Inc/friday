@@ -456,6 +456,11 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"
+		# Record the classified reason (e.g. "timeout", "rate_limit") an LLMError
+		# carries, so the reconciler can auto-retry transient transport failures
+		# instead of stranding the task. None for unclassified errors — those stay
+		# Blocked for a human (a non-transient reason is never auto-retried).
+		task.blocked_reason = getattr(exc, "reason", None)
 		# Design 65d — capture whatever LLM spend accrued before the failure
 		# (honest blank if no rates configured), so a blocked task still shows
 		# its cost.

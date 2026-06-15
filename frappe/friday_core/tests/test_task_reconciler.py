@@ -157,9 +157,14 @@ class TestReconcilerTransientBlockedRetry(unittest.TestCase):
 		# passed as a SQL parameter, so we check the parameterised shape.
 		self.assertIn("retry_count <", sql)
 		self.assertIn("%(budget)s", sql)
-		# Only the transient reasons (oom/timeout/runner_lost) are retried;
-		# semantic blocks (dependency_failed, no_profile_for_skills) wait for humans.
+		# Transient reasons are retried; semantic blocks (dependency_failed,
+		# no_profile_for_skills) wait for humans. The reason list is a SQL param
+		# sourced from TRANSIENT_BLOCKED_REASONS and now includes the retryable
+		# LLM transport reasons so a provider hiccup self-heals.
 		self.assertIn("blocked_reason IN", sql)
+		params = mock_frappe.db.sql.call_args[0][1]
+		for reason in ("timeout", "rate_limit", "server_error", "overloaded"):
+			self.assertIn(reason, params["reasons"])
 
 
 class TestReconcilerRandomPackEvents(unittest.TestCase):
