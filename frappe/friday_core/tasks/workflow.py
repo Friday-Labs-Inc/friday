@@ -25,8 +25,21 @@ from __future__ import annotations
 
 import frappe
 
+from frappe.friday_core.observability import emit
+
 # Lazy import to avoid circular imports — warroom itself doesn't import tasks.
 _warroom = None
+
+
+def _current_trigger_source() -> str:
+	"""Read the caller's hint about what triggered this save (Design 72).
+
+	Callers (dispatcher / reconciler / runner) set ``frappe.flags.dispatcher_event_source``
+	before saving so the workflow hook can stamp the resulting event with an
+	honest trigger. Falls back to ``"unknown"`` for direct user/Desk saves —
+	the operator can still see the transition; the source is just not labeled.
+	"""
+	return frappe.flags.get("dispatcher_event_source") or "unknown"
 
 
 def _get_warroom():
@@ -78,7 +91,20 @@ def on_state_change(doc: "Task", method: str) -> None:
 
 	# Only act on actual workflow state transitions, not unrelated field saves.
 	if doc.has_value_changed("workflow_state"):
+		_emit_state_change_event(doc)
 		_watch_transition(doc)
+
+	# Design 72 — record token release as its own event so the Lifecycle Trace
+	# shows when the runner's claim was given up (the bug that caught us at
+	# 2026-06-14: stale token + dispatchable=0 stranded gate1_prep for 20 min).
+	if release_token and doc.has_value_changed("executing_token"):
+		emit(
+			"workflow.executing_token_released",
+			task=doc.name,
+			project=doc.get("project"),
+			trigger_source=_current_trigger_source(),
+			summary=f"{doc.name}: token released (state={doc.workflow_state})",
+		)
 
 	# Design 65d — derive the display fields from the live state too: the
 	# 0/50/100 progress bar and the is_milestone mirror of execution_mode.
@@ -101,6 +127,25 @@ def on_state_change(doc: "Task", method: str) -> None:
 	if release_token:
 		derived["executing_token"] = None
 	doc.db_set(derived, update_modified=False)
+
+
+def _emit_state_change_event(doc: "Task") -> None:
+	"""Design 72 — record every workflow state transition for the Lifecycle Trace.
+
+	Reads ``frappe.flags.dispatcher_event_source`` to honestly stamp who caused
+	the transition (dispatcher_claim, reconciler_reset, runner_complete, etc.).
+	"""
+	from_state = (doc.get_doc_before_save() or {}).get("workflow_state") if doc.get_doc_before_save() else None
+	to_state = doc.workflow_state
+	emit(
+		"workflow.state_change",
+		task=doc.name,
+		project=doc.get("project"),
+		agent_profile=doc.get("assigned_to_profile"),
+		trigger_source=_current_trigger_source(),
+		summary=f"{doc.name}: {from_state or '(new)'} → {to_state}",
+		payload={"from": from_state, "to": to_state, "retry_count": doc.get("retry_count")},
+	)
 
 
 def _watch_transition(doc: "Task") -> None:
@@ -174,6 +219,17 @@ def _watch_transition(doc: "Task") -> None:
 	if state == "Assigned" and doc.has_value_changed("assigned_to_profile"):
 		_emit_assigned_event(doc.name, doc.assigned_to_profile)
 
+	# --- Task Completion Summary (Design 72) ------------------------------
+	# Write the permanent compact summary on terminal transitions so the audit
+	# trail survives the 30-day Dispatcher Event purge. Idempotent upsert by
+	# task name — a Blocked→Pending reset by the reconciler followed by
+	# another terminal transition overwrites the prior summary in place.
+	# Savepoint-guarded inside the writer; can never break the task save.
+	from frappe.friday_core.observability import is_terminal, write_task_completion_summary
+
+	if is_terminal(doc):
+		write_task_completion_summary(doc)
+
 
 def _post_warroom_update(doc: "Task", state: str) -> None:
 	"""
@@ -195,9 +251,23 @@ def _post_warroom_update(doc: "Task", state: str) -> None:
 		frappe.db.savepoint("friday_warroom")
 		details = {"profile": doc.assigned_to_profile} if doc.assigned_to_profile else None
 		warroom.post_task_update(doc.name, state.lower(), details)
+		emit(
+			"warroom.post",
+			task=doc.name,
+			project=doc.get("project"),
+			trigger_source="succeeded",
+			summary=f"war room: {doc.name} {state.lower()}",
+		)
 	except Exception:
 		# Never block the task pipeline — degrade gracefully.
 		frappe.db.rollback(save_point="friday_warroom")
+		emit(
+			"warroom.post",
+			task=doc.name,
+			project=doc.get("project"),
+			trigger_source="silently_rolled_back_savepoint",
+			summary=f"war room post failed for {doc.name} ({state})",
+		)
 
 
 def _emit_assigned_event(task_name: str, assigned_to_profile: str) -> None:

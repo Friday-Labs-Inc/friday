@@ -86,6 +86,7 @@ HUB_WORKSPACE_NAME = "Friday"
 # DocTypes by name; ``doc_view`` picks the list view they open into.
 HUB_SHORTCUTS: list[dict] = [
 	{"type": "Page", "label": "Project Console", "link_to": "project-console", "color": "Green"},
+	{"type": "Page", "label": "Dispatcher Console", "link_to": "dispatcher-console", "color": "Red"},
 	{"type": "DocType", "label": "Projects", "link_to": "Project", "doc_view": "List", "color": "Blue"},
 	{"type": "DocType", "label": "Tasks", "link_to": "Task", "doc_view": "List", "color": "Cyan"},
 	{"type": "DocType", "label": "Agents", "link_to": "Agent Profile", "doc_view": "List", "color": "Purple"},
@@ -102,6 +103,10 @@ HUB_CARDS: list[dict] = [
 	{
 		"label": "Governance & Logs",
 		"links": ["Permission Decision Log", "Execution Log", "Workflow Request", "Compaction Summary"],
+	},
+	{
+		"label": "Observability",
+		"links": ["Dispatcher Event", "Task Completion Summary"],
 	},
 ]
 

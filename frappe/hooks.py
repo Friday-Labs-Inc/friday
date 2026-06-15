@@ -323,6 +323,8 @@ scheduler_events = {
 		"frappe.desk.doctype.event.event.send_event_digest",
 		"frappe.email.doctype.notification.notification.trigger_daily_alerts",
 		"frappe.desk.form.document_follow.send_daily_updates",
+		# Design 72 — Dispatcher Event 30-day retention sweep.
+		"frappe.friday_core.observability.retention.purge_old_events",
 	],
 	"daily_long": [],
 	"daily_maintenance": [

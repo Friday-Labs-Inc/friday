@@ -1,0 +1,200 @@
+/* Dispatcher Console (Design 72) — framework mechanics view.
+ *
+ * Two tabs: Pulse (2x3 grid of cells, system health at-a-glance) and
+ * Lifecycle Trace (per-task event timeline). Polling refreshes both at 2s.
+ */
+
+.fd-console {
+	font-family: var(--font-stack);
+	color: var(--text-color);
+	padding: 12px 16px 24px;
+}
+
+.fd-tabs {
+	display: flex;
+	gap: 4px;
+	border-bottom: 1px solid var(--border-color);
+	margin-bottom: 16px;
+}
+
+.fd-tab {
+	padding: 10px 18px;
+	background: transparent;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	color: var(--text-muted);
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.fd-tab.active {
+	color: var(--text-color);
+	border-bottom-color: var(--primary-color, #5e72e4);
+}
+
+.fd-tab-body {
+	display: none;
+}
+
+.fd-tab-body.active {
+	display: block;
+}
+
+/* ----- Pulse grid ------------------------------------------------------ */
+
+.fd-pulse-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	grid-template-rows: repeat(2, auto);
+	gap: 14px;
+}
+
+.fd-cell {
+	background: var(--card-bg);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 14px 16px;
+	min-height: 110px;
+	position: relative;
+}
+
+.fd-cell-title {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+	margin-bottom: 6px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.fd-status-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	display: inline-block;
+}
+
+.fd-status-dot.green { background: #2dce89; }
+.fd-status-dot.amber { background: #f6c343; }
+.fd-status-dot.red   { background: #f5365c; }
+.fd-status-dot.idle  { background: #adb5bd; }
+
+.fd-cell-headline {
+	font-size: 22px;
+	font-weight: 600;
+	line-height: 1.15;
+	margin-bottom: 4px;
+}
+
+.fd-cell-detail {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.45;
+}
+
+.fd-cell-detail b {
+	color: var(--text-color);
+}
+
+/* ----- Lifecycle Trace ------------------------------------------------- */
+
+.fd-trace-bar {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	margin-bottom: 12px;
+	flex-wrap: wrap;
+}
+
+.fd-trace-bar select {
+	flex: 1;
+	min-width: 240px;
+	max-width: 480px;
+	padding: 6px 10px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	background: var(--card-bg);
+	color: var(--text-color);
+}
+
+.fd-trace-bar .fd-tail-toggle {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.fd-trace-summary {
+	background: var(--card-bg);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 12px 16px;
+	margin-bottom: 12px;
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 12px;
+	font-size: 12px;
+}
+
+.fd-trace-summary .label {
+	color: var(--text-muted);
+	text-transform: uppercase;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	margin-bottom: 2px;
+}
+
+.fd-trace-list {
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	background: var(--card-bg);
+	max-height: 70vh;
+	overflow-y: auto;
+}
+
+.fd-trace-row {
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border-color);
+	display: grid;
+	grid-template-columns: 92px 200px 1fr;
+	gap: 12px;
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.fd-trace-row:last-child {
+	border-bottom: 0;
+}
+
+.fd-trace-row .ts {
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.fd-trace-row .et {
+	font-weight: 600;
+	color: var(--text-color);
+}
+
+.fd-trace-row .et .src {
+	font-weight: 400;
+	color: var(--text-muted);
+	margin-left: 6px;
+}
+
+.fd-trace-row .summary {
+	color: var(--text-color);
+}
+
+.fd-trace-row.workflow-state-change { background: rgba(94, 114, 228, 0.05); }
+.fd-trace-row.dispatcher-skip        { background: rgba(246, 195, 67, 0.06); }
+.fd-trace-row.runner-error,
+.fd-trace-row.runner-block           { background: rgba(245, 54, 92, 0.06); }
+.fd-trace-row.runner-complete        { background: rgba(45, 206, 137, 0.05); }
+
+.fd-trace-empty {
+	padding: 32px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 13px;
+}

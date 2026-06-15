@@ -1,0 +1,34 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event_type",
+  "trigger_source",
+  "task",
+  "project",
+  "agent_profile",
+  "summary",
+  "payload_json"
+ ],
+ "fields": [
+  {"fieldname": "event_type", "fieldtype": "Data", "in_list_view": 1, "label": "Event Type", "reqd": 1, "description": "Dotted type, e.g. workflow.state_change, dispatcher.skip, llm.call_summary."},
+  {"fieldname": "trigger_source", "fieldtype": "Data", "in_list_view": 1, "label": "Trigger Source", "description": "What caused this event: manual_save, dispatcher_claim, reconciler_reset, runner_complete, runner_block, runner_error, user_desk, system."},
+  {"fieldname": "task", "fieldtype": "Link", "in_list_view": 1, "label": "Task", "options": "Task"},
+  {"fieldname": "project", "fieldtype": "Link", "label": "Project", "options": "Project", "description": "Denormalized from task at emit time so the Lifecycle Trace can group without joins."},
+  {"fieldname": "agent_profile", "fieldtype": "Link", "label": "Agent Profile", "options": "Agent Profile"},
+  {"fieldname": "summary", "fieldtype": "Small Text", "in_list_view": 1, "label": "Summary", "description": "Short human-readable line shown in the trace timeline."},
+  {"fieldname": "payload_json", "fieldtype": "JSON", "label": "Payload (JSON)", "description": "Structured event-specific payload."}
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Dispatcher Event",
+ "naming_rule": "Autoincrement",
+ "permissions": [
+  {"read": 1, "role": "System Manager"}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

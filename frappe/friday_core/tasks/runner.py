@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.friday_core.issues.raise_issue import raise_failure_issue
+from frappe.friday_core.observability import emit
 from frappe.utils import now_datetime
 
 # Lazy import to avoid circular dependency with the warroom module.
@@ -98,18 +99,30 @@ def on_agent_task_assigned(message: dict) -> None:
 
 	try:
 		_run_task(task_name, profile_name)
-	except Exception:
+	except Exception as exc:
 		# An unexpected crash in the runner itself — NOT a skill-level failure
 		# (those land in _block_task via SandboxResult.status). Auto-raise a
 		# Failure Issue and surface it (D6).
 		#
-		# This previously had `except frappe.friday_core.sandbox.runner.
-		# SandboxOutOfMemory / SandboxTimeout` clauses, but those classes don't
-		# exist (the sandbox signals oom/timeout via `status`, handled in
-		# _block_task). Evaluating the missing name raised AttributeError and
-		# MASKED the real error. Collapsed to one correct handler.
+		# Design 72 — also fix the resilience gap that stranded FLI-001's
+		# guidelines task: a Postgres UniqueViolation poisons the surrounding
+		# transaction, and the error handler below then crashes on
+		# InFailedSqlTransaction when it tries DB writes. Roll back FIRST so the
+		# transaction is usable; then record the failure and emit a trace event.
+		try:
+			frappe.db.rollback()
+		except Exception:
+			_logger.exception("rollback failed before issue raise (will continue)")
 		_logger.exception("Task runner crashed for task %s on profile %s", task_name, profile_name)
 		issue_name = _raise_failure_issue(task_name, "error")
+		emit(
+			"runner.error",
+			task=task_name,
+			agent_profile=profile_name,
+			trigger_source="runner_loop_exception",
+			summary=f"runner crashed: {type(exc).__name__}: {str(exc)[:200]}",
+			payload={"exc_type": type(exc).__name__, "issue": issue_name},
+		)
 		_post_warroom(task_name, "error", {"profile": profile_name, "issue": issue_name})
 
 
@@ -425,11 +438,24 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 	from frappe.friday_core.tasks.rollup import task_cost_from_usage
 
 	started_at = now_datetime()
-	task.workflow_state = "Executing"
-	task.assigned_to_profile = profile_name
-	task.started_at = started_at
-	task.save(ignore_permissions=True)
+	frappe.flags.dispatcher_event_source = "runner_start"
+	try:
+		task.workflow_state = "Executing"
+		task.assigned_to_profile = profile_name
+		task.started_at = started_at
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.dispatcher_event_source = None
 	frappe.db.commit()
+
+	emit(
+		"runner.start",
+		task=task.name,
+		project=task.get("project"),
+		agent_profile=profile_name,
+		trigger_source="runner_loop",
+		summary=f"{task.name}: agentic turn started on {profile_name}",
+	)
 
 	framing = (
 		f"You are completing a queued pipeline task ({task.name}): {task.title}\n\n"
@@ -453,6 +479,18 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			heartbeat=lambda: _heartbeat(task_name),
 		)
 	except Exception as exc:
+		# Design 72 — roll back any poisoned transaction BEFORE we try to write
+		# the failure state (the FLI-001 guidelines bug: UniqueViolation from a
+		# skill insert poisoned the txn, and the error handler then crashed on
+		# InFailedSqlTransaction because it tried to save the Task without
+		# rolling back first). Rollback is harmless when the txn is healthy.
+		# The in-memory `task` doc is unaffected by DB rollback — only the
+		# pending DB writes are reverted — so we keep using it directly.
+		try:
+			frappe.db.rollback()
+		except Exception:
+			_logger.exception("rollback failed before _run_task_agentic error save")
+
 		issue = _raise_failure_issue(task.name, type(exc).__name__, str(exc)[:300])
 		task.result = frappe.as_json({"status": "error", "error_type": type(exc).__name__})
 		task.workflow_state = "Blocked"
@@ -466,8 +504,26 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 		# its cost.
 		task.cost_usd = task_cost_from_usage(task.name)
 		task.duration_ms = _elapsed_ms(started_at)
-		task.save(ignore_permissions=True)
+		frappe.flags.dispatcher_event_source = "runner_error"
+		try:
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.dispatcher_event_source = None
 		frappe.db.commit()
+		emit(
+			"runner.block",
+			task=task.name,
+			project=task.get("project"),
+			agent_profile=profile_name,
+			trigger_source="runner_error",
+			summary=f"{task.name}: blocked ({type(exc).__name__}: {str(exc)[:200]})",
+			payload={
+				"exc_type": type(exc).__name__,
+				"blocked_reason": task.blocked_reason,
+				"issue": issue,
+				"duration_ms": task.duration_ms,
+			},
+		)
 		_post_warroom(task.name, "blocked", {"profile": profile_name, "issue": issue})
 		return
 
@@ -479,8 +535,24 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 	# (never a fabricated 0). The project rollup (workflow hook) sums these.
 	task.cost_usd = task_cost_from_usage(task.name)
 	task.duration_ms = _elapsed_ms(started_at)
-	task.save(ignore_permissions=True)
+	frappe.flags.dispatcher_event_source = "runner_complete"
+	try:
+		task.save(ignore_permissions=True)
+	finally:
+		frappe.flags.dispatcher_event_source = None
 	frappe.db.commit()
+	emit(
+		"runner.complete",
+		task=task.name,
+		project=task.get("project"),
+		agent_profile=profile_name,
+		trigger_source="runner_loop",
+		summary=f"{task.name}: completed in {task.duration_ms}ms",
+		payload={
+			"duration_ms": task.duration_ms,
+			"cost_usd": task.cost_usd,
+		},
+	)
 
 
 def _task_transition(task: "Task", target_state: str) -> None:

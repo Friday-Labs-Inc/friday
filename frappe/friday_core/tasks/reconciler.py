@@ -100,7 +100,16 @@ def tick() -> None:
 	(this is the heartbeat; partial work is better than no work). Each
 	failure is logged loudly so we never silently regress to the bad old
 	"all settings seem fine" state.
+
+	Design 72 — emits one ``reconciler.tick`` event per cycle with per-phase
+	counts (failures land in the same event with ``phase_errors``). Per-action
+	events (re-pend, runner_lost, re-enqueue) are emitted by the sweeps
+	themselves so the Lifecycle Trace can attribute them to a specific task.
 	"""
+	from frappe.friday_core.observability import emit
+
+	phase_results = {}
+	phase_errors = []
 	for phase, fn in (
 		("assigned_orphans", _reconcile_assigned_orphans),
 		("executing_stale", _reconcile_executing_stale),
@@ -108,12 +117,26 @@ def tick() -> None:
 		("randompack_events", _reconcile_randompack_events),
 	):
 		try:
-			fn()
+			# Each sweep returns its action count; legacy sweeps return None
+			# (treated as 0 for the tick summary).
+			phase_results[phase] = fn() or 0
 		except Exception:
 			# log_error persists; logger.exception goes to the worker log. Both,
 			# so the operator and the AI watching it both have a trail.
 			_logger.exception("reconciler phase %s failed", phase)
 			frappe.log_error(title=f"friday.reconciler phase failed: {phase}")
+			phase_errors.append(phase)
+
+	emit(
+		"reconciler.tick",
+		trigger_source="scheduler",
+		summary=(
+			"tick: "
+			+ ", ".join(f"{p}={n}" for p, n in phase_results.items())
+			+ (f" (errors: {', '.join(phase_errors)})" if phase_errors else "")
+		),
+		payload={"phase_actions": phase_results, "phase_errors": phase_errors},
+	)
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +144,7 @@ def tick() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _reconcile_assigned_orphans() -> None:
+def _reconcile_assigned_orphans() -> int:
 	"""
 	An Assigned task that no worker is actually working on is an orphan: the
 	original `frappe.enqueue` in workflow.on_state_change was lost (worker
@@ -152,9 +175,12 @@ def _reconcile_assigned_orphans() -> None:
 		as_dict=True,
 	)
 	if not rows:
-		return
+		return 0
+
+	from frappe.friday_core.observability import emit
 
 	in_flight = _in_flight_job_names()
+	acted = 0
 	for row in rows:
 		job_name = TASK_JOB_NAME.format(name=row["name"])
 		if job_name in in_flight:
@@ -175,9 +201,18 @@ def _reconcile_assigned_orphans() -> None:
 				"workflow_state": "Assigned",
 			},
 		)
+		emit(
+			"reconciler.action",
+			task=row["name"],
+			agent_profile=row["assigned_to_profile"],
+			trigger_source="re_enqueue_assigned_orphan",
+			summary=f"re-enqueue: {row['name']} (orphaned Assigned)",
+		)
+		acted += 1
+	return acted
 
 
-def _reconcile_executing_stale() -> None:
+def _reconcile_executing_stale() -> int:
 	"""
 	An Executing task without a recent heartbeat AND no in-flight job is
 	one whose runner died mid-execution (worker crash; sandbox kill; OS
@@ -202,21 +237,36 @@ def _reconcile_executing_stale() -> None:
 		as_dict=True,
 	)
 	if not rows:
-		return
+		return 0
+
+	from frappe.friday_core.observability import emit
 
 	in_flight = _in_flight_job_names()
+	acted = 0
 	for row in rows:
 		job_name = TASK_JOB_NAME.format(name=row["name"])
 		if job_name in in_flight:
 			continue  # genuinely running, just slow on heartbeats — leave it
 		task = frappe.get_doc("Task", row["name"])
-		task.workflow_state = "Blocked"
-		task.blocked_reason = "runner_lost"
-		task.save(ignore_permissions=True)
+		frappe.flags.dispatcher_event_source = "reconciler_runner_lost"
+		try:
+			task.workflow_state = "Blocked"
+			task.blocked_reason = "runner_lost"
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.dispatcher_event_source = None
 		_raise_runner_lost_issue(row["name"])
+		emit(
+			"reconciler.action",
+			task=row["name"],
+			trigger_source="runner_lost",
+			summary=f"runner_lost: {row['name']} (no heartbeat, no job in flight)",
+		)
+		acted += 1
+	return acted
 
 
-def _reconcile_transient_blocked() -> None:
+def _reconcile_transient_blocked() -> int:
 	"""
 	A task blocked by a transient cause (oom, timeout, runner_lost) gets
 	one more shot per tick (up to RETRY_BUDGET total). Re-Pend it cleanly:
@@ -242,25 +292,42 @@ def _reconcile_transient_blocked() -> None:
 		as_dict=True,
 	)
 	if not rows:
-		return
+		return 0
 
+	from frappe.friday_core.observability import emit
+
+	acted = 0
 	for row in rows:
 		task = frappe.get_doc("Task", row["name"])
-		task.workflow_state = "Pending"
-		task.assigned_to_profile = None
-		task.executing_token = None
-		task.blocked_reason = None
-		task.retry_count = (row.get("retry_count") or 0) + 1
-		task.save(ignore_permissions=True)
+		old_blocked_reason = task.blocked_reason
+		frappe.flags.dispatcher_event_source = "reconciler_reset"
+		try:
+			task.workflow_state = "Pending"
+			task.assigned_to_profile = None
+			task.executing_token = None
+			task.blocked_reason = None
+			task.retry_count = (row.get("retry_count") or 0) + 1
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.dispatcher_event_source = None
 		_logger.info(
 			"reconciler: re-Pending transient-Blocked task %s (retry %s/%s)",
 			row["name"],
 			task.retry_count,
 			RETRY_BUDGET,
 		)
+		emit(
+			"reconciler.action",
+			task=row["name"],
+			trigger_source="re_pend_transient",
+			summary=f"re-pend: {row['name']} (was Blocked: {old_blocked_reason}, retry {task.retry_count}/{RETRY_BUDGET})",
+			payload={"blocked_reason": old_blocked_reason, "retry_count": task.retry_count},
+		)
+		acted += 1
+	return acted
 
 
-def _reconcile_randompack_events() -> None:
+def _reconcile_randompack_events() -> int:
 	"""
 	Q7a — the RandomPack contract durability gap. The receiver acks 200 and
 	persists the event row as `Received`, then enqueues processing on the
@@ -306,8 +373,9 @@ def _reconcile_randompack_events() -> None:
 		as_dict=True,
 	)
 	if not rows:
-		return
+		return 0
 
+	acted = 0
 	for row in rows:
 		# Increment first, then enqueue. If the enqueue itself fails the row
 		# is still marked as having been retried — exactly what we want for
@@ -328,6 +396,8 @@ def _reconcile_randompack_events() -> None:
 			row["name"],
 			row["status"],
 		)
+		acted += 1
+	return acted
 
 
 # ---------------------------------------------------------------------------
