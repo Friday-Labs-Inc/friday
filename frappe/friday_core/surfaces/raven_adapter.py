@@ -85,7 +85,7 @@ def handle_raven_message(doc, method=None) -> None:
 		if bot_user not in mentioned:
 			return
 
-	profile = _resolve_profile()
+	profile = _resolve_profile(doc.channel_id)
 	if not profile:
 		frappe.logger("friday.raven").warning(
 			"Raven message received but no agent profile resolves for the "
@@ -156,8 +156,13 @@ def _friday_bot_user() -> str | None:
 	return frappe.db.get_value("Raven Bot", FRIDAY_BOT_NAME, "raven_user")
 
 
-def _resolve_profile() -> str | None:
-	"""Q4 — the agent behind the bot, via the existing platform routing."""
+def _resolve_profile(channel_id: str | None = None) -> str | None:
+	"""The agent behind the bot for this message.
+
+	The project's lead when this is a project room, else the platform default
+	(Q4 + Design 73, Slice 3). `resolve_profile` maps the channel id to the
+	project; passing it is what makes a project channel reach its own commander.
+	"""
 	from frappe.friday_core.routing.resolve import resolve_profile
 
-	return resolve_profile(platform=RAVEN_PLATFORM)
+	return resolve_profile(platform=RAVEN_PLATFORM, chat_id=channel_id)

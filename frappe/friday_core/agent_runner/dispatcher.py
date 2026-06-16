@@ -512,6 +512,7 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 from frappe.friday_core.skills import handlers_brand as _handlers_brand
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
 from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
+from frappe.friday_core.skills import handlers_deliverables as _handlers_deliverables  # design 73 #5
 from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
 from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
