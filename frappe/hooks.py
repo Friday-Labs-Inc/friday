@@ -249,7 +249,21 @@ doc_events = {
 	"Task": {
 		# Slice 8 — task workflow state machine.  Derives dispatchable,
 		# records timestamps, emits agent_task.assigned Redis pub/sub.
-		"on_update": "frappe.friday_core.tasks.workflow.on_state_change",
+		# Design 75 — the second handler advances the metadata-driven work-item
+		# when an engine-created task (one carrying phase_key + work_item_*)
+		# completes. It no-ops for every other task. Order matters: on_state_change
+		# runs first (sets completed_at etc.), then advance enqueues after commit.
+		"on_update": [
+			"frappe.friday_core.tasks.workflow.on_state_change",
+			"frappe.friday_core.engine.advance.on_task_update",
+		],
+	},
+	"Brand Brief": {
+		# Design 75 — the generic workflow interpreter, scoped to the first
+		# domain's work-item. On a Brand Brief save it dispatches the agentic
+		# phase (if any) waiting at the brief's current pipeline state. Generalise
+		# to "*" only after this is proven on Legion (Design 75 §7 step 5).
+		"on_update": "frappe.friday_core.engine.workflow_engine.on_work_item_update",
 	},
 }
 
@@ -397,6 +411,11 @@ after_migrate = [
 	# Cards, Dashboard Charts, the Task Pipeline Kanban, and the Projects
 	# Workspace. Idempotent + failure-isolated per artifact.
 	"frappe.friday_core.console.provision_console.provision_console",
+	# Friday (design 75): provision the first metadata-driven domain — the
+	# RandomPack brand pipeline (Workflow + transition meta + specialist team +
+	# gateway). The generic engine is inert without a bundle, so every site
+	# (Legion, CI, fresh installs) needs it. Idempotent + failure-isolated.
+	"frappe.friday_core.domains.randompack_brand.after_migrate",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]

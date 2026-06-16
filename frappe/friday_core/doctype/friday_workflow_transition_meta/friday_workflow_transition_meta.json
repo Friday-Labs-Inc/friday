@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow",
+  "from_state",
+  "action",
+  "phase_key",
+  "execution_mode",
+  "agent_role",
+  "required_skills",
+  "prompt_template",
+  "timeout_seconds",
+  "max_retries",
+  "wait_for_all_tasks"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Workflow",
+   "options": "Workflow",
+   "reqd": 1
+  },
+  {
+   "fieldname": "from_state",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "From State",
+   "options": "Workflow State",
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Workflow Action Master",
+   "reqd": 1
+  },
+  {
+   "description": "Stable slug for this phase; unique within the workflow. Carried onto the Task (backend_ref / phase_key) so the engine can resolve the transition on completion.",
+   "fieldname": "phase_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Phase Key",
+   "reqd": 1
+  },
+  {
+   "default": "agentic",
+   "description": "agentic = an agent runs a governed turn. milestone = a human gate (no agent). mechanical = run required_skills in sequence (no model).",
+   "fieldname": "execution_mode",
+   "fieldtype": "Select",
+   "label": "Execution Mode",
+   "options": "agentic\nmilestone\nmechanical",
+   "reqd": 1
+  },
+  {
+   "description": "The Role that owns this transition. The dispatcher routes the Task to the active Agent Profile whose discriminator_role matches. Empty for milestone / human gates.",
+   "fieldname": "agent_role",
+   "fieldtype": "Link",
+   "label": "Agent Role",
+   "options": "Role"
+  },
+  {
+   "description": "Verification list checked by the permission matrix at execution time. NOT the routing key (agent_role is the router).",
+   "fieldname": "required_skills",
+   "fieldtype": "Table",
+   "label": "Required Skills",
+   "options": "Task Skill"
+  },
+  {
+   "description": "Jinja2 template rendered against the work-item's fields to build the task instruction. Test-rendered at save (validate) so a bad template fails loudly here, not as an opaque runner_lost later.",
+   "fieldname": "prompt_template",
+   "fieldtype": "Long Text",
+   "label": "Prompt Template (Jinja)"
+  },
+  {
+   "default": "1800",
+   "fieldname": "timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Timeout (seconds)"
+  },
+  {
+   "default": "2",
+   "fieldname": "max_retries",
+   "fieldtype": "Int",
+   "label": "Max Retries"
+  },
+  {
+   "default": "0",
+   "description": "Phase 2 (AND-join): when set, the engine advances the work-item only after ALL sibling phase tasks complete. Not honored in Phase 1 (sequential-only).",
+   "fieldname": "wait_for_all_tasks",
+   "fieldtype": "Check",
+   "label": "Wait For All Tasks (AND-join)"
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Friday Workflow Transition Meta",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

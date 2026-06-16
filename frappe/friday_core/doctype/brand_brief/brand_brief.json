@@ -13,7 +13,9 @@
         "competitors",
         "color_preferences",
         "inspirations",
-        "notes"
+        "notes",
+        "workflow_state",
+        "chosen_direction"
     ],
     "fields": [
         {
@@ -81,6 +83,21 @@
             "fieldname": "notes",
             "fieldtype": "Text",
             "label": "Notes"
+        },
+        {
+            "description": "Design 75 pipeline state. Driven by the Frappe Workflow attached to this brief (Strategy → Naming → ... → Delivered) and the metadata engine. Distinct from the intake `status` field above (which only tracks whether the questionnaire is filled in). Read-only — the engine and the gate transitions move it.",
+            "fieldname": "workflow_state",
+            "fieldtype": "Link",
+            "label": "Pipeline State",
+            "no_copy": 1,
+            "options": "Workflow State",
+            "read_only": 1
+        },
+        {
+            "description": "The brand direction the client chose at Gate 1. Set when the gate is approved; the build-out phase reads it.",
+            "fieldname": "chosen_direction",
+            "fieldtype": "Data",
+            "label": "Chosen Direction"
         }
     ],
     "links": [],
