@@ -7,6 +7,8 @@
     "field_order": [
         "profile_name",
         "agent_role",
+        "discriminator_role",
+        "domain_bundle",
         "description",
         "assigned_roles",
         "model_provider",
@@ -37,6 +39,20 @@
             "label": "Agent Role",
             "options": "Orchestrator\nSpecialist\nWorker",
             "reqd": 1
+        },
+        {
+            "description": "Design 75 routing key. The Role this profile answers for when the engine routes a workflow transition: the engine matches a Friday Workflow Transition Meta's agent_role to the active profile whose discriminator_role equals it (O(1) lookup, replaces skill-subset discrimination). At most one Active profile may hold a given discriminator_role (enforced at save) so a misconfigured second profile fails loudly, not silently-dead.",
+            "fieldname": "discriminator_role",
+            "fieldtype": "Link",
+            "label": "Discriminator Role",
+            "options": "Role"
+        },
+        {
+            "description": "The Domain Bundle that provisioned this profile (Design 75). Lets a bundle export/import gather its own profiles. Empty for profiles created outside a bundle.",
+            "fieldname": "domain_bundle",
+            "fieldtype": "Link",
+            "label": "Domain Bundle",
+            "options": "Domain Bundle"
         },
         {
             "fieldname": "description",

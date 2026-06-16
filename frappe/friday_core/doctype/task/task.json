@@ -25,6 +25,9 @@
   "originating_session",
   "originating_platform",
   "parent_task",
+  "work_item_doctype",
+  "work_item_name",
+  "phase_key",
   "gantt_section",
   "exp_start_date",
   "exp_end_date",
@@ -180,6 +183,26 @@
    "options": "Task",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "description": "Design 75: the domain work-item DocType this task advances (e.g. Brand Brief). With work_item_name it links the Task to the record whose Frappe Workflow drives the pipeline. Empty for freeform / chat-originated tasks.",
+   "fieldname": "work_item_doctype",
+   "fieldtype": "Link",
+   "label": "Work Item DocType",
+   "options": "DocType"
+  },
+  {
+   "description": "Design 75: the specific work-item record (Dynamic Link on work_item_doctype) this task advances.",
+   "fieldname": "work_item_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Work Item",
+   "options": "work_item_doctype"
+  },
+  {
+   "description": "Design 75: the Friday Workflow Transition Meta phase_key this task executes. On completion the engine resolves the transition by (workflow, from_state, action) via this key and fires the next state — never keyed on the target state (back-edge safe).",
+   "fieldname": "phase_key",
+   "fieldtype": "Data",
+   "label": "Phase Key"
   },
   {
    "fieldname": "gantt_section",

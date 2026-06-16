@@ -16,6 +16,7 @@ relevant field is blank or empty. Editing an existing profile doesn't reseed.
 
 from __future__ import annotations
 
+import frappe
 from frappe.model.document import Document
 
 # Per-role defaults — keep tight; complexity here is paid back nowhere.
@@ -34,6 +35,35 @@ _ORCHESTRATOR_DEFAULT_SKILLS = ("read_record", "list_records", "list_project_fil
 class AgentProfile(Document):
 	def before_insert(self):
 		apply_role_defaults(self)
+
+	def validate(self):
+		self._single_active_per_discriminator_role()
+
+	def _single_active_per_discriminator_role(self) -> None:
+		"""At most one Active profile may hold a given discriminator_role
+		(Design 75, critic MEDIUM-7). The engine routes a transition's
+		agent_role to THE active profile whose discriminator_role matches; a
+		second active claimant would make that O(1) lookup ambiguous (one would
+		silently shadow the other), so we fail loudly at save instead. Suspended
+		and Retired profiles are exempt — only one *Active* owner is required.
+		"""
+		if not self.discriminator_role or self.status != "Active":
+			return
+		clash = frappe.db.exists(
+			"Agent Profile",
+			{
+				"discriminator_role": self.discriminator_role,
+				"status": "Active",
+				"name": ("!=", self.name),
+			},
+		)
+		if clash:
+			frappe.throw(
+				frappe._(
+					"Agent Profile {0} is already the Active profile for discriminator role {1}. "
+					"Two active profiles cannot share a discriminator role — suspend one first."
+				).format(frappe.bold(clash), frappe.bold(self.discriminator_role))
+			)
 
 
 def apply_role_defaults(doc) -> None:
