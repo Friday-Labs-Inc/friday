@@ -513,6 +513,7 @@ from frappe.friday_core.skills import handlers_brand as _handlers_brand
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
 from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
 from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
+from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
 from frappe.friday_core.skills import handlers_project as _handlers_project
 from frappe.friday_core.skills import handlers_read as _handlers_read  # design 66a

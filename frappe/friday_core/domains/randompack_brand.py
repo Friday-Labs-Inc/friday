@@ -53,6 +53,11 @@ STATE_FIELD = "workflow_state"
 # friday_core/skills/handlers_engine.py.
 ENGINE_SKILL = "get-phase-outputs"
 
+# Visual-generation skill: the Creative Director produces real images (logos /
+# key visuals) via the MiniMax image model. Handler:
+# friday_core/skills/handlers_visual.py. Costs per call → risk_level medium.
+VISUAL_SKILL = "generate-image"
+
 # The existing brand Role (bootstrap_brand.py) carries the Frappe doctype perms
 # the skills need: READ Brand Brief, CREATE Brand Direction, and WRITE Brand
 # Brief (which apply_workflow's save needs). Every agent profile holds it.
@@ -137,13 +142,16 @@ PHASES: list[dict] = [
 		"from_state": "Directions",
 		"action": "Complete Directions",
 		"agent_role": "Creative Director",
-		"skills": ["get-brand-brief", "create-brand-direction"],
+		"skills": ["get-brand-brief", "create-brand-direction", "generate-image"],
 		"prompt": (
 			"You are the creative director for {{ business_name }}. Read brief "
 			"{{ name }} with get-brand-brief, then generate THREE genuinely distinct "
-			"brand directions and persist EACH with create-brand-direction (palette, "
-			"typography, designer-ready logo concept, taglines). Reply with a "
-			"one-paragraph summary of each."
+			"brand directions. For EACH direction: (1) call generate-image with a "
+			"vivid prompt capturing its logo concept, palette, and mood to produce a "
+			"real sample visual (it attaches to the brief automatically); (2) persist "
+			"the direction with create-brand-direction (palette, typography, "
+			"designer-ready logo concept, taglines). Reply with a one-paragraph "
+			"summary of each direction, noting its generated visual."
 		),
 	},
 	{
@@ -166,16 +174,18 @@ PHASES: list[dict] = [
 		"from_state": "Buildout",
 		"action": "Complete Buildout",
 		"agent_role": "Creative Director",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "generate-image"],
 		"prompt": (
 			"The client of {{ business_name }} chose the direction "
 			"\"{{ chosen_direction or 'the approved direction' }}\". FIRST call "
 			"get-phase-outputs to read the strategy and the three directions, so you "
 			"build on the chosen direction's ACTUAL palette, typography, and logo "
-			"concept rather than inventing a fresh take. THEN produce the build-out "
-			"package: refined palette system, typography hierarchy, voice & tone "
-			"rules, application copy (web hero, about, boilerplate), and "
-			"designer-ready specs for every core asset. Reply with the full package."
+			"concept rather than inventing a fresh take. Call generate-image to "
+			"produce the refined hero/key visual for the chosen direction. THEN "
+			"produce the build-out package: refined palette system, typography "
+			"hierarchy, voice & tone rules, application copy (web hero, about, "
+			"boilerplate), and designer-ready specs for every core asset. Reply with "
+			"the full package."
 		),
 	},
 	{
@@ -237,7 +247,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Creative Director",
 		"discriminator_role": "Creative Director",
-		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs", "generate-image"],
 		"system_prompt": (
 			"You are a creative director. You translate strategy into distinct "
 			"visual directions — palette, typography, logo concept, application — and "
@@ -275,6 +285,7 @@ def provision() -> dict:
 	# the transition-meta required_skills AND the profiles' permitted_skills both
 	# reference it. Its Task:read grant needs PERM_ROLE, created by _ensure_roles.
 	_ensure_engine_skill()
+	_ensure_visual_skill()
 	_ensure_workflow_masters()
 	_ensure_workflow()
 	_ensure_transition_meta()
@@ -362,6 +373,48 @@ def _ensure_engine_skill() -> None:
 			}
 		).insert(ignore_permissions=True)
 	frappe.clear_cache(doctype="Task")
+
+
+def _ensure_visual_skill() -> None:
+	"""Create the generate-image Skill row (idempotent). It creates Frappe Files
+	via the file manager, so it declares no required_doctypes (generative, not a
+	domain CRUD); it is gated only by being in a profile's permitted_skills."""
+	if frappe.db.exists("Skill", VISUAL_SKILL):
+		skill = frappe.get_doc("Skill", VISUAL_SKILL)
+	else:
+		skill = frappe.new_doc("Skill")
+		skill.skill_name = VISUAL_SKILL
+	skill.description = (
+		"Generate an actual image from a text prompt (via the MiniMax image "
+		"model) and save it as a file attached to the current work item. Use it "
+		"to produce a logo or key visual, not just describe one. Returns the "
+		"file URL(s)."
+	)
+	skill.when_to_use = (
+		"When you need a REAL image — a sample logo, a key visual, a moodboard "
+		"frame. Give a vivid prompt capturing subject, style, palette, and mood. "
+		"Optional: aspect_ratio (default 1:1), n (1-9). It attaches to the work "
+		"item automatically."
+	)
+	skill.parameters_schema = json.dumps(
+		{
+			"type": "object",
+			"properties": {
+				"prompt": {"type": "string", "description": "Vivid description of the image to generate."},
+				"aspect_ratio": {
+					"type": "string",
+					"description": "1:1, 16:9, 4:3, 3:2, 2:3, 3:4, 9:16, or 21:9. Default 1:1.",
+				},
+				"n": {"type": "integer", "description": "How many images (1-9). Default 1."},
+			},
+			"required": ["prompt"],
+		}
+	)
+	skill.risk_level = "medium"  # external generative call with per-image cost
+	skill.requires_approval = 0  # first-party trusted pipeline (v0.1 posture)
+	skill.status = "Active"
+	skill.required_doctypes = []
+	skill.save(ignore_permissions=True)
 
 
 def _ensure_workflow_masters() -> None:
