@@ -38,12 +38,20 @@ fan-out is Phase 2.
 
 from __future__ import annotations
 
+import json
+
 import frappe
 
 DOMAIN_DOCTYPE = "Brand Brief"
 WORKFLOW_NAME = "RandomPack Brand Pipeline"
 BUNDLE_NAME = "randompack-brand"
 STATE_FIELD = "workflow_state"
+
+# Generic engine skill (Design 75 Phase 1.1): lets a phase read the outputs of
+# the earlier phases of the same work-item. Domain-agnostic — provisioned here
+# because the brand bundle is the first to need it. Handler:
+# friday_core/skills/handlers_engine.py.
+ENGINE_SKILL = "get-phase-outputs"
 
 # The existing brand Role (bootstrap_brand.py) carries the Frappe doctype perms
 # the skills need: READ Brand Brief, CREATE Brand Direction, and WRITE Brand
@@ -143,11 +151,13 @@ PHASES: list[dict] = [
 		"from_state": "Gate 1 Prep",
 		"action": "Complete Gate 1 Prep",
 		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
-			"Assemble the client-facing summary for decision gate 1 for "
-			"{{ business_name }} (brief {{ name }}): the three directions (one "
-			"paragraph each, client-friendly), naming shortlist context, and a "
+			"FIRST call get-phase-outputs to read what the earlier phases produced "
+			"for {{ business_name }} — the strategy draft, the naming candidates, "
+			"and the three creative directions. THEN assemble the client-facing "
+			"summary for decision gate 1 (brief {{ name }}): the three directions "
+			"(one paragraph each, client-friendly), naming shortlist context, and a "
 			"recommendation with reasoning. Reply with the full presentation text."
 		),
 	},
@@ -156,14 +166,16 @@ PHASES: list[dict] = [
 		"from_state": "Buildout",
 		"action": "Complete Buildout",
 		"agent_role": "Creative Director",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
 			"The client of {{ business_name }} chose the direction "
-			"\"{{ chosen_direction or 'the approved direction' }}\". Read brief "
-			"{{ name }} with get-brand-brief and produce the build-out package: "
-			"refined palette system, typography hierarchy, voice & tone rules, "
-			"application copy (web hero, about, boilerplate), and designer-ready specs "
-			"for every core asset. Reply with the full package."
+			"\"{{ chosen_direction or 'the approved direction' }}\". FIRST call "
+			"get-phase-outputs to read the strategy and the three directions, so you "
+			"build on the chosen direction's ACTUAL palette, typography, and logo "
+			"concept rather than inventing a fresh take. THEN produce the build-out "
+			"package: refined palette system, typography hierarchy, voice & tone "
+			"rules, application copy (web hero, about, boilerplate), and "
+			"designer-ready specs for every core asset. Reply with the full package."
 		),
 	},
 	{
@@ -171,11 +183,13 @@ PHASES: list[dict] = [
 		"from_state": "Gate 2 Prep",
 		"action": "Complete Gate 2 Prep",
 		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
-			"Assemble the client-facing final-review summary for {{ business_name }} "
-			"(brief {{ name }}): what was built, the decisions made, and what delivery "
-			"contains. Reply with the full presentation text."
+			"FIRST call get-phase-outputs to read the build-out package and the "
+			"earlier decisions for {{ business_name }}. THEN assemble the "
+			"client-facing final-review summary (brief {{ name }}): what was built, "
+			"the decisions made, and what delivery contains. Reply with the full "
+			"presentation text."
 		),
 	},
 	{
@@ -183,13 +197,14 @@ PHASES: list[dict] = [
 		"from_state": "Guidelines",
 		"action": "Complete Guidelines",
 		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
-			"Draft the complete brand guidelines document for {{ business_name }} "
-			"(brief {{ name }}): strategy recap, logo usage rules, palette with "
-			"values, typography, voice & tone with examples, and application "
-			"do/don'ts. Reply with the full document in Markdown — humans finalise "
-			"and export."
+			"FIRST call get-phase-outputs to read the build-out package and the "
+			"strategy for {{ business_name }}. THEN draft the complete brand "
+			"guidelines document (brief {{ name }}): strategy recap, logo usage "
+			"rules, palette with values, typography, voice & tone with examples, and "
+			"application do/don'ts. Reply with the full document in Markdown — humans "
+			"finalise and export."
 		),
 	},
 ]
@@ -202,7 +217,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Brand Strategist",
 		"discriminator_role": "Brand Strategist",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"system_prompt": (
 			"You are a senior brand strategist. You think in positioning, audience "
 			"insight, and the single differentiating idea. You are concise, "
@@ -212,7 +227,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Brand Copywriter",
 		"discriminator_role": "Brand Copywriter",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"system_prompt": (
 			"You are a brand namer and copywriter. You generate distinctive names "
 			"and write brand voice with rhythm and restraint. You screen names for "
@@ -222,7 +237,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Creative Director",
 		"discriminator_role": "Creative Director",
-		"skills": ["get-brand-brief", "create-brand-direction"],
+		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs"],
 		"system_prompt": (
 			"You are a creative director. You translate strategy into distinct "
 			"visual directions — palette, typography, logo concept, application — and "
@@ -256,6 +271,10 @@ def provision() -> dict:
 	meta -> profiles (which auto-provision their users) -> gateway -> perms ->
 	bundle manifest."""
 	_ensure_roles()
+	# The get-phase-outputs Skill must exist before ANYTHING that Links to it —
+	# the transition-meta required_skills AND the profiles' permitted_skills both
+	# reference it. Its Task:read grant needs PERM_ROLE, created by _ensure_roles.
+	_ensure_engine_skill()
 	_ensure_workflow_masters()
 	_ensure_workflow()
 	_ensure_transition_meta()
@@ -288,6 +307,61 @@ def _ensure_roles() -> None:
 			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(
 				ignore_permissions=True
 			)
+
+
+def _ensure_engine_skill() -> None:
+	"""Create the generic `get-phase-outputs` Skill row and grant PERM_ROLE READ
+	on Task, so the permission matrix admits agents reading their work-item's
+	earlier phase outputs. Idempotent."""
+	if frappe.db.exists("Skill", ENGINE_SKILL):
+		skill = frappe.get_doc("Skill", ENGINE_SKILL)
+	else:
+		skill = frappe.new_doc("Skill")
+		skill.skill_name = ENGINE_SKILL
+	skill.description = (
+		"Read the outputs the EARLIER phases of this work item already produced "
+		"(strategy, naming, directions, build-out, ...). Returns each completed "
+		"phase's result so you build on real prior work instead of just the brief."
+	)
+	skill.when_to_use = (
+		"Call this FIRST in any phase that summarises or builds on earlier work — "
+		"gate preps, build-out, guidelines. Inside a pipeline task it needs no "
+		"arguments; it reads the current work item automatically."
+	)
+	skill.parameters_schema = json.dumps(
+		{
+			"type": "object",
+			"properties": {
+				"work_item": {
+					"type": "string",
+					"description": "Optional — the work-item id (e.g. a brief id). Defaults to the current task's work item.",
+				}
+			},
+			"required": [],
+		}
+	)
+	skill.risk_level = "low"
+	skill.requires_approval = 0
+	skill.status = "Active"
+	skill.required_doctypes = []
+	skill.append("required_doctypes", {"target_doctype": "Task", "operation": "read"})
+	skill.save(ignore_permissions=True)
+
+	# PERM_ROLE (held by every specialist) needs READ on Task for the matrix to
+	# admit get-phase-outputs. Mirrors bootstrap_brand's Custom DocPerm idiom.
+	if not frappe.db.exists("Custom DocPerm", {"parent": "Task", "role": PERM_ROLE}):
+		frappe.get_doc(
+			{
+				"doctype": "Custom DocPerm",
+				"parent": "Task",
+				"parenttype": "DocType",
+				"parentfield": "permissions",
+				"role": PERM_ROLE,
+				"permlevel": 0,
+				"read": 1,
+			}
+		).insert(ignore_permissions=True)
+	frappe.clear_cache(doctype="Task")
 
 
 def _ensure_workflow_masters() -> None:

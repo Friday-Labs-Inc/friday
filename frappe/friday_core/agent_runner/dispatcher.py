@@ -511,6 +511,7 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 # module's import-time registration runs.
 from frappe.friday_core.skills import handlers_brand as _handlers_brand
 from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
+from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
 from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
 from frappe.friday_core.skills import handlers_project as _handlers_project
