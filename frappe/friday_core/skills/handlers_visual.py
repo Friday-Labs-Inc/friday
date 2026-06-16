@@ -165,9 +165,21 @@ def _download_and_save(urls, prompt: str, dt, dn) -> list[str]:
 			image_bytes = requests.get(url, timeout=_DOWNLOAD_TIMEOUT).content
 		except Exception:
 			break  # URL expired or unreachable — keep whatever already saved
-		file_doc = save_file(f"{slug}-{index + 1}.png", image_bytes, dt or None, dn or None, is_private=0)
+		ext = _image_ext(image_bytes)  # MiniMax returns JPEG; sniff to be exact
+		file_doc = save_file(f"{slug}-{index + 1}{ext}", image_bytes, dt or None, dn or None, is_private=0)
 		saved.append(file_doc.file_url)
 	return saved
+
+
+def _image_ext(data: bytes) -> str:
+	"""Pick a file extension from the image's magic bytes (don't trust the URL)."""
+	if data[:3] == b"\xff\xd8\xff":
+		return ".jpg"
+	if data[:8] == b"\x89PNG\r\n\x1a\n":
+		return ".png"
+	if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+		return ".webp"
+	return ".jpg"  # MiniMax image-01 default
 
 
 register_skill_handler(GENERATE_IMAGE, generate_image)
