@@ -261,3 +261,20 @@
 	margin-left: 6px;
 	animation: fc-pulse 1.4s infinite;
 }
+
+/* Design 75: a small chip on Brand Brief tiles so the metadata-engine
+   work is visually distinct from legacy Frappe Project tiles. */
+.fc-kind {
+	font-size: 9px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 1px 6px;
+	border-radius: 3px;
+	margin-left: 6px;
+	vertical-align: middle;
+}
+.fc-kind-brief {
+	background: var(--blue-100, #e3f2fd);
+	color: var(--blue-700, #1565c0);
+}

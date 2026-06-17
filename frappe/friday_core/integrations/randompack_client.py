@@ -136,24 +136,26 @@ def attach_deliverable(
 	file_url = ((uploaded or {}).get("message") or {}).get("file_url")
 	if not file_url:
 		return None
+	# v1 contract: attach_deliverable(project, file_url, title).
 	return send(
 		"attach_deliverable",
-		{"project": project_ref, "file_url": file_url, "description": description},
+		{"project": project_ref, "file_url": file_url, "title": description or file_name},
 	)
 
 
 def post_project_note(project_ref: str | None, note: str, task_ref: str | None = None) -> dict | None:
-	payload: dict = {"note": note}
-	if project_ref:
-		payload["project"] = project_ref
-	if task_ref:
-		payload["task"] = task_ref
-	return send("post_project_note", payload)
+	# v1 contract: post_project_note(project, content) — project is required and
+	# there is no task param. task_ref is accepted for call-site compatibility
+	# but not sent.
+	if not project_ref:
+		return None
+	return send("post_project_note", {"project": project_ref, "content": note})
 
 
 def request_gate_open(project_ref: str, gate: str, summary: str) -> dict | None:
-	"""Signal-only (locked): Friday says 'ready'; humans open the gate."""
-	return send("request_gate_open", {"project": project_ref, "gate": gate, "summary": summary})
+	"""Signal-only (locked): Friday says 'ready'; humans open the gate.
+	v1 contract: request_gate_open(project, gate, note)."""
+	return send("request_gate_open", {"project": project_ref, "gate": gate, "note": summary})
 
 
 def get_project_state(project_ref: str) -> dict | None:
