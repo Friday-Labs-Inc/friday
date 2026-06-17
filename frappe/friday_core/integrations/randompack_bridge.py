@@ -53,10 +53,13 @@ _SUBJECT_MAP = {
 # Phase after which Friday pushes the brief's attached files as deliverables.
 _DELIVERABLE_PHASE = "guidelines"
 
+# Friday Task state → RandomPack task status. RandomPack only accepts
+# Open / Working / Pending Review / Completed (api/v1.update_task_progress);
+# any other value is rejected. Cancelled has no RandomPack equivalent → no
+# status write-back (the bridge returns early when the map misses).
 _STATUS_MAP = {
-	"Executing": "in_progress",
-	"Completed": "completed",
-	"Cancelled": "cancelled",
+	"Executing": "Working",
+	"Completed": "Completed",
 }
 
 

@@ -173,7 +173,7 @@ class TestRandompackBridge(unittest.TestCase):
 			bridge.on_task_transition(task, "Completed")
 		# the real backend docname, NOT "PROJ-Y:directions"
 		self.assertEqual(captured.get("task_ref"), "TASK-77")
-		self.assertEqual(captured.get("status"), "completed")
+		self.assertEqual(captured.get("status"), "Completed")
 
 	def test_engine_writeback_skips_when_no_rp_project(self):
 		doc = frappe.get_doc({"doctype": "Brand Brief", "business_name": "InternalCo"}).insert(
