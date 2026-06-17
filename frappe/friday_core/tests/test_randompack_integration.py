@@ -67,10 +67,13 @@ class TestRandompackInbound(unittest.TestCase):
 		surface.handle_payment_received({"brief": "OB-T2"}, _Evt())
 		self.assertIsNone(_brief("OB-T2"))
 		# project.created carries the frozen snapshot AS A JSON STRING (Frappe JSON
-		# field) → it creates the brief and starts it.
+		# field) → it creates the brief and starts it. Run as Guest to mimic the
+		# webhook worker — the handler must self-elevate for the start transition.
+		frappe.set_user("Guest")
 		surface.handle_project_created(
 			{"project": "PROJ-T2", "brief": "OB-T2", "brief_snapshot": json.dumps({"company": "T2Co"})}, _Evt()
 		)
+		frappe.set_user("Administrator")
 		b = _brief("OB-T2")
 		self.assertTrue(b, "project.created should create the brief from its snapshot")
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "workflow_state"), "Strategy")

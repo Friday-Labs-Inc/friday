@@ -304,11 +304,15 @@ def handle_project_created(data: dict, event) -> None:
 		_warroom(f"**[{rp_project or rp_brief}]** project.created replay — pipeline already running ({doc.workflow_state}); no-op.")
 		return
 
+	from frappe.friday_core.engine.governance import acting_as
 	from frappe.model.workflow import apply_workflow
 
 	if doc.workflow_state != INITIAL_STATE:
 		doc.workflow_state = INITIAL_STATE  # ensure at Intake for the transition
-	apply_workflow(doc, "Start Pipeline")  # Intake → Strategy; fires the engine
+	# The webhook worker runs as Guest; Start Pipeline is a System-Manager-gated
+	# SYSTEM transition (not an agent/gate action), so fire it as Administrator.
+	with acting_as("Administrator"):
+		apply_workflow(doc, "Start Pipeline")  # Intake → Strategy; fires the engine
 	_warroom(f"**[{rp_project or rp_brief}]** brand pipeline started (brief {brief} → Strategy).")
 
 	from frappe.friday_core.integrations.randompack_client import post_project_note
