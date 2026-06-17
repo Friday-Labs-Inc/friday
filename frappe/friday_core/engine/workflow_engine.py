@@ -75,13 +75,17 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 	  announce delivery.
 	- Idle entry state (e.g. "Intake"): silent. The engine itself fires the
 	  Start Pipeline transition via project.created; nothing for a human here.
-	- Otherwise (a real gate waiting on a human): post.
+	- Otherwise (a real gate waiting on a human): post AFTER the current
+	  transaction commits.
 
-	Permissions: queries here MUST bypass permissions because the hook runs as
-	the agent user (a System User scoped to its agent role), which has no
-	implicit read on Workflow Transition. A silent permission denial would make
-	the announce a no-op — exactly the blind spot this function exists to fix.
-	Failure-isolated: an exception NEVER breaks the engine save."""
+	WHY ENQUEUE-AFTER-COMMIT: when this hook runs inside apply_workflow inside
+	an advance_work_item job, a Raven Message inserted in the same transaction
+	is rolled back downstream (confirmed empirically — the row is visible at
+	function-exit but never persists). Posting from a fresh job that runs only
+	after the current transaction commits sidesteps that rollback entirely.
+	Permissions: the announce query bypasses perms because the hook runs as the
+	agent user (no implicit Workflow Transition read).
+	Failure-isolated: a war room outage NEVER breaks the engine save."""
 	try:
 		if state in _INTAKE_LIKE_STATES:
 			return
@@ -97,12 +101,6 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 		if not outgoing:
 			return  # terminal — nothing for a human to do
 
-		from frappe.friday_core.warroom.publisher import _get_channel_id, _post_to_raven
-
-		channel = _get_channel_id()
-		if not channel:
-			return
-
 		label_parts = []
 		business_name = doc.get("business_name") if hasattr(doc, "get") else getattr(doc, "business_name", None)
 		rp_project = doc.get("rp_project") if hasattr(doc, "get") else getattr(doc, "rp_project", None)
@@ -116,26 +114,35 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 			f"🛑 **[{doc.name}]** {label} is at **{state}** — "
 			"waiting for the human decision. Pipeline paused."
 		)
-		frappe.log_error(
-			title="friday.engine pause-about-to-post",
-			message=f"name={doc.name} state={state} user={frappe.session.user} channel={channel}",
-		)
-		_post_to_raven(
-			channel,
-			{"text": text, "message_type": "Text", "hide_in_message_history": False},
-		)
-		# Check immediately whether the row is visible in the session — if it
-		# disappears later, that proves a downstream rollback.
-		count_now = frappe.db.count(
-			"Raven Message", filters={"channel_id": channel, "text": ("like", "%waiting for the human%")}
-		)
-		frappe.log_error(
-			title="friday.engine pause-posted",
-			message=f"name={doc.name} state={state} count_in_session={count_now}",
+
+		frappe.enqueue(
+			"frappe.friday_core.engine.workflow_engine._post_pause_message",
+			text=text,
+			job_id=f"pause:{doc.name}:{state}",
+			enqueue_after_commit=True,
+			queue="short",
 		)
 	except Exception:
 		# War room outages must never break the engine save.
 		frappe.log_error(title="friday.engine human-pause announce failed")
+
+
+def _post_pause_message(text: str) -> None:
+	"""Post a pause message to the war room from a fresh job (after-commit).
+	Runs in its own transaction so it can never be rolled back by the engine
+	save that scheduled it. Whitelisted-ish but only ever called via enqueue."""
+	try:
+		from frappe.friday_core.warroom.publisher import _get_channel_id, _post_to_raven
+
+		channel = _get_channel_id()
+		if not channel:
+			return
+		_post_to_raven(
+			channel,
+			{"text": text, "message_type": "Text", "hide_in_message_history": False},
+		)
+	except Exception:
+		frappe.log_error(title="friday.engine pause-post worker failed")
 
 
 def _agentic_meta_for_state(workflow: str, state: str):
