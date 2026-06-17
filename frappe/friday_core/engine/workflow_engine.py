@@ -46,14 +46,7 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 
 	# Only react when the STATE actually changed. An unrelated field edit on a
 	# work-item sitting mid-pipeline must not re-dispatch the current phase.
-	state_changed = doc.has_value_changed(state_field)
-	# TEMP debug — use log_error so it lands in the Error Log doctype no matter
-	# what log level is in play. Remove once we've proved the hook fires.
-	frappe.log_error(
-		title="friday.engine on_update",
-		message=f"name={doc.name} state={state} changed={state_changed}",
-	)
-	if not state_changed:
+	if not doc.has_value_changed(state_field):
 		return
 
 	meta = _agentic_meta_for_state(workflow, state)
@@ -62,10 +55,6 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 		# transitions waiting for a person) or the terminal state (no outgoing).
 		# Announce the human pause so the war room doesn't go silent at the
 		# very moment the human is needed (otherwise it looks like Friday hung).
-		frappe.log_error(
-			title="friday.engine no-meta announce",
-			message=f"name={doc.name} state={state}; calling _announce_human_pause",
-		)
 		_announce_human_pause(doc, workflow, state)
 		return
 
@@ -75,17 +64,37 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 	phase_dispatcher.dispatch(doc, meta.name)
 
 
+_INTAKE_LIKE_STATES = {"Intake"}  # bundle-owned start states — engine fires "Start Pipeline" itself; no announce needed.
+
+
 def _announce_human_pause(doc, workflow: str, state: str) -> None:
 	"""Post a 'waiting for you' message to the war room when a work-item lands
-	in a state with no agentic phase. A state with outgoing transitions is a
-	human gate (we announce); a state with no outgoing transitions is the
-	terminal (silent — the surrounding handlers already announce delivery).
-	Failure-isolated: a war room outage MUST NOT break the engine save."""
+	in a state with no agentic phase AND no system-driven outgoing transition.
+
+	- Terminal (no outgoing transitions): silent. Surrounding handlers already
+	  announce delivery.
+	- Idle entry state (e.g. "Intake"): silent. The engine itself fires the
+	  Start Pipeline transition via project.created; nothing for a human here.
+	- Otherwise (a real gate waiting on a human): post.
+
+	Permissions: queries here MUST bypass permissions because the hook runs as
+	the agent user (a System User scoped to its agent role), which has no
+	implicit read on Workflow Transition. A silent permission denial would make
+	the announce a no-op — exactly the blind spot this function exists to fix.
+	Failure-isolated: an exception NEVER breaks the engine save."""
 	try:
-		has_outgoing = frappe.db.exists(
-			"Workflow Transition", {"parent": workflow, "state": state}
+		if state in _INTAKE_LIKE_STATES:
+			return
+
+		# bypass perms — the agent user has no implicit read on Workflow Transition
+		outgoing = frappe.get_all(
+			"Workflow Transition",
+			filters={"parent": workflow, "state": state},
+			fields=["name"],
+			limit_page_length=1,
+			ignore_permissions=True,
 		)
-		if not has_outgoing:
+		if not outgoing:
 			return  # terminal — nothing for a human to do
 
 		from frappe.friday_core.warroom.publisher import _get_channel_id, _post_to_raven
