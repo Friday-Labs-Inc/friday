@@ -62,10 +62,16 @@ class TestRandompackInbound(unittest.TestCase):
 			frappe.get_all("Task", filters={"work_item_doctype": "Brand Brief", "work_item_name": b}), []
 		)
 
-	def test_project_created_starts_engine_with_rp_project(self):
-		surface.handle_payment_received({"brief": "OB-T2", "brief_snapshot": {"business_name": "T2Co"}}, _Evt())
-		surface.handle_project_created({"project": "PROJ-T2", "brief": "OB-T2", "brief_snapshot": {}}, _Evt())
+	def test_project_created_creates_brief_and_starts(self):
+		# Real flow: payment.received carries NO snapshot, so no brief yet.
+		surface.handle_payment_received({"brief": "OB-T2"}, _Evt())
+		self.assertIsNone(_brief("OB-T2"))
+		# project.created carries the frozen snapshot → it creates the brief and starts it.
+		surface.handle_project_created(
+			{"project": "PROJ-T2", "brief": "OB-T2", "brief_snapshot": {"company": "T2Co"}}, _Evt()
+		)
 		b = _brief("OB-T2")
+		self.assertTrue(b, "project.created should create the brief from its snapshot")
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "workflow_state"), "Strategy")
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "rp_project"), "PROJ-T2")
 		phases = [

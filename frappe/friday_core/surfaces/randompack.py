@@ -177,33 +177,18 @@ _BRIEF_FIELD_MAP = {
 }
 
 
-def handle_payment_received(data: dict, event) -> None:
-	"""payment.received → ingest the frozen brief_snapshot as a Brand Brief.
-
-	Staging only (locked role map): generation starts at project.created
-	(60b). Idempotent: keyed by the backend project/brief reference when
-	present, stored in the brief's notes for traceability.
-	"""
-	snapshot = data.get("brief_snapshot") or {}
-	if not snapshot:
-		return
-
-	# Correlation key is the RandomPack Onboarding Brief docname (`brief`),
-	# present on BOTH payment.received and project.created. The old project_id/
-	# brief_id keys were never sent by RandomPack — fall back only for safety.
-	rp_brief = str(data.get("brief") or "")
-	backend_ref = rp_brief or str(data.get("project_id") or data.get("brief_id") or event.event_id)
-	existing = (
-		frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name")
-		if rp_brief
-		else frappe.db.get_value("Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name")
-	)
+def _ingest_brief(rp_brief: str, snapshot: dict) -> str:
+	"""Create a Brand Brief from a frozen brief_snapshot (idempotent by rp_brief).
+	Returns the brief name (existing or newly created). Shared by both handlers —
+	whichever event arrives carrying the snapshot creates the brief. Correlation
+	key is the RandomPack Onboarding Brief docname (`brief`)."""
+	existing = frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name") if rp_brief else None
 	if existing:
-		return  # snapshot is frozen — never overwrite
+		return existing
 
 	doc_fields: dict = {"doctype": "Brand Brief", "status": "Ready", "rp_brief": rp_brief}
 	leftovers: dict = {}
-	for key, value in snapshot.items():
+	for key, value in (snapshot or {}).items():
 		target = _BRIEF_FIELD_MAP.get(key)
 		if not target:
 			leftovers[key] = value
@@ -219,13 +204,26 @@ def handle_payment_received(data: dict, event) -> None:
 		else:
 			doc_fields[target] = value
 
-	notes_parts = [f"[rp:{backend_ref}]"]
+	notes_parts = [f"[rp:{rp_brief}]"]
 	if leftovers:
 		notes_parts.append("Unmapped brief fields:\n" + frappe.as_json(leftovers))
 	doc_fields["notes"] = "\n".join(notes_parts)
-	doc_fields.setdefault("business_name", f"RandomPack {backend_ref}")
+	doc_fields.setdefault("business_name", f"RandomPack {rp_brief}")
+	return frappe.get_doc(doc_fields).insert(ignore_permissions=True).name
 
-	frappe.get_doc(doc_fields).insert(ignore_permissions=True)
+
+def handle_payment_received(data: dict, event) -> None:
+	"""payment.received → stage the Brand Brief IF a snapshot is present.
+
+	RandomPack's payment.received carries only {brief, sales_order} (no
+	snapshot), so this is normally a no-op — the brief is created at
+	project.created, which carries the frozen snapshot. Kept for the case where
+	a snapshot is delivered early.
+	"""
+	snapshot = data.get("brief_snapshot") or {}
+	rp_brief = str(data.get("brief") or "")
+	if snapshot and rp_brief:
+		_ingest_brief(rp_brief, snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -270,12 +268,18 @@ def handle_project_created(data: dict, event) -> None:
 
 	rp_brief = str(data.get("brief") or "")
 	rp_project = str(data.get("project") or "")
-	brief = (frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name") if rp_brief else None) or \
-		_find_brief(_backend_ref(data, event))
+	snapshot = data.get("brief_snapshot") or {}
+	brief = frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name") if rp_brief else None
+	# payment.received carries no snapshot, so the brief usually doesn't exist
+	# yet — create it now from project.created's frozen snapshot.
+	if not brief and snapshot and rp_brief:
+		brief = _ingest_brief(rp_brief, snapshot)
+	if not brief:
+		brief = _find_brief(_backend_ref(data, event))
 	if not brief:
 		raise ValueError(
-			f"no ingested Brand Brief for RandomPack brief {rp_brief!r} / project {rp_project!r} "
-			"— was payment.received delivered?"
+			f"no Brand Brief for RandomPack brief {rp_brief!r} / project {rp_project!r} and no "
+			"snapshot to create one"
 		)
 
 	doc = frappe.get_doc("Brand Brief", brief)
