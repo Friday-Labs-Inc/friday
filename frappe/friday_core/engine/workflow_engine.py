@@ -46,7 +46,11 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 
 	# Only react when the STATE actually changed. An unrelated field edit on a
 	# work-item sitting mid-pipeline must not re-dispatch the current phase.
-	if not doc.has_value_changed(state_field):
+	state_changed = doc.has_value_changed(state_field)
+	frappe.logger("friday.engine").info(
+		f"on_work_item_update {doc.name} state={state} changed={state_changed}"
+	)
+	if not state_changed:
 		return
 
 	meta = _agentic_meta_for_state(workflow, state)
@@ -55,6 +59,9 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 		# transitions waiting for a person) or the terminal state (no outgoing).
 		# Announce the human pause so the war room doesn't go silent at the
 		# very moment the human is needed (otherwise it looks like Friday hung).
+		frappe.logger("friday.engine").info(
+			f"on_work_item_update {doc.name} no agentic meta at {state}; announcing pause"
+		)
 		_announce_human_pause(doc, workflow, state)
 		return
 
