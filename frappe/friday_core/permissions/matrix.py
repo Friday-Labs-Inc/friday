@@ -187,6 +187,11 @@ class PermissionMatrix:
 	profile_status: str
 	roles: tuple[str, ...]
 	permitted_ops: dict[str, frozenset[str]]
+	# Design 78: the agent_role tier (Orchestrator/Specialist/Worker), needed
+	# for back-compat with the hardcoded _ROLE_GATED_SKILLS dict whose values
+	# are tier names, not Frappe Role docnames. Default None for back-compat
+	# with cached matrix entries serialized before this field was added.
+	agent_role: str | None = None
 
 	def ops_for(self, doctype: str) -> frozenset[str]:
 		"""Operations this matrix allows on the given DocType.
@@ -210,6 +215,7 @@ class PermissionMatrix:
 			"profile_status": self.profile_status,
 			"roles": list(self.roles),
 			"permitted_ops": {dt: sorted(ops) for dt, ops in self.permitted_ops.items()},
+			"agent_role": self.agent_role,
 		}
 
 	def __json__(self) -> dict:
@@ -224,6 +230,8 @@ class PermissionMatrix:
 			profile_status=data["profile_status"],
 			roles=tuple(data["roles"]),
 			permitted_ops={dt: frozenset(ops) for dt, ops in data["permitted_ops"].items()},
+			# .get() — cached entries from before Design 78 won't carry it.
+			agent_role=data.get("agent_role"),
 		)
 
 
@@ -293,6 +301,21 @@ def evaluate(matrix: PermissionMatrix, skill_name: str) -> Decision:
 	if skill.status != "Active":
 		return Decision(False, f"Skill is {skill.status!r}, not Active")
 
+	# Design 78 — role gate. Defense in depth: the loader also filters at
+	# menu-build time, but a stale loader cache or a direct dispatcher call
+	# could otherwise bypass governance. Re-check here.
+	from frappe.friday_core.skills.loader import _AGENT_ROLE_TIERS, _resolve_role_gate
+
+	required_role = _resolve_role_gate(skill)
+	if required_role:
+		matches_tier = required_role in _AGENT_ROLE_TIERS and matrix.agent_role == required_role
+		matches_role = required_role not in _AGENT_ROLE_TIERS and required_role in matrix.roles
+		if not (matches_tier or matches_role):
+			return Decision(
+				False,
+				f"Profile lacks the required role {required_role!r} for skill {skill_name!r}",
+			)
+
 	for req in skill.required_doctypes or []:
 		op = req.operation
 		permitted = matrix.ops_for(req.target_doctype)
@@ -359,6 +382,7 @@ def _build_matrix_uncached(profile_name: str) -> PermissionMatrix:
 		profile_status=profile.status,
 		roles=roles,
 		permitted_ops=_resolve_permitted_ops(roles),
+		agent_role=getattr(profile, "agent_role", None),
 	)
 
 

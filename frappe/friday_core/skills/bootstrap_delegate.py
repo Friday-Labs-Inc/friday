@@ -101,6 +101,11 @@ def provision(profile_name: str = "Friday") -> dict:
     skill.risk_level = "medium"
     skill.requires_approval = 0
     skill.status = "Active"
+    # Design 78 — populate the Skill.role_gate field so the loader's primary
+    # (DB-driven) gate path takes over from the hardcoded _ROLE_GATED_SKILLS
+    # fallback. DELEGATOR_ROLE is a Frappe Role; the loader walks the
+    # profile's assigned_roles for non-tier role names.
+    skill.role_gate = DELEGATOR_ROLE
     skill.required_doctypes = []
     for req in _SKILL["required_doctypes"]:
         skill.append("required_doctypes", req)
