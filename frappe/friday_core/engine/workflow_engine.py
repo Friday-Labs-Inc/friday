@@ -51,12 +51,58 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 
 	meta = _agentic_meta_for_state(workflow, state)
 	if not meta:
-		return  # human gate / terminal / no agent step here
+		# No agentic phase at this state. Either a human gate (has outgoing
+		# transitions waiting for a person) or the terminal state (no outgoing).
+		# Announce the human pause so the war room doesn't go silent at the
+		# very moment the human is needed (otherwise it looks like Friday hung).
+		_announce_human_pause(doc, workflow, state)
+		return
 
 	if _has_active_task(doc, meta.phase_key):
 		return  # belt-and-suspenders: never double-dispatch one state-occupancy
 
 	phase_dispatcher.dispatch(doc, meta.name)
+
+
+def _announce_human_pause(doc, workflow: str, state: str) -> None:
+	"""Post a 'waiting for you' message to the war room when a work-item lands
+	in a state with no agentic phase. A state with outgoing transitions is a
+	human gate (we announce); a state with no outgoing transitions is the
+	terminal (silent — the surrounding handlers already announce delivery).
+	Failure-isolated: a war room outage MUST NOT break the engine save."""
+	try:
+		has_outgoing = frappe.db.exists(
+			"Workflow Transition", {"parent": workflow, "state": state}
+		)
+		if not has_outgoing:
+			return  # terminal — nothing for a human to do
+
+		from frappe.friday_core.warroom.publisher import _get_channel_id, _post_to_raven
+
+		channel = _get_channel_id()
+		if not channel:
+			return
+
+		label_parts = []
+		business_name = doc.get("business_name") if hasattr(doc, "get") else getattr(doc, "business_name", None)
+		rp_project = doc.get("rp_project") if hasattr(doc, "get") else getattr(doc, "rp_project", None)
+		if business_name:
+			label_parts.append(str(business_name))
+		if rp_project:
+			label_parts.append(f"PROJ {rp_project}")
+		label = " — ".join(label_parts) or doc.name
+
+		text = (
+			f"🛑 **[{doc.name}]** {label} is at **{state}** — "
+			"waiting for the human decision. Pipeline paused."
+		)
+		_post_to_raven(
+			channel,
+			{"text": text, "message_type": "Text", "hide_in_message_history": False},
+		)
+	except Exception:
+		# War room outages must never break the engine save.
+		frappe.log_error(title="friday.engine human-pause announce failed")
 
 
 def _agentic_meta_for_state(workflow: str, state: str):

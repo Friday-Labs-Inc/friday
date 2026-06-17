@@ -136,5 +136,30 @@ class TestEngineRouting(unittest.TestCase):
 		self.assertIsNotNone(workflow_engine._agentic_meta_for_state(wf, "Strategy"))
 		# Gate 1 Review's only outgoing transition is the human gate -> None.
 		self.assertIsNone(workflow_engine._agentic_meta_for_state(wf, "Gate 1 Review"))
-		# Delivered is terminal -> None.
-		self.assertIsNone(workflow_engine._agentic_meta_for_state(wf, "Delivered"))
+
+	def test_announces_pause_at_human_gate(self):
+		"""When the brief enters Gate 1 Review (a human-owned transition state),
+		the war room gets a 'waiting for the human' message. Without this the
+		feed would go silent at exactly the moment the human is needed."""
+		doc = frappe._dict(name="BB-TEST", business_name="Test Co", rp_project="PROJ-X")
+		with patch(
+			"frappe.friday_core.warroom.publisher._get_channel_id", return_value="CH-X"
+		), patch("frappe.friday_core.warroom.publisher._post_to_raven") as mock_post:
+			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Gate 1 Review")
+		self.assertTrue(mock_post.called, "war room must be told the pipeline is waiting")
+		_, kwargs_or_payload = mock_post.call_args[0]
+		text = kwargs_or_payload["text"]
+		self.assertIn("Gate 1 Review", text)
+		self.assertIn("BB-TEST", text)
+		self.assertIn("waiting", text.lower())
+
+	def test_no_announce_at_terminal(self):
+		"""Delivered has no outgoing transitions; the engine must stay silent."""
+		doc = frappe._dict(name="BB-TEST", business_name="Test Co")
+		with patch(
+			"frappe.friday_core.warroom.publisher._post_to_raven"
+		) as mock_post, patch(
+			"frappe.friday_core.warroom.publisher._get_channel_id", return_value="CH-X"
+		):
+			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Delivered")
+		mock_post.assert_not_called()
