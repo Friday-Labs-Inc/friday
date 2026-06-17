@@ -37,7 +37,7 @@ from frappe.friday_core.engine import workflow_engine
 
 
 def _new_brief():
-	return frappe.get_doc(
+	doc = frappe.get_doc(
 		{
 			"doctype": "Brand Brief",
 			"business_name": "Routing Co",
@@ -45,9 +45,14 @@ def _new_brief():
 			"what_they_do": "sells",
 			"target_audience": "shoppers",
 			"status": "Ready",
-			"workflow_state": "Strategy",
 		}
 	).insert(ignore_permissions=True)
+	# The brief idles at "Intake"; start the pipeline the way project.created
+	# does — fire Start Pipeline (Intake -> Strategy), which dispatches strategy.
+	from frappe.model.workflow import apply_workflow
+
+	apply_workflow(doc, "Start Pipeline")
+	return doc
 
 
 def _task_for(brief_name: str, phase_key: str):
