@@ -116,9 +116,17 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 			f"🛑 **[{doc.name}]** {label} is at **{state}** — "
 			"waiting for the human decision. Pipeline paused."
 		)
+		frappe.log_error(
+			title="friday.engine pause-about-to-post",
+			message=f"name={doc.name} state={state} user={frappe.session.user} channel={channel}",
+		)
 		_post_to_raven(
 			channel,
 			{"text": text, "message_type": "Text", "hide_in_message_history": False},
+		)
+		frappe.log_error(
+			title="friday.engine pause-posted",
+			message=f"name={doc.name} state={state} — bot.send_message returned without raising",
 		)
 	except Exception:
 		# War room outages must never break the engine save.
