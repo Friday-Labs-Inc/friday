@@ -54,7 +54,8 @@ def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
 	"""POST one backend API call. NEVER raises — returns the JSON or None.
 
 	`method` is the dotted endpoint name (e.g. "update_task_progress" or a
-	full "x.y.z" path); bare names resolve under the backend's API module.
+	full "x.y.z" path); bare names resolve under the backend's v1 API module.
+	`upload_file` is the Frappe-native multipart endpoint, not a v1 method.
 	"""
 	settings = _settings()
 	if settings is None:
@@ -62,7 +63,12 @@ def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
 			f"RandomPack integration disabled — dropped outbound {method!r}"
 		)
 		return None
-	path = method if "." in method else f"randompack.api.{method}"
+	if "." in method:
+		path = method
+	elif method == "upload_file":
+		path = "upload_file"  # Frappe-native multipart upload
+	else:
+		path = f"randompack.api.v1.{method}"  # the locked contract lives in api/v1
 	url = f"{(settings.api_base_url or '').rstrip('/')}/api/method/{path}"
 	try:
 		if files:
