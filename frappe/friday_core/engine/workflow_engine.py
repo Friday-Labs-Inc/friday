@@ -124,9 +124,14 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 			channel,
 			{"text": text, "message_type": "Text", "hide_in_message_history": False},
 		)
+		# Check immediately whether the row is visible in the session — if it
+		# disappears later, that proves a downstream rollback.
+		count_now = frappe.db.count(
+			"Raven Message", filters={"channel_id": channel, "text": ("like", "%waiting for the human%")}
+		)
 		frappe.log_error(
 			title="friday.engine pause-posted",
-			message=f"name={doc.name} state={state} — bot.send_message returned without raising",
+			message=f"name={doc.name} state={state} count_in_session={count_now}",
 		)
 	except Exception:
 		# War room outages must never break the engine save.
