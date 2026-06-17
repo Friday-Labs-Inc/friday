@@ -139,27 +139,22 @@ class TestEngineRouting(unittest.TestCase):
 
 	def test_announces_pause_at_human_gate(self):
 		"""When the brief enters Gate 1 Review (a human-owned transition state),
-		the war room gets a 'waiting for the human' message. Without this the
-		feed would go silent at exactly the moment the human is needed."""
+		the war room gets a 'waiting for the human' message — enqueued after
+		commit so it isn't rolled back with the engine save's transaction."""
 		doc = frappe._dict(name="BB-TEST", business_name="Test Co", rp_project="PROJ-X")
-		with patch(
-			"frappe.friday_core.warroom.publisher._get_channel_id", return_value="CH-X"
-		), patch("frappe.friday_core.warroom.publisher._post_to_raven") as mock_post:
+		with patch("frappe.enqueue") as mock_enqueue:
 			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Gate 1 Review")
-		self.assertTrue(mock_post.called, "war room must be told the pipeline is waiting")
-		_, kwargs_or_payload = mock_post.call_args[0]
-		text = kwargs_or_payload["text"]
+		self.assertTrue(mock_enqueue.called, "war room post must be enqueued")
+		kwargs = mock_enqueue.call_args.kwargs
+		text = kwargs.get("text", "")
 		self.assertIn("Gate 1 Review", text)
 		self.assertIn("BB-TEST", text)
 		self.assertIn("waiting", text.lower())
+		self.assertTrue(kwargs.get("enqueue_after_commit"))
 
 	def test_no_announce_at_terminal(self):
 		"""Delivered has no outgoing transitions; the engine must stay silent."""
 		doc = frappe._dict(name="BB-TEST", business_name="Test Co")
-		with patch(
-			"frappe.friday_core.warroom.publisher._post_to_raven"
-		) as mock_post, patch(
-			"frappe.friday_core.warroom.publisher._get_channel_id", return_value="CH-X"
-		):
+		with patch("frappe.enqueue") as mock_enqueue:
 			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Delivered")
-		mock_post.assert_not_called()
+		mock_enqueue.assert_not_called()
