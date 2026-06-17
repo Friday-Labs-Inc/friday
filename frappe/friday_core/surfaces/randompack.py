@@ -186,6 +186,13 @@ def _ingest_brief(rp_brief: str, snapshot: dict) -> str:
 	if existing:
 		return existing
 
+	# RandomPack's brief_snapshot is a JSON field → arrives as a JSON string.
+	if isinstance(snapshot, str):
+		try:
+			snapshot = json.loads(snapshot)
+		except (ValueError, TypeError):
+			snapshot = {}
+
 	doc_fields: dict = {"doctype": "Brand Brief", "status": "Ready", "rp_brief": rp_brief}
 	leftovers: dict = {}
 	for key, value in (snapshot or {}).items():

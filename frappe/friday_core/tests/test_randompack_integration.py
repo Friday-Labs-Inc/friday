@@ -66,9 +66,10 @@ class TestRandompackInbound(unittest.TestCase):
 		# Real flow: payment.received carries NO snapshot, so no brief yet.
 		surface.handle_payment_received({"brief": "OB-T2"}, _Evt())
 		self.assertIsNone(_brief("OB-T2"))
-		# project.created carries the frozen snapshot → it creates the brief and starts it.
+		# project.created carries the frozen snapshot AS A JSON STRING (Frappe JSON
+		# field) → it creates the brief and starts it.
 		surface.handle_project_created(
-			{"project": "PROJ-T2", "brief": "OB-T2", "brief_snapshot": {"company": "T2Co"}}, _Evt()
+			{"project": "PROJ-T2", "brief": "OB-T2", "brief_snapshot": json.dumps({"company": "T2Co"})}, _Evt()
 		)
 		b = _brief("OB-T2")
 		self.assertTrue(b, "project.created should create the brief from its snapshot")
