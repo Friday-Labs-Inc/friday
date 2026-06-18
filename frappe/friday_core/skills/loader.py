@@ -125,13 +125,39 @@ SKILLS_CACHE_KEY_PREFIX = "friday:skills:"
 # keep the worst-case staleness small in practice.
 SKILLS_CACHE_TTL_SECONDS = 300
 
-# Role-gated skills (design 69, Q4): skill_name -> required agent_role.
-# A profile whose agent_role does not match is excluded from seeing this skill
-# in its tool menu, even if permitted_skills contains it. Defense in depth —
-# the handler also enforces at call time.
+# Role-gated skills FALLBACK (design 78): skill_name -> required role.
+# The PRIMARY path is the Skill.role_gate field (Link → Role) on the Skill
+# doctype — Desk-managed, no code deploy needed to add a new gate. This dict
+# is the back-stop for skills whose role_gate field is blank (preserves
+# existing gates for sites that haven't migrated). When BOTH are set, the
+# field wins. Values in the dict are agent_role tier names (Orchestrator/
+# Specialist/Worker); values from the field are Frappe Role docnames —
+# _profile_has_role() handles both value spaces transparently.
 _ROLE_GATED_SKILLS: dict[str, str] = {
 	"delegate-task": "Orchestrator",
 }
+_AGENT_ROLE_TIERS: frozenset[str] = frozenset({"Orchestrator", "Specialist", "Worker"})
+
+
+def _resolve_role_gate(skill_doc) -> str | None:
+	"""Return the role the calling profile must hold to use this skill, or None
+	if the skill is ungated. Reads Skill.role_gate first (the Desk-managed
+	field), falling back to the hardcoded dict for back-compat."""
+	gate = (getattr(skill_doc, "role_gate", None) or "").strip()
+	if gate:
+		return gate
+	return _ROLE_GATED_SKILLS.get(skill_doc.name)
+
+
+def _profile_has_role(profile, required_role: str) -> bool:
+	"""True if the profile holds the required role. Handles two value spaces:
+	the agent_role Select tier (Orchestrator/Specialist/Worker — checked
+	against profile.agent_role) and Frappe Role membership (any other value —
+	checked against profile.assigned_roles)."""
+	if required_role in _AGENT_ROLE_TIERS:
+		return getattr(profile, "agent_role", None) == required_role
+	assigned = getattr(profile, "assigned_roles", None) or []
+	return any(row.role == required_role for row in assigned)
 
 
 # ---------------------------------------------------------------------------
@@ -360,9 +386,6 @@ def _load_uncached(profile_name: str) -> list[SkillDefinition]:
 	# Step 2: cache-aware matrix for the agent (reused for every skill below).
 	matrix = build_matrix(profile_name)
 
-	# Step 2b: role-gated skills (design 69, Q4).
-	agent_role = getattr(profile, "agent_role", None)
-
 	# Step 3: filter skill-by-skill and build SkillDefinitions.
 	result: list[SkillDefinition] = []
 	for skill_name in permitted_skill_names:
@@ -378,9 +401,11 @@ def _load_uncached(profile_name: str) -> list[SkillDefinition]:
 
 		skill = frappe.get_doc("Skill", skill_name)
 
-		# Filter 0: role gate (design 69, Q4).
-		required_role = _ROLE_GATED_SKILLS.get(skill_name)
-		if required_role and agent_role != required_role:
+		# Filter 0: role gate (design 78). Reads Skill.role_gate first, then
+		# falls back to the hardcoded dict. _profile_has_role handles both
+		# agent_role tier and Frappe Role membership value spaces.
+		required_role = _resolve_role_gate(skill)
+		if required_role and not _profile_has_role(profile, required_role):
 			continue
 
 		# Filter 1: status must be Active.

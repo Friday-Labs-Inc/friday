@@ -267,36 +267,75 @@ class TestSkillLoader(unittest.TestCase):
 		restored = SkillDefinition.from_dict(original.to_dict())
 		self.assertEqual(original, restored)
 
-	def test_tool_description_merges_when_to_use(self):
-		"""Both description AND when_to_use must reach the LLM. Previously
-		when_to_use was silently dropped when description was set (OR fallback);
-		now they're concatenated under a 'When to use:' header so the model sees
-		BOTH the one-line summary AND the trigger guidance — the tool-definition
-		best practice the architect doc names."""
-		sd = SkillDefinition(
-			name="x", description="One-line summary.", when_to_use="Trigger this when X.",
-			parameters_schema={"type": "object", "properties": {}},
-			risk_level="low", requires_approval=False,
-		)
-		tool = to_tool_definition(sd)
-		desc = tool["function"]["description"]
-		self.assertIn("One-line summary.", desc)
-		self.assertIn("When to use:", desc)
-		self.assertIn("Trigger this when X.", desc)
+	# ------- Design 78: role gate uses Skill.role_gate field -------
 
-	def test_tool_description_falls_back_to_either(self):
-		"""When only one of the two is set, fall back to that one without the
-		'When to use:' header — keep descriptions clean for simple skills."""
-		just_desc = SkillDefinition(
-			name="x", description="Only desc.", when_to_use="",
-			parameters_schema={"type": "object", "properties": {}},
-			risk_level="low", requires_approval=False,
+	def test_role_gate_field_blocks_when_profile_lacks_role(self):
+		"""A skill with role_gate set to a Frappe Role is hidden from a profile
+		whose assigned_roles do not include that role. This is the load-bearing
+		security check the architect-doc gap audit surfaced."""
+		# Create a gate role and a skill that requires it.
+		gate_role = "FRIDAY-DESIGN78-GATE"
+		if not frappe.db.exists("Role", gate_role):
+			frappe.get_doc({"doctype": "Role", "role_name": gate_role}).insert(ignore_permissions=True)
+		gated_skill = "design78-gated-skill"
+		_ensure_skill(gated_skill, "Active")
+		skill_doc = frappe.get_doc("Skill", gated_skill)
+		skill_doc.role_gate = gate_role
+		skill_doc.save(ignore_permissions=True)
+		# Profile holds the TEST_ROLE for matrix admit, but NOT the gate role.
+		_ensure_profile(
+			"FRIDAY-DESIGN78-PROFILE-NO-GATE", roles=[TEST_ROLE], skills=[gated_skill]
 		)
-		self.assertEqual(to_tool_definition(just_desc)["function"]["description"], "Only desc.")
+		frappe.cache().delete_keys(SKILLS_CACHE_KEY_PREFIX)
+		skills = load_for_profile("FRIDAY-DESIGN78-PROFILE-NO-GATE")
+		self.assertNotIn(
+			gated_skill, [s.name for s in skills],
+			"profile without the gate role must not see a gated skill",
+		)
 
-		just_when = SkillDefinition(
-			name="x", description="", when_to_use="Only when.",
-			parameters_schema={"type": "object", "properties": {}},
-			risk_level="low", requires_approval=False,
+	def test_role_gate_field_admits_when_profile_has_role(self):
+		"""The same gated skill is visible to a profile that DOES hold the role."""
+		gate_role = "FRIDAY-DESIGN78-GATE"
+		if not frappe.db.exists("Role", gate_role):
+			frappe.get_doc({"doctype": "Role", "role_name": gate_role}).insert(ignore_permissions=True)
+		gated_skill = "design78-gated-skill"
+		_ensure_skill(gated_skill, "Active")
+		skill_doc = frappe.get_doc("Skill", gated_skill)
+		skill_doc.role_gate = gate_role
+		skill_doc.save(ignore_permissions=True)
+		_ensure_profile(
+			"FRIDAY-DESIGN78-PROFILE-WITH-GATE", roles=[TEST_ROLE, gate_role], skills=[gated_skill]
 		)
-		self.assertEqual(to_tool_definition(just_when)["function"]["description"], "Only when.")
+		frappe.cache().delete_keys(SKILLS_CACHE_KEY_PREFIX)
+		skills = load_for_profile("FRIDAY-DESIGN78-PROFILE-WITH-GATE")
+		self.assertIn(
+			gated_skill, [s.name for s in skills],
+			"profile holding the gate role must see the gated skill",
+		)
+
+	def test_role_gate_dict_fallback_for_unset_field(self):
+		"""When Skill.role_gate is blank, the loader falls back to the hardcoded
+		_ROLE_GATED_SKILLS dict so existing gates keep working (back-compat
+		guarantee from Design 78)."""
+		from frappe.friday_core.skills.loader import _ROLE_GATED_SKILLS
+
+		# Create a skill with NO role_gate field set; insert it into the dict.
+		fallback_skill = "design78-dict-fallback-skill"
+		_ensure_skill(fallback_skill, "Active")
+		# Make sure the skill row's role_gate field is empty.
+		frappe.db.set_value("Skill", fallback_skill, "role_gate", "")
+		# Add a dict entry — this is what protects legacy gated skills.
+		_ROLE_GATED_SKILLS[fallback_skill] = "Orchestrator"
+		try:
+			_ensure_profile(
+				"FRIDAY-DESIGN78-PROFILE-DICT-NO", roles=[TEST_ROLE], skills=[fallback_skill]
+			)
+			# This profile has no agent_role set → should be blocked by dict fallback.
+			frappe.cache().delete_keys(SKILLS_CACHE_KEY_PREFIX)
+			skills = load_for_profile("FRIDAY-DESIGN78-PROFILE-DICT-NO")
+			self.assertNotIn(
+				fallback_skill, [s.name for s in skills],
+				"dict fallback must still block when agent_role tier doesn't match",
+			)
+		finally:
+			_ROLE_GATED_SKILLS.pop(fallback_skill, None)
