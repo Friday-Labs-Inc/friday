@@ -261,13 +261,25 @@ def to_tool_definition(skill: SkillDefinition | Any) -> dict:
 	if hasattr(skill, "doctype") and skill.doctype == "Skill":
 		# A Frappe Skill document was passed directly.
 		name = skill.name
-		description = (skill.description or skill.when_to_use or "").strip()
+		desc = (skill.description or "").strip()
+		when = (skill.when_to_use or "").strip()
 		parameters = _parse_parameters_schema(skill.parameters_schema)
 	else:
 		# A SkillDefinition (or anything with the same attribute shape).
 		name = skill.name
-		description = (skill.description or skill.when_to_use or "").strip()
+		desc = (skill.description or "").strip()
+		when = (skill.when_to_use or "").strip()
 		parameters = skill.parameters_schema or {"type": "object", "properties": {}}
+
+	# Merge description + when_to_use so the LLM gets BOTH (the doc's "tool
+	# definition best practice" — rich descriptions improve tool selection).
+	# Previously these were OR'd, dropping when_to_use whenever description was
+	# set. Now they're concatenated under a clear "When to use:" header so the
+	# model sees the trigger conditions in addition to the one-line summary.
+	if desc and when:
+		description = f"{desc}\n\nWhen to use: {when}"
+	else:
+		description = desc or when
 
 	return {
 		"type": "function",

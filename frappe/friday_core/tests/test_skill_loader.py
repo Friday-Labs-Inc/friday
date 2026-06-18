@@ -266,3 +266,37 @@ class TestSkillLoader(unittest.TestCase):
 		original = next(s for s in skills if s.name == SKILL_ACTIVE)
 		restored = SkillDefinition.from_dict(original.to_dict())
 		self.assertEqual(original, restored)
+
+	def test_tool_description_merges_when_to_use(self):
+		"""Both description AND when_to_use must reach the LLM. Previously
+		when_to_use was silently dropped when description was set (OR fallback);
+		now they're concatenated under a 'When to use:' header so the model sees
+		BOTH the one-line summary AND the trigger guidance — the tool-definition
+		best practice the architect doc names."""
+		sd = SkillDefinition(
+			name="x", description="One-line summary.", when_to_use="Trigger this when X.",
+			parameters_schema={"type": "object", "properties": {}},
+			risk_level="low", requires_approval=False,
+		)
+		tool = to_tool_definition(sd)
+		desc = tool["function"]["description"]
+		self.assertIn("One-line summary.", desc)
+		self.assertIn("When to use:", desc)
+		self.assertIn("Trigger this when X.", desc)
+
+	def test_tool_description_falls_back_to_either(self):
+		"""When only one of the two is set, fall back to that one without the
+		'When to use:' header — keep descriptions clean for simple skills."""
+		just_desc = SkillDefinition(
+			name="x", description="Only desc.", when_to_use="",
+			parameters_schema={"type": "object", "properties": {}},
+			risk_level="low", requires_approval=False,
+		)
+		self.assertEqual(to_tool_definition(just_desc)["function"]["description"], "Only desc.")
+
+		just_when = SkillDefinition(
+			name="x", description="", when_to_use="Only when.",
+			parameters_schema={"type": "object", "properties": {}},
+			risk_level="low", requires_approval=False,
+		)
+		self.assertEqual(to_tool_definition(just_when)["function"]["description"], "Only when.")

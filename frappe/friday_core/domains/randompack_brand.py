@@ -135,13 +135,16 @@ PHASES: list[dict] = [
 		"from_state": "Naming",
 		"action": "Complete Naming",
 		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
-			"You are the brand namer/copywriter for {{ business_name }}. Read brief "
-			"{{ name }} with get-brand-brief and build on the completed strategy. "
-			"Produce 8-12 name candidates, each with a one-line rationale and basic "
-			"screening notes (pronunciation, obvious conflicts). Humans shortlist; "
-			"trademark/domain checks are theirs."
+			"You are the brand namer/copywriter for {{ business_name }}. "
+			"FIRST call get-phase-outputs to read the strategy phase's positioning, "
+			"core insight, and differentiating idea — your names must reflect that "
+			"positioning, not generic industry vibes. THEN read brief {{ name }} with "
+			"get-brand-brief for the client's context. Produce 8-12 name candidates, "
+			"each with a one-line rationale that ties back to the positioning and "
+			"basic screening notes (pronunciation, obvious conflicts). Humans "
+			"shortlist; trademark/domain checks are theirs."
 		),
 	},
 	{
