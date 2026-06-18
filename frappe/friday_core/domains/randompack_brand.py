@@ -120,14 +120,16 @@ PHASES: list[dict] = [
 		"from_state": "Strategy",
 		"action": "Complete Strategy",
 		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "attach-deliverable"],
 		"prompt": (
 			"You are the brand strategist for {{ business_name }} (industry: "
 			"{{ industry or 'n/a' }}). Read the full brief first with get-brand-brief "
 			"(brief id: {{ name }}). Then draft strategy & positioning: market "
 			"position, the core audience insight, the ONE differentiating idea, and a "
-			"crisp positioning statement. Reply with the full draft — a human "
-			"strategist refines it before the client sees anything."
+			"crisp positioning statement. After the draft, call attach-deliverable "
+			"with project_name=\"{{ project }}\" and file_name=\"strategy.md\" passing "
+			"your draft as content, so the customer sees it on their project page. "
+			"Reply with the full draft."
 		),
 	},
 	{
@@ -135,16 +137,18 @@ PHASES: list[dict] = [
 		"from_state": "Naming",
 		"action": "Complete Naming",
 		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "attach-deliverable"],
 		"prompt": (
-			"You are the brand namer/copywriter for {{ business_name }}. "
-			"FIRST call get-phase-outputs to read the strategy phase's positioning, "
-			"core insight, and differentiating idea — your names must reflect that "
-			"positioning, not generic industry vibes. THEN read brief {{ name }} with "
-			"get-brand-brief for the client's context. Produce 8-12 name candidates, "
-			"each with a one-line rationale that ties back to the positioning and "
-			"basic screening notes (pronunciation, obvious conflicts). Humans "
-			"shortlist; trademark/domain checks are theirs."
+			"You are the brand namer/copywriter for {{ business_name }}. FIRST call "
+			"get-phase-outputs to read the strategy phase's positioning, core insight, "
+			"and differentiating idea — your names must reflect that positioning, not "
+			"generic industry vibes. THEN read brief {{ name }} with get-brand-brief "
+			"for the client's context. Produce 8-12 name candidates, each with a "
+			"one-line rationale that ties back to the positioning and basic screening "
+			"notes (pronunciation, obvious conflicts). After the list, call "
+			"attach-deliverable with project_name=\"{{ project }}\" and "
+			"file_name=\"naming-candidates.md\" passing the full list as content. "
+			"Humans shortlist; trademark/domain checks are theirs."
 		),
 	},
 	{
@@ -169,14 +173,19 @@ PHASES: list[dict] = [
 		"from_state": "Gate 1 Prep",
 		"action": "Complete Gate 1 Prep",
 		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
 		"prompt": (
-			"FIRST call get-phase-outputs to read what the earlier phases produced "
-			"for {{ business_name }} — the strategy draft, the naming candidates, "
-			"and the three creative directions. THEN assemble the client-facing "
-			"summary for decision gate 1 (brief {{ name }}): the three directions "
-			"(one paragraph each, client-friendly), naming shortlist context, and a "
-			"recommendation with reasoning. Reply with the full presentation text."
+			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
+			"see what's already on the project, then get-phase-outputs to read what "
+			"the earlier phases produced for {{ business_name }} — the strategy "
+			"draft, the naming candidates, and the three creative directions. THEN "
+			"assemble the client-facing summary for decision gate 1 (brief "
+			"{{ name }}): the three directions (one paragraph each, client-friendly), "
+			"naming shortlist context, and a recommendation with reasoning. After "
+			"the summary, call attach-deliverable with project_name=\"{{ project }}\" "
+			"and file_name=\"gate1-client-presentation.md\" passing the full "
+			"presentation as content — this is what the client clicks at Gate 1. "
+			"Reply with the full presentation text."
 		),
 	},
 	{
@@ -184,18 +193,21 @@ PHASES: list[dict] = [
 		"from_state": "Buildout",
 		"action": "Complete Buildout",
 		"agent_role": "Creative Director",
-		"skills": ["get-brand-brief", "get-phase-outputs", "generate-image"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "generate-image", "attach-deliverable"],
 		"prompt": (
 			"The client of {{ business_name }} chose the direction "
 			"\"{{ chosen_direction or 'the approved direction' }}\". FIRST call "
-			"get-phase-outputs to read the strategy and the three directions, so you "
-			"build on the chosen direction's ACTUAL palette, typography, and logo "
-			"concept rather than inventing a fresh take. Call generate-image to "
-			"produce the refined hero/key visual for the chosen direction. THEN "
-			"produce the build-out package: refined palette system, typography "
-			"hierarchy, voice & tone rules, application copy (web hero, about, "
-			"boilerplate), and designer-ready specs for every core asset. Reply with "
-			"the full package."
+			"list-project-files with project_name=\"{{ project }}\" to see what's "
+			"already on the project, then get-phase-outputs to read the strategy and "
+			"the three directions — build on the chosen direction's ACTUAL palette, "
+			"typography, and logo concept rather than inventing a fresh take. Call "
+			"generate-image to produce the refined hero/key visual for the chosen "
+			"direction. Produce the build-out package: refined palette system, "
+			"typography hierarchy, voice & tone rules, application copy (web hero, "
+			"about, boilerplate), and designer-ready specs for every core asset. "
+			"After the package, call attach-deliverable with "
+			"project_name=\"{{ project }}\" and file_name=\"buildout-package.md\" "
+			"passing the full package as content. Reply with the full package."
 		),
 	},
 	{
@@ -203,12 +215,16 @@ PHASES: list[dict] = [
 		"from_state": "Gate 2 Prep",
 		"action": "Complete Gate 2 Prep",
 		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
 		"prompt": (
-			"FIRST call get-phase-outputs to read the build-out package and the "
-			"earlier decisions for {{ business_name }}. THEN assemble the "
-			"client-facing final-review summary (brief {{ name }}): what was built, "
-			"the decisions made, and what delivery contains. Reply with the full "
+			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
+			"see what's already on the project, then get-phase-outputs to read the "
+			"build-out package and the earlier decisions for {{ business_name }}. "
+			"THEN assemble the client-facing final-review summary (brief {{ name }}): "
+			"what was built, the decisions made, and what delivery contains. After "
+			"the summary, call attach-deliverable with project_name=\"{{ project }}\" "
+			"and file_name=\"gate2-final-review.md\" passing the full summary as "
+			"content — this is what the client clicks at Gate 2. Reply with the full "
 			"presentation text."
 		),
 	},
@@ -217,14 +233,18 @@ PHASES: list[dict] = [
 		"from_state": "Guidelines",
 		"action": "Complete Guidelines",
 		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
 		"prompt": (
-			"FIRST call get-phase-outputs to read the build-out package and the "
-			"strategy for {{ business_name }}. THEN draft the complete brand "
-			"guidelines document (brief {{ name }}): strategy recap, logo usage "
-			"rules, palette with values, typography, voice & tone with examples, and "
-			"application do/don'ts. Reply with the full document in Markdown — humans "
-			"finalise and export."
+			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
+			"see what's already on the project, then get-phase-outputs to read the "
+			"build-out package and the strategy for {{ business_name }}. THEN draft "
+			"the complete brand guidelines document (brief {{ name }}): strategy "
+			"recap, logo usage rules, palette with values, typography, voice & tone "
+			"with examples, and application do/don'ts. After the document, call "
+			"attach-deliverable with project_name=\"{{ project }}\" and "
+			"file_name=\"brand-guidelines.md\" passing the full document as content "
+			"— this is the customer's primary deliverable. Reply with the full "
+			"document in Markdown."
 		),
 	},
 ]
@@ -237,7 +257,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Brand Strategist",
 		"discriminator_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
 		"system_prompt": (
 			"You are a senior brand strategist. You think in positioning, audience "
 			"insight, and the single differentiating idea. You are concise, "
@@ -247,7 +267,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Brand Copywriter",
 		"discriminator_role": "Brand Copywriter",
-		"skills": ["get-brand-brief", "get-phase-outputs"],
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
 		"system_prompt": (
 			"You are a brand namer and copywriter. You generate distinctive names "
 			"and write brand voice with rhythm and restraint. You screen names for "
@@ -257,7 +277,7 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Creative Director",
 		"discriminator_role": "Creative Director",
-		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs", "generate-image"],
+		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs", "generate-image", "list-project-files", "attach-deliverable"],
 		"system_prompt": (
 			"You are a creative director. You translate strategy into distinct "
 			"visual directions — palette, typography, logo concept, application — and "
