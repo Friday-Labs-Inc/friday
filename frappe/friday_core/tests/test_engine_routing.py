@@ -37,7 +37,7 @@ from frappe.friday_core.engine import workflow_engine
 
 
 def _new_brief():
-	return frappe.get_doc(
+	doc = frappe.get_doc(
 		{
 			"doctype": "Brand Brief",
 			"business_name": "Routing Co",
@@ -45,9 +45,14 @@ def _new_brief():
 			"what_they_do": "sells",
 			"target_audience": "shoppers",
 			"status": "Ready",
-			"workflow_state": "Strategy",
 		}
 	).insert(ignore_permissions=True)
+	# The brief idles at "Intake"; start the pipeline the way project.created
+	# does — fire Start Pipeline (Intake -> Strategy), which dispatches strategy.
+	from frappe.model.workflow import apply_workflow
+
+	apply_workflow(doc, "Start Pipeline")
+	return doc
 
 
 def _task_for(brief_name: str, phase_key: str):
@@ -131,5 +136,25 @@ class TestEngineRouting(unittest.TestCase):
 		self.assertIsNotNone(workflow_engine._agentic_meta_for_state(wf, "Strategy"))
 		# Gate 1 Review's only outgoing transition is the human gate -> None.
 		self.assertIsNone(workflow_engine._agentic_meta_for_state(wf, "Gate 1 Review"))
-		# Delivered is terminal -> None.
-		self.assertIsNone(workflow_engine._agentic_meta_for_state(wf, "Delivered"))
+
+	def test_announces_pause_at_human_gate(self):
+		"""When the brief enters Gate 1 Review (a human-owned transition state),
+		the war room gets a 'waiting for the human' message — enqueued after
+		commit so it isn't rolled back with the engine save's transaction."""
+		doc = frappe._dict(name="BB-TEST", business_name="Test Co", rp_project="PROJ-X")
+		with patch("frappe.enqueue") as mock_enqueue:
+			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Gate 1 Review")
+		self.assertTrue(mock_enqueue.called, "war room post must be enqueued")
+		kwargs = mock_enqueue.call_args.kwargs
+		text = kwargs.get("text", "")
+		self.assertIn("Gate 1 Review", text)
+		self.assertIn("BB-TEST", text)
+		self.assertIn("waiting", text.lower())
+		self.assertTrue(kwargs.get("enqueue_after_commit"))
+
+	def test_no_announce_at_terminal(self):
+		"""Delivered has no outgoing transitions; the engine must stay silent."""
+		doc = frappe._dict(name="BB-TEST", business_name="Test Co")
+		with patch("frappe.enqueue") as mock_enqueue:
+			workflow_engine._announce_human_pause(doc, bundle.WORKFLOW_NAME, "Delivered")
+		mock_enqueue.assert_not_called()

@@ -77,6 +77,11 @@ GATEWAY_USER = "gateway+brand@friday.local"
 # *leaves* that state, because apply_workflow saves the doc as that actor.
 # ---------------------------------------------------------------------------
 STATES: list[tuple[str, str]] = [
+	# Idle entry state: a brief sits here after payment.received until
+	# project.created fires "Start Pipeline". It has NO agentic phase, so the
+	# engine never dispatches from it — this is what lets us set rp_project
+	# (known only at project.created) BEFORE the first phase runs.
+	("Intake", "System Manager"),
 	("Strategy", "Brand Strategist"),
 	("Naming", "Brand Copywriter"),
 	("Directions", "Creative Director"),
@@ -88,11 +93,13 @@ STATES: list[tuple[str, str]] = [
 	("Guidelines", "Brand Copywriter"),
 	("Delivered", "System Manager"),
 ]
-INITIAL_STATE = "Strategy"
+INITIAL_STATE = "Intake"
 
-# (from_state, action, next_state, allowed_role). The two gates are owned by
-# GATE_ROLE; everything else by an agent (discriminator) role.
+# (from_state, action, next_state, allowed_role). "Start Pipeline" is the
+# system transition project.created fires to leave the idle Intake state. The
+# two gates are owned by GATE_ROLE; everything else by an agent role.
 TRANSITIONS: list[tuple[str, str, str, str]] = [
+	("Intake", "Start Pipeline", "Strategy", "System Manager"),
 	("Strategy", "Complete Strategy", "Naming", "Brand Strategist"),
 	("Naming", "Complete Naming", "Directions", "Brand Copywriter"),
 	("Directions", "Complete Directions", "Gate 1 Prep", "Creative Director"),
@@ -128,13 +135,16 @@ PHASES: list[dict] = [
 		"from_state": "Naming",
 		"action": "Complete Naming",
 		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief"],
+		"skills": ["get-brand-brief", "get-phase-outputs"],
 		"prompt": (
-			"You are the brand namer/copywriter for {{ business_name }}. Read brief "
-			"{{ name }} with get-brand-brief and build on the completed strategy. "
-			"Produce 8-12 name candidates, each with a one-line rationale and basic "
-			"screening notes (pronunciation, obvious conflicts). Humans shortlist; "
-			"trademark/domain checks are theirs."
+			"You are the brand namer/copywriter for {{ business_name }}. "
+			"FIRST call get-phase-outputs to read the strategy phase's positioning, "
+			"core insight, and differentiating idea — your names must reflect that "
+			"positioning, not generic industry vibes. THEN read brief {{ name }} with "
+			"get-brand-brief for the client's context. Produce 8-12 name candidates, "
+			"each with a one-line rationale that ties back to the positioning and "
+			"basic screening notes (pronunciation, obvious conflicts). Humans "
+			"shortlist; trademark/domain checks are theirs."
 		),
 	},
 	{
@@ -433,10 +443,31 @@ def _ensure_workflow_masters() -> None:
 
 
 def _ensure_workflow() -> None:
-	"""Create the Frappe Workflow on Brand Brief (idempotent — skip if present)."""
+	"""Upsert the Frappe Workflow on Brand Brief. Rebuilds states + transitions
+	from STATES/TRANSITIONS each run so code changes (e.g. the Intake state)
+	reach an already-provisioned site. Existing briefs keep their current state."""
+	states = [
+		{"state": state, "doc_status": "0", "allow_edit": allow_edit}
+		for state, allow_edit in STATES
+	]
+	transitions = [
+		{"state": frm, "action": action, "next_state": nxt, "allowed": allowed, "allow_self_approval": 1}
+		for frm, action, nxt, allowed in TRANSITIONS
+	]
 	if frappe.db.exists("Workflow", WORKFLOW_NAME):
+		wf = frappe.get_doc("Workflow", WORKFLOW_NAME)
+		wf.is_active = 1
+		wf.workflow_state_field = STATE_FIELD
+		wf.send_email_alert = 0
+		wf.set("states", [])
+		for s in states:
+			wf.append("states", s)
+		wf.set("transitions", [])
+		for t in transitions:
+			wf.append("transitions", t)
+		wf.save(ignore_permissions=True)
 		return
-	wf = frappe.get_doc(
+	frappe.get_doc(
 		{
 			"doctype": "Workflow",
 			"workflow_name": WORKFLOW_NAME,
@@ -444,23 +475,10 @@ def _ensure_workflow() -> None:
 			"is_active": 1,
 			"workflow_state_field": STATE_FIELD,
 			"send_email_alert": 0,
-			"states": [
-				{"state": state, "doc_status": "0", "allow_edit": allow_edit}
-				for state, allow_edit in STATES
-			],
-			"transitions": [
-				{
-					"state": frm,
-					"action": action,
-					"next_state": nxt,
-					"allowed": allowed,
-					"allow_self_approval": 1,
-				}
-				for frm, action, nxt, allowed in TRANSITIONS
-			],
+			"states": states,
+			"transitions": transitions,
 		}
-	)
-	wf.insert(ignore_permissions=True)
+	).insert(ignore_permissions=True)
 
 
 def _ensure_transition_meta() -> None:

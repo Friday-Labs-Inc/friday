@@ -180,10 +180,17 @@ class ProjectConsole {
 		projects.forEach((p) => {
 			const pct = Math.round(p.percent_complete || 0);
 			const status = p.status || "Open";
+			const is_brief = p.kind === "brand_brief";
+			// A small "brief" chip on the brief tiles so users see the new
+			// metadata-engine work alongside the legacy Project rollups.
+			const kind_chip = is_brief
+				? `<span class="fc-kind fc-kind-brief">${__("brief")}</span>`
+				: "";
 			const card = $(`
 				<div class="fc-card" data-project="${frappe.utils.escape_html(p.name)}">
 					<div class="fc-card-head">
 						<span class="fc-card-title">${frappe.utils.escape_html(p.project_name || p.name)}</span>
+						${kind_chip}
 						<span class="fc-status fc-status-${frappe.scrub(status)}">${__(status)}</span>
 					</div>
 					<div class="fc-progress"><div class="fc-progress-bar" style="width:${pct}%"></div></div>
@@ -193,8 +200,15 @@ class ProjectConsole {
 					</div>
 				</div>
 			`);
-			// Click a card to scope every zone to that project.
 			card.on("click", () => {
+				if (is_brief) {
+					// Brief tiles open the Brand Brief form directly — the
+					// snapshot's project-scope filter doesn't apply to engine
+					// tasks (they're keyed by work_item, not Project).
+					frappe.set_route("Form", "Brand Brief", p.name);
+					return;
+				}
+				// Legacy Project tile: scope every zone to that project.
 				this.project = p.name;
 				this.feed = [];
 				this.refresh();

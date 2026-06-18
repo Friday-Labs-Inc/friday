@@ -177,25 +177,25 @@ _BRIEF_FIELD_MAP = {
 }
 
 
-def handle_payment_received(data: dict, event) -> None:
-	"""payment.received → ingest the frozen brief_snapshot as a Brand Brief.
-
-	Staging only (locked role map): generation starts at project.created
-	(60b). Idempotent: keyed by the backend project/brief reference when
-	present, stored in the brief's notes for traceability.
-	"""
-	snapshot = data.get("brief_snapshot") or {}
-	if not snapshot:
-		return
-
-	backend_ref = str(data.get("project_id") or data.get("brief_id") or event.event_id)
-	existing = frappe.db.get_value("Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name")
+def _ingest_brief(rp_brief: str, snapshot: dict) -> str:
+	"""Create a Brand Brief from a frozen brief_snapshot (idempotent by rp_brief).
+	Returns the brief name (existing or newly created). Shared by both handlers —
+	whichever event arrives carrying the snapshot creates the brief. Correlation
+	key is the RandomPack Onboarding Brief docname (`brief`)."""
+	existing = frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name") if rp_brief else None
 	if existing:
-		return  # snapshot is frozen — never overwrite
+		return existing
 
-	doc_fields: dict = {"doctype": "Brand Brief", "status": "Ready"}
+	# RandomPack's brief_snapshot is a JSON field → arrives as a JSON string.
+	if isinstance(snapshot, str):
+		try:
+			snapshot = json.loads(snapshot)
+		except (ValueError, TypeError):
+			snapshot = {}
+
+	doc_fields: dict = {"doctype": "Brand Brief", "status": "Ready", "rp_brief": rp_brief}
 	leftovers: dict = {}
-	for key, value in snapshot.items():
+	for key, value in (snapshot or {}).items():
 		target = _BRIEF_FIELD_MAP.get(key)
 		if not target:
 			leftovers[key] = value
@@ -211,13 +211,26 @@ def handle_payment_received(data: dict, event) -> None:
 		else:
 			doc_fields[target] = value
 
-	notes_parts = [f"[rp:{backend_ref}]"]
+	notes_parts = [f"[rp:{rp_brief}]"]
 	if leftovers:
 		notes_parts.append("Unmapped brief fields:\n" + frappe.as_json(leftovers))
 	doc_fields["notes"] = "\n".join(notes_parts)
-	doc_fields.setdefault("business_name", f"RandomPack {backend_ref}")
+	doc_fields.setdefault("business_name", f"RandomPack {rp_brief}")
+	return frappe.get_doc(doc_fields).insert(ignore_permissions=True).name
 
-	frappe.get_doc(doc_fields).insert(ignore_permissions=True)
+
+def handle_payment_received(data: dict, event) -> None:
+	"""payment.received → stage the Brand Brief IF a snapshot is present.
+
+	RandomPack's payment.received carries only {brief, sales_order} (no
+	snapshot), so this is normally a no-op — the brief is created at
+	project.created, which carries the frozen snapshot. Kept for the case where
+	a snapshot is delivered early.
+	"""
+	snapshot = data.get("brief_snapshot") or {}
+	rp_brief = str(data.get("brief") or "")
+	if snapshot and rp_brief:
+		_ingest_brief(rp_brief, snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -250,71 +263,113 @@ def _warroom(text: str) -> None:
 
 
 def handle_project_created(data: dict, event) -> None:
-	"""project.created → Friday Project + the productized pipeline (Q4)."""
-	from frappe.friday_core.tasks.templates import instantiate_pipeline
+	"""project.created → start the Brand Brief metadata engine (Design 75).
 
-	ref = _backend_ref(data, event)
-	brief = _find_brief(ref)
+	Correlate the ingested Brand Brief by the RandomPack brief docname, record
+	the RandomPack project ref on it (for write-back), then kick the Design-75
+	engine by moving the brief into its initial workflow state. The engine's
+	on_update hook dispatches the first phase. Idempotent: a replay that finds
+	the brief already started is an observable no-op.
+	"""
+	from frappe.friday_core.domains.randompack_brand import INITIAL_STATE
+
+	rp_brief = str(data.get("brief") or "")
+	rp_project = str(data.get("project") or "")
+	snapshot = data.get("brief_snapshot") or {}
+	brief = frappe.db.get_value("Brand Brief", {"rp_brief": rp_brief}, "name") if rp_brief else None
+	# payment.received carries no snapshot, so the brief usually doesn't exist
+	# yet — create it now from project.created's frozen snapshot.
+	if not brief and snapshot and rp_brief:
+		brief = _ingest_brief(rp_brief, snapshot)
+	if not brief:
+		brief = _find_brief(_backend_ref(data, event))
 	if not brief:
 		raise ValueError(
-			f"no ingested Brand Brief for backend project {ref!r} — was payment.received delivered?"
+			f"no Brand Brief for RandomPack brief {rp_brief!r} / project {rp_project!r} and no "
+			"snapshot to create one"
 		)
 
-	project = _find_project(ref)
-	if not project:
-		doc = frappe.get_doc(
-			{
-				"doctype": "Project",
-				"project_name": f"RandomPack {ref}",
-				"description": f"Productized pipeline for backend project {ref} (brief {brief}).",
-				"status": "Open",
-				"backend_ref": ref,
-			}
-		)
-		doc.insert(ignore_permissions=True)
-		project = doc.name
+	doc = frappe.get_doc("Brand Brief", brief)
+	# Persist rp_project NOW (apply_workflow doesn't reliably carry an unsaved
+	# field), so the engine + write-back see it from the first phase on.
+	if rp_project and doc.rp_project != rp_project:
+		doc.db_set("rp_project", rp_project, update_modified=False)
+		doc.reload()
 
-	# Design 61, Q7b — explicit replay narration. ``instantiate_pipeline`` is
-	# already idempotent per-task (it dedupes against existing backend_ref
-	# slugs on the project — templates.py:150), so a replay returns an empty
-	# list of newly-created names rather than double-planning. Make that
-	# safety visible in the War Room so a replay is observably a no-op,
-	# instead of looking like a successful "0 tasks created" plan.
-	tasks = instantiate_pipeline(project, ref, brief)
-	if not tasks:
-		_warroom(f"**[PRJ {ref}]** project.created replay — pipeline already planned; no-op.")
+	# After payment the brief idles at INITIAL_STATE ("Intake") — no agentic phase
+	# there, so nothing has run yet. Starting the pipeline = firing the Start
+	# Pipeline transition (Intake → Strategy), which lets the engine dispatch the
+	# first phase WITH the project ref set. A brief already past Intake is a replay.
+	if doc.workflow_state and doc.workflow_state != INITIAL_STATE:
+		_warroom(f"**[{rp_project or rp_brief}]** project.created replay — pipeline already running ({doc.workflow_state}); no-op.")
 		return
-	_warroom(f"**[PRJ {ref}]** pipeline planned — {len(tasks)} tasks created (brief {brief}).")
+
+	from frappe.friday_core.engine.governance import acting_as
+	from frappe.model.workflow import apply_workflow
+
+	if doc.workflow_state != INITIAL_STATE:
+		doc.workflow_state = INITIAL_STATE  # ensure at Intake for the transition
+	# The webhook worker runs as Guest; Start Pipeline is a System-Manager-gated
+	# SYSTEM transition (not an agent/gate action), so fire it as Administrator.
+	with acting_as("Administrator"):
+		apply_workflow(doc, "Start Pipeline")  # Intake → Strategy; fires the engine
+	_warroom(f"**[{rp_project or rp_brief}]** brand pipeline started (brief {brief} → Strategy).")
 
 	from frappe.friday_core.integrations.randompack_client import post_project_note
 
-	post_project_note(
-		ref,
-		note=f"Friday planned the pipeline: {len(tasks)} tasks, gates at direction choice and final approval.",
-	)
+	if rp_project:
+		post_project_note(rp_project, note="Friday started the brand pipeline (strategy → directions → gates → delivery).")
 
 
 def handle_gate_decided(data: dict, event) -> None:
-	"""gate.decided → complete the gate milestone; the pipeline resumes (Q3)."""
-	ref = _backend_ref(data, event)
-	project = _find_project(ref)
-	if not project:
-		raise ValueError(f"no Friday project for backend ref {ref!r}")
-	gate = str(data.get("gate") or "gate1")
-	task_name = frappe.db.get_value("Task", {"project": project, "backend_ref": gate}, "name")
-	if not task_name:
-		raise ValueError(f"no milestone task {gate!r} on project {project!r}")
+	"""gate.decided → fire the Brand Brief's gate transition as the gateway user.
 
-	task = frappe.get_doc("Task", task_name)
-	if task.workflow_state != "Completed":
-		task.workflow_state = "Completed"
-		task.completed_at = frappe.utils.now_datetime()
-		task.save(ignore_permissions=True)
+	The brief's CURRENT workflow_state tells us which gate this is (Gate 1
+	Review → Approve Direction; Gate 2 Review → Final Approval), so we don't
+	depend on the backend's gate naming. 'Refinement Requested' does NOT advance
+	— it's noted for a human. The transition fires as the gateway system user
+	(holds only the client-reviewer role) per the Design 75 §3 governance guard;
+	the engine then dispatches the next phase.
+	"""
+	from frappe.friday_core.domains.randompack_brand import GATEWAY_USER
+	from frappe.friday_core.engine.governance import acting_as
+	from frappe.friday_core.integrations.randompack_client import post_project_note
+	from frappe.model.workflow import apply_workflow
 
-	decision = data.get("decision") or data.get("chosen_direction") or ""
-	if decision:
-		_remember(f"Backend project {ref}: {gate} decided — {decision}", subject=ref)
-	_warroom(f"**[PRJ {ref}]** {gate} decided: {decision or 'approved'} — downstream tasks unblocked.")
+	rp_project = str(data.get("project") or "")
+	brief = (frappe.db.get_value("Brand Brief", {"rp_project": rp_project}, "name") if rp_project else None) or \
+		_find_brief(_backend_ref(data, event))
+	if not brief:
+		raise ValueError(f"no Brand Brief for RandomPack project {rp_project!r}")
+
+	decision = str(data.get("decision") or "")
+	chosen = str(data.get("chosen_direction") or "")
+	if decision == "Refinement Requested":
+		_warroom(f"**[{rp_project}]** refinement requested: {str(data.get('client_comments') or '')}")
+		post_project_note(rp_project, note="Friday noted the refinement request; awaiting the updated direction.")
+		return
+
+	doc = frappe.get_doc("Brand Brief", brief)
+	state = doc.workflow_state or ""
+	if "Gate 1" in state:
+		action = "Approve Direction"
+		if chosen:
+			doc.db_set("chosen_direction", chosen, update_modified=False)
+			doc.reload()
+	elif "Gate 2" in state:
+		action = "Final Approval"
+	else:
+		_warroom(f"**[{rp_project}]** gate.decided but brief is at {state!r} — no matching gate transition; ignored.")
+		return
+
+	with acting_as(GATEWAY_USER):
+		apply_workflow(doc, action)
+
+	_remember(
+		f"RandomPack project {rp_project}: {state} approved — {chosen or decision or 'approved'}",
+		subject=rp_project or brief,
+	)
+	_warroom(f"**[{rp_project}]** {state} approved ({chosen or decision or 'approved'}) — pipeline advanced.")
 
 
 def handle_refinement_requested(data: dict, event) -> None:

@@ -131,24 +131,25 @@ class TestBriefIngestion(unittest.TestCase):
 		mock_frappe.as_json.side_effect = json.dumps
 		event = MagicMock()
 		event.event_id = "evt-9"
-		randompack.handle_payment_received({"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event)
+		randompack.handle_payment_received({"brief": "RP-BRIEF-7", "brief_snapshot": self._SNAPSHOT}, event)
 		payload = mock_frappe.get_doc.call_args[0][0]
 		self.assertEqual(payload["business_name"], "Loop Coffee")
 		self.assertEqual(payload["brand_personality"], "warm, crafted, honest")
 		self.assertEqual(payload["status"], "Ready")
-		self.assertIn("[rp:PRJ-7]", payload["notes"])
+		self.assertIn("[rp:RP-BRIEF-7]", payload["notes"])
 		self.assertIn("custom_field", payload["notes"])  # nothing silently lost
 
 	@patch(f"{_S}.frappe")
 	def test_frozen_snapshot_never_overwrites(self, mock_frappe):
 		mock_frappe.db.get_value.return_value = "BB-0042"  # already ingested
 		event = MagicMock()
-		randompack.handle_payment_received({"project_id": "PRJ-7", "brief_snapshot": self._SNAPSHOT}, event)
+		randompack.handle_payment_received({"brief": "RP-BRIEF-7", "brief_snapshot": self._SNAPSHOT}, event)
 		mock_frappe.get_doc.assert_not_called()
 
 	@patch(f"{_S}.frappe")
 	def test_empty_snapshot_is_a_noop(self, mock_frappe):
-		randompack.handle_payment_received({"project_id": "PRJ-7"}, MagicMock())
+		# Real payment.received carries no snapshot → staging no-op.
+		randompack.handle_payment_received({"brief": "RP-BRIEF-7"}, MagicMock())
 		mock_frappe.get_doc.assert_not_called()
 
 
@@ -168,7 +169,7 @@ class TestOutboundClient(unittest.TestCase):
 		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
 		randompack_client.send("update_task_progress", {"task": "T-1"})
 		url = mock_requests.post.call_args[0][0]
-		self.assertEqual(url, "https://ops.randompack.com/api/method/randompack.api.update_task_progress")
+		self.assertEqual(url, "https://ops.randompack.com/api/method/randompack.api.v1.update_task_progress")
 		headers = mock_requests.post.call_args.kwargs["headers"]
 		self.assertEqual(headers["Authorization"], "token key123:sec456")
 
