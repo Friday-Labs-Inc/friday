@@ -12,6 +12,7 @@
         "api_key",
         "base_url",
         "default_model",
+        "image_model",
         "default_max_tokens",
         "default_temperature",
         "input_cost_per_million",
@@ -81,6 +82,13 @@
             "fieldtype": "Data",
             "label": "Default Model",
             "description": "Model to use when the Agent Profile does not specify one. E.g. MiniMax-Standard, gpt-4o, claude-3-sonnet."
+        },
+        {
+            "default": "image-01",
+            "fieldname": "image_model",
+            "fieldtype": "Data",
+            "label": "Image Model",
+            "description": "MiniMax image model for the generate-image skill (e.g. image-01). Empty falls back to image-01."
         },
         {
             "default": "2048",
