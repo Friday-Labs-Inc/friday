@@ -57,13 +57,10 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		frappe.db.rollback()
 
 	def _brief(self):
+		# No pipeline state needed — get-phase-outputs reads tasks by work_item,
+		# independent of the brief's workflow state (which now idles at Intake).
 		return frappe.get_doc(
-			{
-				"doctype": "Brand Brief",
-				"business_name": "PhaseOut Co",
-				"status": "Ready",
-				"workflow_state": "Strategy",
-			}
+			{"doctype": "Brand Brief", "business_name": "PhaseOut Co", "status": "Ready"}
 		).insert(ignore_permissions=True)
 
 	def _completed(self, brief_name, phase_key, summary):

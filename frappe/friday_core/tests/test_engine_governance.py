@@ -41,9 +41,10 @@ def _user(profile: str) -> str:
 
 
 def _new_brief() -> "frappe.model.document.Document":
-	"""A brand brief that starts in the first agentic state, so the engine
-	immediately dispatches the strategy phase."""
-	return frappe.get_doc(
+	"""A brand brief moved into the first agentic state, so the engine
+	dispatches the strategy phase. The brief idles at "Intake" on insert; we
+	fire Start Pipeline (Intake -> Strategy) the way project.created does."""
+	doc = frappe.get_doc(
 		{
 			"doctype": "Brand Brief",
 			"business_name": "Test Co",
@@ -51,9 +52,10 @@ def _new_brief() -> "frappe.model.document.Document":
 			"what_they_do": "things",
 			"target_audience": "people",
 			"status": "Ready",
-			"workflow_state": "Strategy",
 		}
 	).insert(ignore_permissions=True)
+	apply_workflow(doc, "Start Pipeline")
+	return doc
 
 
 class TestEngineGovernance(unittest.TestCase):

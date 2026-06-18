@@ -14,6 +14,8 @@
         "color_preferences",
         "inspirations",
         "notes",
+        "rp_brief",
+        "rp_project",
         "workflow_state",
         "chosen_direction"
     ],
@@ -83,6 +85,20 @@
             "fieldname": "notes",
             "fieldtype": "Text",
             "label": "Notes"
+        },
+        {
+            "description": "The RandomPack Onboarding Brief docname this brief was ingested from (the cross-system correlation key, present on both payment.received and project.created). Empty for briefs created directly in Friday.",
+            "fieldname": "rp_brief",
+            "fieldtype": "Data",
+            "label": "RandomPack Brief Ref",
+            "read_only": 1
+        },
+        {
+            "description": "The RandomPack Project docname this brief drives. Set on project.created. Used to write progress/deliverables back to RandomPack (the engine bridge resolves task docnames via get_project on this ref). Empty until project.created arrives.",
+            "fieldname": "rp_project",
+            "fieldtype": "Data",
+            "label": "RandomPack Project Ref",
+            "read_only": 1
         },
         {
             "description": "Design 75 pipeline state. Driven by the Frappe Workflow attached to this brief (Strategy → Naming → ... → Delivered) and the metadata engine. Distinct from the intake `status` field above (which only tracks whether the questionnaire is filled in). Read-only — the engine and the gate transitions move it.",

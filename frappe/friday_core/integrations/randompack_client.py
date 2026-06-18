@@ -54,7 +54,8 @@ def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
 	"""POST one backend API call. NEVER raises — returns the JSON or None.
 
 	`method` is the dotted endpoint name (e.g. "update_task_progress" or a
-	full "x.y.z" path); bare names resolve under the backend's API module.
+	full "x.y.z" path); bare names resolve under the backend's v1 API module.
+	`upload_file` is the Frappe-native multipart endpoint, not a v1 method.
 	"""
 	settings = _settings()
 	if settings is None:
@@ -62,7 +63,12 @@ def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
 			f"RandomPack integration disabled — dropped outbound {method!r}"
 		)
 		return None
-	path = method if "." in method else f"randompack.api.{method}"
+	if "." in method:
+		path = method
+	elif method == "upload_file":
+		path = "upload_file"  # Frappe-native multipart upload
+	else:
+		path = f"randompack.api.v1.{method}"  # the locked contract lives in api/v1
 	url = f"{(settings.api_base_url or '').rstrip('/')}/api/method/{path}"
 	try:
 		if files:
@@ -130,24 +136,26 @@ def attach_deliverable(
 	file_url = ((uploaded or {}).get("message") or {}).get("file_url")
 	if not file_url:
 		return None
+	# v1 contract: attach_deliverable(project, file_url, title).
 	return send(
 		"attach_deliverable",
-		{"project": project_ref, "file_url": file_url, "description": description},
+		{"project": project_ref, "file_url": file_url, "title": description or file_name},
 	)
 
 
 def post_project_note(project_ref: str | None, note: str, task_ref: str | None = None) -> dict | None:
-	payload: dict = {"note": note}
-	if project_ref:
-		payload["project"] = project_ref
-	if task_ref:
-		payload["task"] = task_ref
-	return send("post_project_note", payload)
+	# v1 contract: post_project_note(project, content) — project is required and
+	# there is no task param. task_ref is accepted for call-site compatibility
+	# but not sent.
+	if not project_ref:
+		return None
+	return send("post_project_note", {"project": project_ref, "content": note})
 
 
 def request_gate_open(project_ref: str, gate: str, summary: str) -> dict | None:
-	"""Signal-only (locked): Friday says 'ready'; humans open the gate."""
-	return send("request_gate_open", {"project": project_ref, "gate": gate, "summary": summary})
+	"""Signal-only (locked): Friday says 'ready'; humans open the gate.
+	v1 contract: request_gate_open(project, gate, note)."""
+	return send("request_gate_open", {"project": project_ref, "gate": gate, "note": summary})
 
 
 def get_project_state(project_ref: str) -> dict | None:
