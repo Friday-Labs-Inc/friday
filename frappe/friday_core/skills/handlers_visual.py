@@ -68,7 +68,7 @@ def generate_image(skill_name: str, parameters: dict) -> dict:
 	if not agent_profile:
 		return {"result": "generate-image must be called by an agent (no profile in context)."}
 
-	api_key, host, err = _minimax_credentials(agent_profile)
+	api_key, host, image_model, err = _minimax_credentials(agent_profile)
 	if err:
 		return {"result": err}
 
@@ -77,7 +77,7 @@ def generate_image(skill_name: str, parameters: dict) -> dict:
 			host + _IMAGE_PATH,
 			headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
 			json={
-				"model": _DEFAULT_MODEL,
+				"model": image_model,
 				"prompt": prompt,
 				"aspect_ratio": aspect_ratio,
 				"n": count,
@@ -119,20 +119,21 @@ def _minimax_credentials(agent_profile: str):
 	try:
 		row = _resolve_provider_row(agent_profile)
 	except Exception as exc:
-		return None, None, f"Cannot resolve an LLM provider for image generation: {exc}"
+		return None, None, None, f"Cannot resolve an LLM provider for image generation: {exc}"
 	if not row:
-		return None, None, "No active LLM provider is configured for image generation."
+		return None, None, None, "No active LLM provider is configured for image generation."
 	if (row.get("provider_type") or "") != "minimax":
-		return None, None, (
+		return None, None, None, (
 			"generate-image supports MiniMax providers only; this agent's provider is "
 			f"{row.get('provider_type')!r}."
 		)
 	api_key = _get_api_key(row)
 	if not api_key:
-		return None, None, "The MiniMax provider has no API key configured."
+		return None, None, None, "The MiniMax provider has no API key configured."
 	base_url = (row.get("base_url") or "").lower()
 	host = _HOST_CN if "minimaxi" in base_url else _HOST_INTL
-	return api_key, host, None
+	image_model = row.get("image_model") or _DEFAULT_MODEL
+	return api_key, host, image_model, None
 
 
 def _attach_target(params: dict, ctx: dict):
