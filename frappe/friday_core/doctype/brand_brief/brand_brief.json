@@ -16,6 +16,7 @@
         "notes",
         "rp_brief",
         "rp_project",
+        "project",
         "workflow_state",
         "chosen_direction"
     ],
@@ -98,6 +99,15 @@
             "fieldname": "rp_project",
             "fieldtype": "Data",
             "label": "RandomPack Project Ref",
+            "read_only": 1
+        },
+        {
+            "description": "Design 77: the LOCAL Friday Project record this brief belongs to. Set on project.created after the local Project is inserted. Lets phase_dispatcher._project_of() carry the Project docname onto every engine Task — so the Project's task rollup, Raven channel routing, and share-deliverables all see which Project a Brief drives. Fieldname is 'project' (not 'friday_project') because phase_dispatcher reads work_item.get('project') via meta.has_field('project').",
+            "fieldname": "project",
+            "fieldtype": "Link",
+            "label": "Friday Project",
+            "no_copy": 1,
+            "options": "Project",
             "read_only": 1
         },
         {

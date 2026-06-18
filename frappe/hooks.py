@@ -263,7 +263,12 @@ doc_events = {
 		# domain's work-item. On a Brand Brief save it dispatches the agentic
 		# phase (if any) waiting at the brief's current pipeline state. Generalise
 		# to "*" only after this is proven on Legion (Design 75 §7 step 5).
-		"on_update": "frappe.friday_core.engine.workflow_engine.on_work_item_update",
+		# Design 77 — when the brief reaches Delivered, push the union of brief
+		# + linked Friday Project deliverables back to RandomPack.
+		"on_update": [
+			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
+			"frappe.friday_core.integrations.randompack_bridge.on_brief_state_change",
+		],
 	},
 }
 

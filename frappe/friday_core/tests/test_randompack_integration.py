@@ -104,6 +104,55 @@ class TestRandompackInbound(unittest.TestCase):
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "workflow_state"), "Buildout")
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "chosen_direction"), "Glacial Mist")
 
+	def test_project_created_creates_local_friday_project(self):
+		"""Design 77 — handle_project_created must also create a LOCAL Friday
+		Project record (idempotent by backend_ref) and set the brief's 'project'
+		Link field so phase_dispatcher carries the Project docname onto every
+		engine Task."""
+		surface.handle_payment_received({"brief": "OB-T77"}, _Evt())
+		frappe.set_user("Guest")
+		surface.handle_project_created(
+			{"project": "RP-PROJ-77", "brief": "OB-T77",
+			 "brief_snapshot": json.dumps({"company": "T77Co"})},
+			_Evt(),
+		)
+		frappe.set_user("Administrator")
+		b = _brief("OB-T77")
+		self.assertTrue(b)
+		project_docname = frappe.db.get_value("Brand Brief", b, "project")
+		self.assertTrue(project_docname, "Brand Brief.project must be set after project.created")
+		# The local Friday Project must exist with the matching backend_ref.
+		backend_ref = frappe.db.get_value("Project", project_docname, "backend_ref")
+		self.assertEqual(backend_ref, "RP-PROJ-77")
+
+	def test_project_created_replay_reuses_existing_friday_project(self):
+		"""Replay of project.created (same backend_ref) must not create a
+		second Friday Project row — idempotent by backend_ref."""
+		surface.handle_payment_received({"brief": "OB-T77B"}, _Evt())
+		frappe.set_user("Guest")
+		surface.handle_project_created(
+			{"project": "RP-PROJ-77B", "brief": "OB-T77B",
+			 "brief_snapshot": json.dumps({"company": "T77BCo"})},
+			_Evt(),
+		)
+		first_project = frappe.db.get_value(
+			"Brand Brief", {"rp_brief": "OB-T77B"}, "project"
+		)
+		# Replay
+		surface.handle_project_created(
+			{"project": "RP-PROJ-77B", "brief": "OB-T77B",
+			 "brief_snapshot": json.dumps({"company": "T77BCo"})},
+			_Evt(),
+		)
+		frappe.set_user("Administrator")
+		second_project = frappe.db.get_value(
+			"Brand Brief", {"rp_brief": "OB-T77B"}, "project"
+		)
+		self.assertEqual(first_project, second_project, "replay must reuse the same local Project")
+		# And there must be only one Project row with that backend_ref.
+		count = frappe.db.count("Project", filters={"backend_ref": "RP-PROJ-77B"})
+		self.assertEqual(count, 1)
+
 	def test_refinement_requested_does_not_advance(self):
 		surface.handle_payment_received({"brief": "OB-T4", "brief_snapshot": {"business_name": "T4Co"}}, _Evt())
 		surface.handle_project_created({"project": "PROJ-T4", "brief": "OB-T4", "brief_snapshot": {}}, _Evt())
@@ -187,3 +236,82 @@ class TestRandompackBridge(unittest.TestCase):
 		) as m_utp:
 			bridge.on_task_transition(task, "Completed")
 		m_utp.assert_not_called()
+
+	# ─── Design 77 — local Friday Project + union deliverable push ───
+
+	def test_push_deliverables_unions_brief_and_friday_project_files(self):
+		"""_push_deliverables must read files attached to BOTH the Brand Brief
+		(images from generate-image) AND the linked local Friday Project
+		(text/PDF deliverables from attach-deliverable + materialize.py).
+		Without this, customers see only images. Dedup by file_url."""
+		# A brief linked to a local Friday Project via the Design 77 'project' field.
+		project = frappe.get_doc({
+			"doctype": "Project", "project_name": "Test Project 77",
+			"status": "Open", "backend_ref": "BR-77-PROJ",
+		}).insert(ignore_permissions=True)
+		brief = frappe.get_doc({
+			"doctype": "Brand Brief", "business_name": "BridgeCo77",
+			"rp_project": "RP-PROJ-77", "project": project.name,
+		}).insert(ignore_permissions=True)
+
+		# Capture the union of file queries via mocked get_all.
+		def fake_get_all(doctype, filters=None, fields=None, **k):
+			if doctype != "File":
+				return []
+			if filters.get("attached_to_doctype") == "Brand Brief":
+				return [frappe._dict(name="f-img", file_name="logo.jpg", file_url="/files/logo.jpg")]
+			if filters.get("attached_to_doctype") == "Project":
+				return [frappe._dict(name="f-md", file_name="brand-guidelines.md",
+				                     file_url="/files/brand-guidelines.md")]
+			return []
+
+		captured = []
+		fake_doc = frappe._dict(get_content=lambda: b"BYTES")
+		with patch("frappe.get_all", side_effect=fake_get_all), \
+		     patch("frappe.get_doc", return_value=fake_doc), \
+		     patch(
+			"frappe.friday_core.integrations.randompack_client.attach_deliverable",
+			side_effect=lambda rp, file_name, content, description="": captured.append(file_name),
+		):
+			bridge._push_deliverables("RP-PROJ-77", brief.name)
+
+		# Both files must have been pushed — brief image AND project markdown.
+		self.assertIn("logo.jpg", captured)
+		self.assertIn("brand-guidelines.md", captured)
+
+	def test_on_brief_state_change_fires_only_on_transition_to_delivered(self):
+		"""The on_update hook must push only when state JUST changed to
+		Delivered — not on every re-save while already Delivered, and not on
+		any other state change. Without this guard, the bridge would push the
+		full deliverable set repeatedly."""
+		doc = frappe._dict(
+			name="BB-T77", workflow_state="Delivered", rp_project="RP-PROJ-X",
+			get=lambda k, default=None: {"workflow_state": "Delivered", "rp_project": "RP-PROJ-X"}.get(k, default),
+			has_value_changed=lambda f: True,  # state just changed
+		)
+		with patch.object(bridge, "_push_deliverables") as m_push:
+			bridge.on_brief_state_change(doc)
+		m_push.assert_called_once_with("RP-PROJ-X", "BB-T77")
+
+	def test_on_brief_state_change_silent_when_state_unchanged(self):
+		"""A re-save while the brief is already at Delivered must not push
+		again — has_value_changed returns False."""
+		doc = frappe._dict(
+			name="BB-T78", workflow_state="Delivered", rp_project="RP-PROJ-X",
+			get=lambda k, default=None: {"workflow_state": "Delivered", "rp_project": "RP-PROJ-X"}.get(k, default),
+			has_value_changed=lambda f: False,
+		)
+		with patch.object(bridge, "_push_deliverables") as m_push:
+			bridge.on_brief_state_change(doc)
+		m_push.assert_not_called()
+
+	def test_on_brief_state_change_silent_for_non_delivered_state(self):
+		"""Other state transitions (Strategy, Naming, etc.) must not push."""
+		doc = frappe._dict(
+			name="BB-T79", workflow_state="Naming", rp_project="RP-PROJ-X",
+			get=lambda k, default=None: {"workflow_state": "Naming", "rp_project": "RP-PROJ-X"}.get(k, default),
+			has_value_changed=lambda f: True,
+		)
+		with patch.object(bridge, "_push_deliverables") as m_push:
+			bridge.on_brief_state_change(doc)
+		m_push.assert_not_called()

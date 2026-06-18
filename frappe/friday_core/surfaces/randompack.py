@@ -246,6 +246,38 @@ def _find_brief(backend_ref: str) -> str | None:
 	return frappe.db.get_value("Brand Brief", {"notes": ("like", f"%[rp:{backend_ref}]%")}, "name")
 
 
+def _ensure_friday_project(rp_project: str, rp_brief: str, business_name: str | None) -> str | None:
+	"""Design 77: ensure a local Friday Project record exists for this engagement
+	and return its docname. Idempotent — keyed by the RandomPack project ref
+	stored on Project.backend_ref (unique). Returns None if we can't make one
+	(missing both rp_project and rp_brief, etc.); the caller treats that as
+	'no local project, brief stays standalone'."""
+	if not (rp_project or rp_brief):
+		return None
+	# Match by backend_ref (the RP project docname). This is the unique key
+	# on Project — a replay of project.created finds the existing row.
+	existing = _find_project(rp_project) if rp_project else None
+	if existing:
+		return existing
+	name_hint = (business_name or "").strip() or f"RandomPack {rp_project or rp_brief}"
+	try:
+		doc = frappe.get_doc({
+			"doctype": "Project",
+			"project_name": f"{name_hint} ({rp_project or rp_brief})",
+			"description": f"Brand pipeline for RandomPack project {rp_project!r} (brief {rp_brief!r}).",
+			"status": "Open",
+			"backend_ref": rp_project or rp_brief,
+		})
+		doc.insert(ignore_permissions=True)
+		return doc.name
+	except Exception:
+		# A duplicate backend_ref race or any other insert failure — log
+		# and move on. The brief stays without a local project link rather
+		# than blocking the pipeline.
+		frappe.log_error(title="friday.randompack _ensure_friday_project failed")
+		return _find_project(rp_project) if rp_project else None
+
+
 def _find_project(backend_ref: str) -> str | None:
 	return frappe.db.get_value("Project", {"backend_ref": backend_ref}, "name")
 
@@ -295,6 +327,19 @@ def handle_project_created(data: dict, event) -> None:
 	if rp_project and doc.rp_project != rp_project:
 		doc.db_set("rp_project", rp_project, update_modified=False)
 		doc.reload()
+
+	# Design 77 — create a LOCAL Friday Project record per engagement and link
+	# the brief to it via the canonical 'project' field. The metadata engine's
+	# phase_dispatcher._project_of() reads work_item.get('project'), so this
+	# makes every engine Task carry the Project docname — enabling the
+	# Project's task rollup, Raven channel routing, and share-deliverables.
+	# Idempotent: a replay finds the existing Project (matched by backend_ref)
+	# and reuses it rather than creating a duplicate.
+	if not doc.project:
+		project_docname = _ensure_friday_project(rp_project, rp_brief, doc.business_name)
+		if project_docname:
+			doc.db_set("project", project_docname, update_modified=False)
+			doc.reload()
 
 	# After payment the brief idles at INITIAL_STATE ("Intake") — no agentic phase
 	# there, so nothing has run yet. Starting the pipeline = firing the Start

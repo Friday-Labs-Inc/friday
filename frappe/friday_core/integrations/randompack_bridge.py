@@ -112,8 +112,9 @@ def _engine_writeback(task, state: str) -> None:
 			client.request_gate_open(
 				rp_project, gate=gate, summary=f"{task.get('title') or phase} is ready for client review."
 			)
-		if phase == _DELIVERABLE_PHASE:
-			_push_deliverables(rp_project, brief_name)
+		# Design 77: _push_deliverables fires from on_brief_state_change when the
+		# brief reaches Delivered, NOT here, so the project-level materialize
+		# package (assemble_project_package) has time to land first.
 
 
 def _resolve_rp_task(rp_project: str, phase: str) -> str | None:
@@ -131,22 +132,50 @@ def _resolve_rp_task(rp_project: str, phase: str) -> str | None:
 
 
 def _push_deliverables(rp_project: str, brief_name: str) -> None:
-	"""Send every file attached to the brief to RandomPack as a deliverable."""
-	files = frappe.get_all(
+	"""Send every deliverable file attached to either the Brand Brief OR the
+	linked local Friday Project to RandomPack as a deliverable.
+
+	Design 77 — files now land on two attachment targets: generate-image
+	attaches to the Brand Brief (images), while attach-deliverable (called by
+	agents in their per-phase prompt) and materialize.py both attach to the
+	local Friday Project (text/PDF deliverables). The bridge must push from
+	BOTH or the customer sees only the images.
+
+	Idempotency: a file is identified by its file_url; the union-dedup means
+	a file linked from both targets is pushed once.
+	"""
+	collected: dict[str, dict] = {}  # file_url -> {name, file_name}
+	brief_files = frappe.get_all(
 		"File",
 		filters={"attached_to_doctype": "Brand Brief", "attached_to_name": brief_name},
-		fields=["name", "file_name"],
+		fields=["name", "file_name", "file_url"],
 	)
-	for f in files:
+	for f in brief_files:
+		if f.file_url and f.file_url not in collected:
+			collected[f.file_url] = {"name": f.name, "file_name": f.file_name}
+
+	# Resolve the linked Friday Project (Design 77 new field), then add its files.
+	friday_project = frappe.db.get_value("Brand Brief", brief_name, "project")
+	if friday_project:
+		project_files = frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "Project", "attached_to_name": friday_project},
+			fields=["name", "file_name", "file_url"],
+		)
+		for f in project_files:
+			if f.file_url and f.file_url not in collected:
+				collected[f.file_url] = {"name": f.name, "file_name": f.file_name}
+
+	for entry in collected.values():
 		try:
-			content = frappe.get_doc("File", f.name).get_content()
+			content = frappe.get_doc("File", entry["name"]).get_content()
 		except Exception:
 			continue
 		if isinstance(content, str):
 			content = content.encode("utf-8")
 		client.attach_deliverable(
-			rp_project, file_name=f.file_name, content=content,
-			description=f"Brand deliverable: {f.file_name}",
+			rp_project, file_name=entry["file_name"], content=content,
+			description=f"Brand deliverable: {entry['file_name']}",
 		)
 
 
@@ -197,3 +226,25 @@ def _result_summary(task) -> str:
 		except (TypeError, ValueError):
 			return str(raw)
 	return str(data.get("summary") or "")
+
+
+# ── Design 77: brief-state-change hook (fires the union deliverable push) ─────
+
+
+def on_brief_state_change(doc, method: str | None = None) -> None:
+	"""Wired in hooks.py as a second Brand Brief on_update. When the brief
+	reaches workflow_state='Delivered', push the union of brief + Friday
+	Project deliverables back to RandomPack. Idempotent: only fires when the
+	state JUST changed to Delivered (not on unrelated re-saves while already
+	Delivered)."""
+	try:
+		if doc.get("workflow_state") != "Delivered":
+			return
+		if not doc.has_value_changed("workflow_state"):
+			return
+		rp_project = doc.get("rp_project")
+		if not rp_project:
+			return  # brief did not originate from a RandomPack project — stay internal
+		_push_deliverables(rp_project, doc.name)
+	except Exception:
+		frappe.log_error(title="friday.randompack on_brief_state_change failed")
