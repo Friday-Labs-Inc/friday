@@ -31,7 +31,7 @@ really Hermes, not an approximation.
 | 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
 | 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | diverged (by design); **session manager COMPLETE** | queue+slash+interrupt+steer all done 2026-06-24. Remaining: lifecycle hooks; delivery DSL; subagent cascade. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade** | queue+slash+interrupt+steer done 2026-06-24; `/stop` cascade to delegated work done (D85). Remaining: delivery DSL; lifecycle hooks; hard kill (`/stop force`). Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
 | 7 | Cron jobs | **MISSING** (infra-only scheduler) | user-schedulable recurring agent jobs + home-channel delivery |
 
@@ -241,9 +241,12 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
    command, checked at each ReAct boundary in `run_turn` (`runner.py`), cleared
    at entry (session lock makes a generation counter unnecessary). Boundary-
    granular (Friday's blocking LLM call can't be aborted mid-flight) — disclosed
-   divergence from Hermes' 0.3s poll. Deferred follow-ups: hard kill
-   (`send_stop_job_command`, `/stop force`) and **subagent cascade** (children
-   are separate Task jobs with their own sessions). See `docs/design/83`.
+   divergence from Hermes' 0.3s poll. **Subagent cascade SHIPPED (Design 85):**
+   `/stop` now stops the whole active delegated subtree (roots via
+   `Task.originating_session`, descendants via `parent_task`) — `run_turn` raises
+   `TurnInterrupted` so an interrupted child is marked Cancelled, not Completed.
+   Still deferred: hard kill (`send_stop_job_command`, `/stop force`). See
+   `docs/design/83`, `docs/design/85`.
 2. ~~**STEER**~~ — **SHIPPED 2026-06-24 (Design 84).** `/steer <text>` pushes a
    coalescing Redis slot `friday:steer:{session_id}`, drained at each ReAct
    boundary and appended to the last tool result as "User guidance: {text}"
