@@ -1,0 +1,73 @@
+{
+ "actions": [],
+ "creation": "2026-06-24 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "default_agent_profile",
+  "bot_user_id",
+  "secrets_section",
+  "bot_token",
+  "signing_secret"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "When unchecked, the Slack webhook ignores inbound events and outbound posts are skipped.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "Fallback agent that answers Slack messages (a project channel overrides this via routing).",
+   "fieldname": "default_agent_profile",
+   "fieldtype": "Link",
+   "label": "Default Agent Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "description": "The Slack user id of the bot (e.g. U01ABCDEF). Used to skip the bot's own messages and to detect @mentions in channels.",
+   "fieldname": "bot_user_id",
+   "fieldtype": "Data",
+   "label": "Bot User ID"
+  },
+  {
+   "fieldname": "secrets_section",
+   "fieldtype": "Section Break",
+   "label": "Secrets (encrypted)"
+  },
+  {
+   "description": "Slack bot OAuth token (xoxb-...). Stored encrypted.",
+   "fieldname": "bot_token",
+   "fieldtype": "Password",
+   "label": "Bot Token"
+  },
+  {
+   "description": "Slack app signing secret — used to verify the X-Slack-Signature on every inbound webhook. Stored encrypted.",
+   "fieldname": "signing_secret",
+   "fieldtype": "Password",
+   "label": "Signing Secret"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "module": "Friday Core",
+ "name": "Slack Config",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
