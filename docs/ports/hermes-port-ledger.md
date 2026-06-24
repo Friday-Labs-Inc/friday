@@ -213,7 +213,7 @@ fall into one of four buckets — and only a handful are real gaps.
 | `session_context.py` (179) | `ContextVar` session vars (concurrent-safe) | Frappe `frappe.local` per-request + separate worker procs | **frappe-adapted** (process isolation replaces ContextVar) | 1 |
 | `stream_consumer.py` (1318) | Progressive token streaming → edit one msg | **none** — Friday writes ONE finished outbound row | **MISSING** (Raven supports edits; low priority — see note) | 2 |
 | `config.py` (1920) | Gateway/platform config loading | `Chat Platform` doctype + `config_json` + `bootstrap_raven.py` | **frappe-adapted** | 1 |
-| `delivery.py` (372) | Multi-target delivery DSL (`platform:chat:thread`), 4k truncation, local sink | partial: `raven_adapter.handle_outbound_to_raven:118` + `publish_realtime("chat.outbound")` seam (no subscribers) | **simplified** — no target DSL / truncation; matters for cron delivery | 2 |
+| `delivery.py` (372) | Multi-target delivery DSL (`platform:chat:thread`), 4k truncation, local sink | **ported (Design 86)** — `gateway/delivery.py`: DSL + router; platform→outbound `Chat Message` row, local→private File, 4k truncation | **ported** (free targeting incl.; thread ignored) | 1 |
 | `platform_registry.py` (260) | Code-side plugin self-registration of adapters | `Connector` / `Chat Platform` doctypes (data-driven, design 81) | **frappe-adapted** — but `standalone_sender_fn` (out-of-process send) pattern still relevant for worker delivery | 1 |
 | `platforms/base.py` `MessageEvent`/`SendResult` (4241) | Normalized inbound/outbound contract | the `Chat Message` row IS the normalized contract | **frappe-adapted**; `validate_media_delivery_path` (`base.py:972`) is security-critical to port if Friday adds file delivery | 1 |
 | `hooks.py` `HookRegistry` (210) | Agent-lifecycle hooks (agent:start/step/end, command:*) | **none** — Frappe `doc_events` are DocType lifecycle, not agent lifecycle | **MISSING** (extension point) | 2 |
@@ -267,11 +267,14 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
    on #3; Frappe roles are the natural substrate. Build with #3.
 
 **Tier C — delivery & extensibility (needed as surfaces/cron grow)**
-5. **`delivery.py` multi-target + truncation** — the target DSL
-   (`platform:chat:thread`) and 4k truncation. Becomes load-bearing the moment
-   cron/scheduled agent runs deliver to a home channel (ties into the Cron-jobs
-   gap, row #7). The `publish_realtime("chat.outbound")` seam already exists but
-   has no subscribers.
+5. ~~**`delivery.py` multi-target + truncation**~~ — **SHIPPED (Design 86).**
+   `gateway/delivery.py`: the `DeliveryTarget` DSL (`origin`/`local`/
+   `platform:chat[:thread]`) + `DeliveryRouter.deliver()`. Platform delivery =
+   an outbound `Chat Message` row (Frappe adaptation of `adapter.send`); `local`
+   sink = a private Frappe File; 4k truncation with full output saved to a File.
+   Full faithful port incl. free targeting — governance lives at the skill layer,
+   not the router (user-accepted divergence). Ships ahead of its first consumer
+   (cron, gap #7). `thread_id` parsed but ignored on Raven. See `docs/design/86`.
 6. **`hooks.py` lifecycle HookRegistry** — agent:start/step/end extension point.
    No equivalent; Frappe signals could back it. Low urgency until plugins want
    to hook the agent loop.
