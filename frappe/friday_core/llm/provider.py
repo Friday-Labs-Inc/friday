@@ -57,6 +57,7 @@ SEE ALSO
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from abc import ABC, abstractmethod
@@ -1044,27 +1045,47 @@ def _cache_marker(ttl: str) -> dict:
 	return {"type": "ephemeral", "ttl": "1h"} if ttl == "1h" else {"type": "ephemeral"}
 
 
+def _mark_anthropic_msg_cache(msg: dict, marker: dict) -> None:
+	"""Place a cache_control breakpoint on one Anthropic message (in place).
+
+	String content becomes a single text block carrying the marker; a block-list
+	content gets the marker on its last block. Empty content is left untouched.
+	"""
+	content = msg.get("content")
+	if isinstance(content, str):
+		if content:
+			msg["content"] = [{"type": "text", "text": content, "cache_control": marker}]
+	elif isinstance(content, list) and content:
+		last = content[-1]
+		if isinstance(last, dict):
+			last["cache_control"] = marker
+
+
 def _apply_anthropic_cache_control(
 	system: str, messages: list[dict], ttl: str = "5m"
 ) -> tuple[Any, list[dict]]:
-	"""Mark the system prefix with cache_control (Anthropic prompt caching).
+	"""Apply Hermes' ``system_and_3`` prompt-caching layout (design 80).
 
-	In Anthropic's request order (tools → system → messages), a cache_control
-	breakpoint on the `system` param caches the entire static prefix
-	[tools + system] — the bulk of repeated input tokens, ~75% input savings
-	across a session.
+	Up to 4 cache_control breakpoints, all at the same TTL:
+	  - the `system` prefix (caches the static [tools + system] block — the bulk
+	    of repeated input tokens, ~75% input savings across a session), and
+	  - the last 3 non-system messages (incremental *history* caching — the
+	    growing conversation tail is cached turn-over-turn rather than re-billed).
 
-	DIVERGENCE (disclosed) from Hermes' `system_and_3`: Hermes also places
-	breakpoints on the last 3 messages for incremental *history* caching. Friday
-	caches the static prefix only for v0.1 (cleaner, and it's the bulk of the
-	win); the per-message breakpoints are deferred. `messages` is unchanged.
-
-	Returns `(system, messages)` — `system` becomes a 1-element text-block list
-	when non-empty, else the original (empty) string.
+	Returns `(system, messages)`. `system` becomes a 1-element text-block list
+	when non-empty. `messages` is DEEP-COPIED before marking, so the caller's
+	list is never mutated. Verbatim port of Hermes `prompt_caching.py`'s layout,
+	adapted to Anthropic's (system, messages) split.
 	"""
+	marker = _cache_marker(ttl)
+	messages = copy.deepcopy(messages)
+	# Anthropic caps breakpoints at 4; the system prefix uses one, so mark the
+	# last 3 messages.
+	for msg in messages[-3:]:
+		_mark_anthropic_msg_cache(msg, marker)
 	if not system:
 		return system, messages
-	return [{"type": "text", "text": system, "cache_control": _cache_marker(ttl)}], messages
+	return [{"type": "text", "text": system, "cache_control": marker}], messages
 
 
 # ---------------------------------------------------------------------------

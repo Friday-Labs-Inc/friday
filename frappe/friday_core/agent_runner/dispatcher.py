@@ -517,6 +517,9 @@ from frappe.friday_core.skills import handlers_files as _handlers_files  # desig
 from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
 from frappe.friday_core.skills import handlers_project as _handlers_project
+from frappe.friday_core.skills import (
+	handlers_propose_skill as _handlers_propose_skill,
+)  # design 79 slice 2
 from frappe.friday_core.skills import handlers_read as _handlers_read  # design 66a
 
 # ---------------------------------------------------------------------------

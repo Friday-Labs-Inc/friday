@@ -105,35 +105,41 @@ def project_for_session(session_id: str) -> "str | None":
 
 
 def recall_block(
-	profile_name: str, project: "str | None" = None, token_budget: int = RECALL_TOKEN_BUDGET
+	profile_name: str,
+	project: "str | None" = None,
+	token_budget: int = RECALL_TOKEN_BUDGET,
+	query: "str | None" = None,
 ) -> str | None:
 	"""The fenced memory block for one profile's turn, or None when empty.
 
-	Newest-first; stops adding memories once the budget is spent (Q2). Recall
-	is strictly profile-scoped (Q5) — the query filters on agent_profile.
+	Recall is strictly profile-scoped (Q5) and project-scoped (Design 73): when
+	``project`` is given, recall returns memories tagged with THAT project PLUS
+	untagged/global ones, and excludes a *different* project's memories — so one
+	client's facts don't bleed into another's room.
 
-	Project scoping (Design 73): when ``project`` is given (the turn is happening
-	in a project room), recall returns memories tagged with THAT project PLUS
-	untagged/global memories — and excludes memories tagged with a *different*
-	project. This stops one client's facts (e.g. "no serifs" for Loop Coffee)
-	bleeding into another's room. When ``project`` is None (a DM / non-project
-	session), all memories are returned (prior behavior, no regression).
+	Ranking (design 80 step 2a): when ``query`` (the current user message) is
+	given on a Postgres site, memories are ranked by RELEVANCE to the query
+	(Postgres full-text ``ts_rank_cd``) blended with RECENCY — so an old but
+	on-topic fact beats a recent but irrelevant one, instead of today's
+	newest-first dump that silently drops old-but-relevant facts past the budget.
+	Vector/semantic ranking is added in step 2b.
+
+	Bulletproof fallback: recall is on the hot path of EVERY turn. Any failure of
+	the scored path (missing FTS column, SQL error, non-Postgres) falls back to
+	the original recency-only behaviour — never breaking the prompt build.
 	"""
-	rows = frappe.get_all(
-		"Agent Memory",
-		filters={"agent_profile": profile_name, "status": "Active"},
-		fields=["memory", "subject", "project"],
-		order_by="creation desc",
-	)
-	if not rows:
-		return None
+	if query and query.strip() and frappe.db.db_type == "postgres":
+		try:
+			return _recall_scored(profile_name, project, token_budget, query)
+		except Exception:
+			frappe.logger("friday.memory").warning(
+				"scored recall failed; falling back to recency-only", exc_info=True
+			)
+	return _recall_recency(profile_name, project, token_budget)
 
-	if project:
-		# This project's memories + global (untagged); drop other projects'.
-		rows = [r for r in rows if not r.get("project") or r.get("project") == project]
-		if not rows:
-			return None
 
+def _format_block(rows: list[dict], token_budget: int) -> str | None:
+	"""Render ranked rows (priority order) into the fenced block, within budget."""
 	lines: list[str] = []
 	budget_chars = token_budget * _CHARS_PER_TOKEN
 	used = 0
@@ -142,15 +148,100 @@ def recall_block(
 		if not text:
 			continue
 		subject = (row.get("subject") or "").strip()
-		line = f"- [{subject}] {text}" if subject else f"- {text}"
+		# Design 80 — label user-profile facts so the model treats them as
+		# "about you" rather than as one of its own notes (Hermes USER.md split).
+		tag = "about the user" if row.get("memory_type") == "user_profile" else subject
+		line = f"- [{tag}] {text}" if tag else f"- {text}"
 		if used + len(line) > budget_chars:
 			break
 		lines.append(line)
 		used += len(line)
-
 	if not lines:
 		return None
 	return build_memory_context_block("\n".join(lines))
+
+
+def _recall_recency(
+	profile_name: str, project: "str | None", token_budget: int
+) -> str | None:
+	"""Newest-first recall — the original behaviour and the safe fallback."""
+	rows = frappe.get_all(
+		"Agent Memory",
+		filters={"agent_profile": profile_name, "status": "Active"},
+		fields=["memory", "subject", "project", "memory_type"],
+		order_by="creation desc",
+	)
+	if not rows:
+		return None
+	if project:
+		rows = [r for r in rows if not r.get("project") or r.get("project") == project]
+		if not rows:
+			return None
+	return _format_block(rows, token_budget)
+
+
+def _recall_scored(
+	profile_name: str, project: "str | None", token_budget: int, query: str
+) -> str | None:
+	"""Relevance + recency ranked recall over Postgres full-text (design 80 step 2a).
+
+	score = 0.6 × full-text relevance to ``query`` + 0.4 × recency decay
+	(half-life ~70 days). Non-matching memories still appear (relevance term 0),
+	ranked by recency — so this never returns *fewer* useful memories than the
+	recency path, only better-ordered ones. Postgres-only; the caller guards on
+	``db_type`` and catches any error.
+	"""
+	import json
+
+	from frappe.friday_core.llm.embed import get_embedding
+
+	params: dict = {"profile": profile_name, "q": query, "limit": 50}
+	project_clause = ""
+	if project:
+		project_clause = "AND (m.project IS NULL OR m.project = '' OR m.project = %(project)s)"
+		params["project"] = project
+
+	# Design 80 step 2b-2 — blend in semantic similarity when an embedding for the
+	# query is available. A None embedding (no backend / model not installed)
+	# leaves the keyword+recency scoring from 2a, so there is never a regression.
+	qvec = get_embedding(query)
+	if qvec:
+		# 0.5 semantic + 0.25 keyword + 0.15 recency. Unembedded rows COALESCE the
+		# vector term to 0 (still ranked by keyword+recency) — none are excluded.
+		params["qvec"] = json.dumps(qvec)
+		score_expr = (
+			"0.5 * COALESCE(1 - (e.embedding <=> %(qvec)s::vector), 0) "
+			"+ 0.25 * ts_rank_cd(m.memory_search, replace(plainto_tsquery('english', %(q)s)::text, '&', '|')::tsquery) "
+			"+ 0.15 * exp(-0.01 * EXTRACT(EPOCH FROM (NOW() - m.creation)) / 86400.0)"
+		)
+		join = "LEFT JOIN `tabAgent Memory Embedding` e ON e.name = m.name"
+	else:
+		score_expr = (
+			"0.6 * ts_rank_cd(m.memory_search, replace(plainto_tsquery('english', %(q)s)::text, '&', '|')::tsquery) "
+			"+ 0.4 * exp(-0.01 * EXTRACT(EPOCH FROM (NOW() - m.creation)) / 86400.0)"
+		)
+		join = ""
+
+	# Backticks → Frappe rewrites them to double-quotes for Postgres. ts_rank_cd /
+	# plainto_tsquery / the memory_search column / pgvector are Postgres-only
+	# (the caller guards on db_type).
+	rows = frappe.db.sql(
+		f"""
+		SELECT m.memory AS memory, m.subject AS subject, m.memory_type AS memory_type, ({score_expr}) AS score
+		FROM `tabAgent Memory` m
+		{join}
+		WHERE m.agent_profile = %(profile)s
+		  AND m.status = 'Active'
+		  {project_clause}
+		ORDER BY score DESC
+		LIMIT %(limit)s
+		""",
+		params,
+		as_dict=True,
+	)
+	if not rows:
+		return None
+	return _format_block(rows, token_budget)
 
 
 def backfill_memory_projects() -> int:

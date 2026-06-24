@@ -29,12 +29,18 @@ _SKILL = {
 		"('BB-0001 shortlisted Midnight Roast'), a standing instruction."
 	),
 	"when_to_use": (
-		"Use when you learn something durable that future conversations need: "
-		"client preferences, decisions made, standing facts. Also use when the "
-		"user explicitly says 'remember ...'. Do NOT store conversation "
-		"minutiae, things already in your memory context, or anything "
-		"temporary. One fact per call; set 'subject' to the client or record "
-		"ID it concerns (e.g. 'BB-0001') so the team can filter it in Desk."
+		"Save proactively — do not wait to be asked. Save when: the user corrects "
+		"you or says 'remember this'; the user reveals a preference, habit, role, "
+		"or personal detail; a durable decision or standing instruction is made; "
+		"or you learn a convention/fact useful in future sessions.\n\n"
+		"Set memory_type: 'user_profile' for facts about the USER (their role, "
+		"preferences, working style, pet peeves); 'general' for your own notes "
+		"(decisions, client facts, conventions). Priority: user corrections and "
+		"preferences first.\n\n"
+		"One fact per call. Set 'subject' to the client or record ID it concerns "
+		"(e.g. 'BB-0001') for filtering in Desk. Do NOT store conversation "
+		"minutiae, one-off task chatter, things already in your memory, or "
+		"anything temporary."
 	),
 	"parameters_schema": {
 		"type": "object",
@@ -42,6 +48,15 @@ _SKILL = {
 			"memory": {
 				"type": "string",
 				"description": "The fact to remember — ONE sentence, under 500 characters.",
+			},
+			"memory_type": {
+				"type": "string",
+				"enum": ["general", "user_profile"],
+				"description": (
+					"'user_profile' = a fact about the user (role, preferences, style, "
+					"pet peeves). 'general' = your own notes (decisions, conventions, "
+					"learnings). Defaults to 'general'."
+				),
 			},
 			"subject": {
 				"type": "string",

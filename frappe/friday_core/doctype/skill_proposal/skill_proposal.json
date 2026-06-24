@@ -1,0 +1,116 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-06-23 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "agent_profile",
+        "status",
+        "proposal_type",
+        "target_skill",
+        "title",
+        "rationale",
+        "proposed_content",
+        "session_id",
+        "decided_by",
+        "decided_at"
+    ],
+    "fields": [
+        {
+            "description": "The agent that proposed this change (during a self-improvement review).",
+            "fieldname": "agent_profile",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Agent Profile",
+            "options": "Agent Profile",
+            "reqd": 1
+        },
+        {
+            "default": "Pending",
+            "description": "Pending until a human decides. Agents NEVER auto-apply a proposal — this is the governance gate.",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Pending\nApproved\nRejected"
+        },
+        {
+            "default": "new_skill",
+            "description": "What kind of change: a brand-new skill, an update to an existing one, or an added reference/example.",
+            "fieldname": "proposal_type",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Proposal Type",
+            "options": "new_skill\nupdate_skill\nadd_reference"
+        },
+        {
+            "description": "For update/add proposals: the existing Skill this concerns. Blank for a new skill.",
+            "fieldname": "target_skill",
+            "fieldtype": "Data",
+            "label": "Target Skill"
+        },
+        {
+            "description": "A short title for the proposed change.",
+            "fieldname": "title",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Title",
+            "reqd": 1
+        },
+        {
+            "description": "Why this is worth doing — what the agent learned that future sessions need.",
+            "fieldname": "rationale",
+            "fieldtype": "Small Text",
+            "label": "Rationale"
+        },
+        {
+            "description": "The proposed skill content / change text, for a human to review and apply.",
+            "fieldname": "proposed_content",
+            "fieldtype": "Long Text",
+            "label": "Proposed Content"
+        },
+        {
+            "description": "The session the proposal came from (audit trail).",
+            "fieldname": "session_id",
+            "fieldtype": "Data",
+            "label": "Source Session",
+            "read_only": 1
+        },
+        {
+            "fieldname": "decided_by",
+            "fieldtype": "Data",
+            "label": "Decided By",
+            "read_only": 1
+        },
+        {
+            "fieldname": "decided_at",
+            "fieldtype": "Datetime",
+            "label": "Decided At",
+            "read_only": 1
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Skill Proposal",
+    "naming_rule": "Random",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

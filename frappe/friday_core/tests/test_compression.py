@@ -91,6 +91,20 @@ class TestSplitMiddleTail(unittest.TestCase):
 		self.assertEqual(middle, [])
 		self.assertEqual(len(tail), 3)
 
+	def test_last_user_message_always_in_tail(self):
+		# Design 80 — a huge final user message exceeds the tail budget on its
+		# own; without the guarantee it would land in the middle (and be folded
+		# into the summary). The fix forces it into the verbatim tail.
+		rows = [
+			{"name": "1", "direction": "outbound", "content": "x" * 100},
+			{"name": "2", "direction": "inbound", "content": "x" * 100},
+			{"name": "3", "direction": "outbound", "content": "x" * 100},
+			{"name": "4", "direction": "inbound", "content": "x" * 90000},  # ~22500 tok > 20000 budget
+		]
+		middle, tail = _split_middle_tail(rows)
+		self.assertEqual(tail, [rows[3]])  # the latest user turn is kept verbatim
+		self.assertNotIn(rows[3], middle)
+
 
 class TestFormatTranscript(unittest.TestCase):
 	def test_labels_speakers_by_direction(self):
@@ -138,10 +152,19 @@ class TestSummaryPrefix(unittest.TestCase):
 		self.assertEqual(msgs[1]["role"], "user")
 		self.assertEqual(msgs[1]["content"], "transcript here")
 
+	def test_summariser_prompt_has_structured_sections(self):
+		# Design 80 Gap 2 — the summariser must request the named sections so
+		# blockers / pending asks / in-progress state survive compaction.
+		from frappe.friday_core.llm.compression import _SUMMARISER_SYSTEM
+
+		for section in ("## Active Task", "## Blocked", "## Pending User Asks", "## Remaining Work"):
+			self.assertIn(section, _SUMMARISER_SYSTEM)
+
 
 # --- Orchestrator (DB + provider mocked) ------------------------------------
 
 
+@patch(f"{_C}._extract_facts_before_compaction", return_value=0)
 @patch(f"{_C}._persist_compaction", return_value="CS-1")
 @patch(f"{_C}.latest_summary", return_value=None)
 @patch(f"{_C}._resolve_aux_provider")
@@ -157,18 +180,18 @@ class TestMaybeCompressSession(unittest.TestCase):
 		prov.chat.return_value = {"content": content, "tool_calls": None, "usage": {}}
 		return prov
 
-	def test_skips_when_under_threshold(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_skips_when_under_threshold(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = _rows(2, 50)
 		self.assertIsNone(maybe_compress_session("P", "S"))
 		mock_resolve.assert_not_called()
 		mock_persist.assert_not_called()
 
-	def test_skips_when_no_uncompacted_rows(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_skips_when_no_uncompacted_rows(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = []
 		self.assertIsNone(maybe_compress_session("P", "S"))
 		mock_persist.assert_not_called()
 
-	def test_compresses_when_over_threshold(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_compresses_when_over_threshold(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = self._big_history()
 		prov = self._provider()
 		mock_resolve.return_value = (prov, "aux-model")
@@ -183,19 +206,19 @@ class TestMaybeCompressSession(unittest.TestCase):
 		# Only the middle (not the protected tail) is folded.
 		self.assertLess(len(args[2]), 40)
 
-	def test_no_aux_model_skips_and_preserves_turns(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_no_aux_model_skips_and_preserves_turns(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = self._big_history()
 		mock_resolve.return_value = (None, None)
 		self.assertIsNone(maybe_compress_session("P", "S"))
 		mock_persist.assert_not_called()
 
-	def test_empty_summary_skips(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_empty_summary_skips(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = self._big_history()
 		mock_resolve.return_value = (self._provider(content="   "), "m")
 		self.assertIsNone(maybe_compress_session("P", "S"))
 		mock_persist.assert_not_called()
 
-	def test_aux_failure_skips(self, mock_load, mock_resolve, mock_latest, mock_persist):
+	def test_aux_failure_skips(self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract):
 		mock_load.return_value = self._big_history()
 		prov = MagicMock()
 		prov.chat.side_effect = LLMError("boom")
@@ -204,7 +227,7 @@ class TestMaybeCompressSession(unittest.TestCase):
 		mock_persist.assert_not_called()
 
 	def test_previous_summary_is_fed_into_recompression(
-		self, mock_load, mock_resolve, mock_latest, mock_persist
+		self, mock_load, mock_resolve, mock_latest, mock_persist, mock_extract
 	):
 		mock_load.return_value = self._big_history()
 		mock_latest.return_value = "PRIOR"

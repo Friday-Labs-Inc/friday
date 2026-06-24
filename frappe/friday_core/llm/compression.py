@@ -100,16 +100,60 @@ SUMMARY_PREFIX = (
 	"described here — avoid repeating it:"
 )
 
-# Instruction to the auxiliary summariser. Asks for a lossless-enough handoff
-# plus the '## Active Task' section the prefix tells the next model to resume from.
+# Instruction to the auxiliary summariser (design 80, Gap 2). A STRUCTURED
+# handoff with named sections (porting Hermes' section structure — original
+# wording) so blockers, pending user asks, and in-progress state survive
+# compaction instead of being lost in free-form prose.
 _SUMMARISER_SYSTEM = (
 	"You are a context-compaction assistant. Summarise the conversation "
-	"transcript below into a compact handoff for another AI agent that will "
-	"continue this same conversation. Preserve key facts, decisions, "
-	"identifiers, file/record names, and any unresolved threads. Be concise "
-	"but do not lose anything the agent needs to continue correctly. End with "
-	"a '## Active Task' section stating what the agent should do next, or "
-	"'None' if the last exchange was fully resolved. Output only the summary."
+	"transcript below into a STRUCTURED handoff for another AI agent that will "
+	"continue this SAME conversation. Use EXACTLY these markdown sections, in "
+	"order; under each put concise bullets, or write 'None' if it does not "
+	"apply. Preserve identifiers, file/record names, and exact error text "
+	"verbatim. Never invent. Redact any secret/credential as [REDACTED].\n\n"
+	"## Active Task — the single thing the agent should resume right now\n"
+	"## Goal — the overall objective of this conversation\n"
+	"## Constraints & Preferences — rules and the user's stated preferences/style\n"
+	"## Completed Actions — what has already been done, with outcomes\n"
+	"## Active State — current state: files/records changed, statuses, IDs\n"
+	"## In Progress — work started but not finished\n"
+	"## Blocked — anything blocked, with the exact blocker or error message\n"
+	"## Key Decisions — decisions made and the reasoning\n"
+	"## Resolved Questions — questions already answered (do NOT re-ask)\n"
+	"## Pending User Asks — user requests not yet fulfilled\n"
+	"## Relevant Files — files/records that matter going forward\n"
+	"## Remaining Work — what still needs doing\n"
+	"## Critical Context — anything else essential to continue correctly\n\n"
+	"Output ONLY these sections — no preamble, no closing remark."
+)
+
+# Design 80 step 1 — port of Hermes' on_pre_compress (memory_provider.py): before
+# the middle turns are folded into a lossy summary, mine them for durable facts
+# and persist them as governed Agent Memory rows. Default on; flip to skip the
+# extraction pass entirely (compaction itself is unaffected).
+EXTRACT_FACTS_ON_COMPACTION = True
+
+# Cap on how many facts one compaction may persist — a backstop against a model
+# that returns a huge list.
+MAX_EXTRACTED_FACTS = 10
+
+# Instruction to the extractor. Focus mirrors Hermes' memory-review norms
+# (background_review._MEMORY_REVIEW_PROMPT): who the user is + durable decisions,
+# NOT transient task chatter. Asks for strict JSON so the result parses cleanly.
+_FACT_EXTRACTION_SYSTEM = (
+	"You are a memory-extraction assistant. The conversation transcript below is "
+	"about to be compacted into a short summary and the raw turns discarded. "
+	"Before that happens, extract any DURABLE facts worth remembering for future "
+	"conversations:\n"
+	"  - who the user is: their persona, role, preferences, and how they want the "
+	"agent to behave;\n"
+	"  - durable decisions, standing instructions, and stable facts about the "
+	"project or client.\n"
+	"Do NOT extract: transient task chatter, one-off requests already handled, "
+	"environment/setup errors, or anything temporary.\n"
+	'Output ONLY a JSON array of objects, each {"memory": <one sentence, under '
+	'500 chars>, "subject": <optional client/record tag like \'BB-0001\', else '
+	'"">}. If nothing is worth keeping, output [].'
 )
 
 
@@ -158,6 +202,17 @@ def _split_middle_tail(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 			break
 		budget -= row_tokens
 		tail_start = idx
+
+	# Design 80 (port of Hermes context_compressor #10896): GUARANTEE the most
+	# recent user (inbound) row is in the verbatim tail. If a large tail budget
+	# pushed it into the middle, it would be folded into the summary — and the
+	# compaction prefix ("respond only to messages AFTER the summary") would then
+	# leave the agent with no current user turn to answer.
+	last_inbound = next(
+		(i for i in range(n - 1, -1, -1) if rows[i].get("direction") == "inbound"), None
+	)
+	if last_inbound is not None and last_inbound < tail_start:
+		tail_start = last_inbound
 	return rows[:tail_start], rows[tail_start:]
 
 
@@ -266,6 +321,113 @@ def _persist_compaction(
 	return doc.name
 
 
+# --- Pre-compaction fact extraction (design 80 step 1) ----------------------
+
+
+def _parse_extracted_facts(text: str) -> list[dict]:
+	"""Parse the extractor's reply into a clean list of ``{memory, subject}``.
+
+	Robust to code fences / surrounding prose: it slices out the first JSON array
+	(first ``[`` .. last ``]``). Drops anything without a non-empty string
+	``memory``, trims memory to 500 chars and subject to 140, and caps the count
+	at ``MAX_EXTRACTED_FACTS``. Returns ``[]`` for anything unusable — including
+	the model's "nothing to save" style answers. Pure (no DB), so it unit-tests
+	without a site.
+	"""
+	if not text:
+		return []
+	start = text.find("[")
+	end = text.rfind("]")
+	if start == -1 or end == -1 or end < start:
+		return []
+	try:
+		raw = json.loads(text[start : end + 1])
+	except (json.JSONDecodeError, TypeError, ValueError):
+		return []
+	if not isinstance(raw, list):
+		return []
+	out: list[dict] = []
+	for item in raw:
+		if not isinstance(item, dict):
+			continue
+		memory = (item.get("memory") or "").strip()
+		if not memory:
+			continue
+		out.append({"memory": memory[:500], "subject": (item.get("subject") or "").strip()[:140]})
+		if len(out) >= MAX_EXTRACTED_FACTS:
+			break
+	return out
+
+
+def _extract_facts_before_compaction(
+	profile_name: str,
+	session_id: str,
+	middle_rows: list[dict],
+	provider,
+) -> int:
+	"""Hermes ``on_pre_compress`` (design 80 step 1), adapted to Friday.
+
+	Before the middle turns are folded into a lossy summary, mine them for
+	durable facts and persist them as governed ``Agent Memory`` rows — so
+	knowledge the agent never explicitly ``remember``ed survives compaction.
+
+	Best-effort: ANY failure logs and returns the count written so far. It must
+	never break compression (which must never break the turn). Returns the number
+	of new memory rows written.
+	"""
+	from frappe.friday_core.llm.memory import project_for_session
+
+	try:
+		transcript = _format_transcript(middle_rows, None)
+		messages = [
+			{"role": "system", "content": _FACT_EXTRACTION_SYSTEM},
+			{"role": "user", "content": transcript},
+		]
+		response = provider.chat(messages=messages, tools=None, model=None)
+		facts = _parse_extracted_facts(response.get("content") or "")
+	except Exception as exc:  # noqa: BLE001 — best-effort; never break compaction
+		frappe.logger("friday.compression").warning(
+			f"Fact extraction before compaction failed for session {session_id!r}: "
+			f"{type(exc).__name__}; compaction continues."
+		)
+		return 0
+
+	project = project_for_session(session_id)
+	written = 0
+	for fact in facts:
+		memory = fact["memory"]
+		# Light dedup: skip a fact this agent already holds verbatim. Full
+		# contradiction/merge resolution is a later step in the memory program.
+		if frappe.db.exists(
+			"Agent Memory",
+			{"agent_profile": profile_name, "memory": memory, "status": "Active"},
+		):
+			continue
+		try:
+			doc = frappe.get_doc(
+				{
+					"doctype": "Agent Memory",
+					"memory": memory,
+					"agent_profile": profile_name,
+					"project": project,
+					"subject": fact.get("subject") or "",
+					"source_session": session_id,
+					"status": "Active",
+				}
+			)
+			doc.insert(ignore_permissions=True)
+			# Design 80 step 2b-2 — embed the extracted fact (async) for semantic recall.
+			from frappe.friday_core.llm.embed import enqueue_embed
+
+			enqueue_embed(doc.name)
+			written += 1
+		except Exception:  # noqa: BLE001 — one bad row must not abort the rest
+			frappe.logger("friday.compression").warning(
+				f"Could not persist an extracted memory for session {session_id!r} (skipped)."
+			)
+	return written
+
+
 # --- Orchestrator -----------------------------------------------------------
 
 
@@ -321,5 +483,11 @@ def maybe_compress_session(
 			f"{session_id!r}; skipping compression this turn."
 		)
 		return None
+
+	# Design 80 step 1 (Hermes on_pre_compress): mine the middle turns for durable
+	# facts and persist them as governed Agent Memory rows BEFORE they are folded
+	# into the lossy summary. Best-effort — never blocks the compaction below.
+	if EXTRACT_FACTS_ON_COMPACTION:
+		_extract_facts_before_compaction(profile_name, session_id, middle, provider)
 
 	return _persist_compaction(session_id, summary_text, middle, model_label)

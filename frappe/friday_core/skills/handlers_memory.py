@@ -32,6 +32,11 @@ def remember(skill_name: str, parameters: dict) -> dict:
 	if not profile:
 		raise ValueError("remember could not determine the calling agent profile")
 
+	# Design 80 — which store: facts about the USER vs the agent's own notes.
+	memory_type = (parameters.get("memory_type") or "general").strip()
+	if memory_type not in ("general", "user_profile"):
+		memory_type = "general"
+
 	session_id = ctx.get("session_id") or ""
 	# Design 73 — tag the memory with the project it was learned in (if any), so
 	# recall in a project room stays scoped to that project. Blank = global.
@@ -44,11 +49,18 @@ def remember(skill_name: str, parameters: dict) -> dict:
 			"agent_profile": profile,
 			"project": project_for_session(session_id),
 			"subject": (parameters.get("subject") or "").strip(),
+			"memory_type": memory_type,
 			"source_session": session_id,
 			"status": "Active",
 		}
 	)
 	doc.insert(ignore_permissions=True)
+
+	# Design 80 step 2b-2 — embed the new memory (async, after commit) so semantic
+	# recall can find it. Best-effort; no embedding just means keyword+recency.
+	from frappe.friday_core.llm.embed import enqueue_embed
+
+	enqueue_embed(doc.name)
 
 	return {
 		"result": f"Remembered ({doc.name}): {memory}",

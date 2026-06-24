@@ -197,6 +197,45 @@ def setup_raven(context, profile, install):
 			frappe.destroy()
 
 
+@click.command("worker")
+@click.option(
+	"--concurrency",
+	type=int,
+	default=None,
+	help="Override Agent Settings.max_concurrent_turns (clamped 1..16). Omit to use the saved setting.",
+)
+@click.option("--quiet", is_flag=True, help="Reduce worker log verbosity.")
+@pass_context
+def worker(context, concurrency, quiet):
+	"""Run the dedicated 'friday' queue worker, honouring max_concurrent_turns.
+
+	The Friday replacement for ``bench worker --queue friday``. With the
+	setting at 1 (default) it runs a single worker — identical to today.
+	Higher values run an RQ worker pool so concurrent agent turns overlap
+	their model-wait instead of queueing behind one worker.
+
+	    bench --site friday.localhost friday worker
+	    bench --site friday.localhost friday worker --concurrency 8
+	"""
+	import frappe
+	from frappe.friday_core.agent_runner.worker_pool import resolve_concurrency, start_friday_worker
+
+	# The concurrency knob lives in per-site Agent Settings, so resolve it
+	# inside a connected site context (the worker loop itself is bench-wide
+	# and reconnects per job). An explicit --concurrency skips the read.
+	n = concurrency
+	if n is None and context.sites:
+		site = context.sites[0]
+		try:
+			frappe.init(site=site)
+			frappe.connect()
+			n = resolve_concurrency()
+		finally:
+			frappe.destroy()
+
+	start_friday_worker(concurrency=n, quiet=quiet)
+
+
 @click.group("friday")
 def friday():
 	"""Friday agent framework — interactive and administrative commands."""
@@ -206,6 +245,7 @@ def friday():
 friday.add_command(chat)
 friday.add_command(setup)
 friday.add_command(setup_raven)
+friday.add_command(worker)
 
 # Frappe's command loader reads this `commands` symbol from the module
 # named in `hooks.py`. Each item is a click Command or Group; we expose
