@@ -213,6 +213,20 @@ def _watch_transition(doc: "Task") -> None:
 
 	report_back(doc, state)
 
+	# --- Cron delivery (design 87) -----------------------------------------
+	# A cron-spawned task delivers its result to the job's target on completion
+	# and updates the job's bookkeeping. No-ops for every non-cron task. Never
+	# raises — a delivery hiccup cannot break the task save.
+	if state in ("Completed", "Blocked", "Cancelled"):
+		try:
+			frappe.db.savepoint("friday_cron_deliver")
+			from frappe.friday_core.cron.scheduler import on_task_terminal
+
+			on_task_terminal(doc, state)
+		except Exception:
+			frappe.db.rollback(save_point="friday_cron_deliver")
+			frappe.log_error(title="friday.cron on_task_terminal failed")
+
 	# --- Deliverable materialization (design 73, slice 5) ------------------
 	# On completion, write the agent's output as attached artifact files
 	# (md + pdf) so a finished task produces a real, downloadable deliverable —

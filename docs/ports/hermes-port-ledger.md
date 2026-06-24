@@ -33,7 +33,7 @@ really Hermes, not an approximation.
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
 | 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade** | queue+slash+interrupt+steer done 2026-06-24; `/stop` cascade to delegated work done (D85). Remaining: delivery DSL; lifecycle hooks; hard kill (`/stop force`). Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
-| 7 | Cron jobs | **MISSING** (infra-only scheduler) | user-schedulable recurring agent jobs + home-channel delivery |
+| 7 | Cron jobs | **Slice 1 SHIPPED** (Design 87) | `Cron Job` doctype + `*/1` tick + delivery-on-completion (consumes the #86 router); agent-facing cron *skill* = Slice 2 (deferred) |
 
 Confirmed along the way: the transcript's claim that Hermes cron is stored as
 plain JSON (`~/.hermes/cron/jobs.json`), not SQLite, is **correct in source**
@@ -84,10 +84,13 @@ Ranked by value-to-effort for a single-tenant enterprise deployment.
    on it. Port = a `try/except LLMError` in the loop that compresses + retries
    once. Effort: small.
 7. **Cron jobs (user-scheduled agent runs).** Hermes: `cron/jobs.py`,
-   `cron/scheduler.py`, `tools/cronjob_tools.py`. Friday's `*/1` ticks are
-   infra-only (`tasks/dispatcher.py`, `tasks/reconciler.py`). Port = `Cron Job`
-   doctype + a scheduler tick + home-channel delivery + a cron skill. Effort:
-   ~3 days.
+   `cron/scheduler.py`, `tools/cronjob_tools.py`. **Slice 1 SHIPPED (Design 87):**
+   `Cron Job` doctype + `cron/scheduler.py` (`*/1` tick, advance-before-spawn
+   at-most-once, croniter/interval/once) + delivery-on-completion via the #86
+   router (a cron run IS a Task, tagged `cron_job`). Repeat-limit disables (not
+   deletes — Frappe audit). **Slice 2 (deferred):** the agent-facing
+   `manage-cron-jobs` skill (`tools/cronjob_tools.py` equivalent) so an agent can
+   schedule its own work. See `docs/design/87`.
 
 ### Tier 4 — quality / cost edges
 8. **Compressor prompt: 13 named sections → 1.** Friday's `_SUMMARISER_SYSTEM`

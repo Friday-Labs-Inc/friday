@@ -25,6 +25,7 @@
   "originating_session",
   "originating_platform",
   "parent_task",
+  "cron_job",
   "work_item_doctype",
   "work_item_name",
   "phase_key",
@@ -181,6 +182,15 @@
    "fieldtype": "Link",
    "label": "Parent Task",
    "options": "Task",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Design 87: the Cron Job that spawned this task. Set on scheduled runs; on completion the cron handler delivers this task's result to the job's target. Empty for all non-cron tasks.",
+   "fieldname": "cron_job",
+   "fieldtype": "Link",
+   "label": "Cron Job",
+   "options": "Cron Job",
    "read_only": 1,
    "search_index": 1
   },
