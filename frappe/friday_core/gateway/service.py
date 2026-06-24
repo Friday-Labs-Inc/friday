@@ -136,6 +136,12 @@ def handle_inbound(doc, method=None) -> None:
 	if doc.direction != "inbound":
 		return
 
+	# Design 82 — command traffic (a slash command + its reply) is audited as
+	# Chat Message rows with is_command=1, but it was already handled at the
+	# surface edge and must NOT run a conversational turn. Skip it here.
+	if doc.get("is_command"):
+		return
+
 	# Already-processed rows (e.g. recovery retries that succeeded before
 	# the current call) should not be re-run. Defensive guard.
 	if doc.processed:

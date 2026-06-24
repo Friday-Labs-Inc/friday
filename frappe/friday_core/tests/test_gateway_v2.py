@@ -34,6 +34,9 @@ def _inbound(name="CM-1", dispatch_unused=None):
 	doc.session_id = "S-1"
 	doc.content = "hi"
 	doc.retry_count = 0
+	# Design 82: handle_inbound skips command rows. A real inbound message is
+	# not a command — pin doc.get("is_command") falsy so the guard passes.
+	doc.get.return_value = 0
 	return doc
 
 
