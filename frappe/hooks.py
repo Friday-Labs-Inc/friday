@@ -310,6 +310,9 @@ scheduler_events = {
 		"*/1 * * * *": [
 			"frappe.friday_core.tasks.dispatcher.tick",
 			"frappe.friday_core.tasks.reconciler.tick",
+			# Friday (design 87): fire due Cron Jobs — advance next_run_at, spawn a
+			# Task per due job. Self-budgeted; per-job failure isolated.
+			"frappe.friday_core.cron.scheduler.tick",
 		],
 		# Friday (design 63b-OAuth): backstop refresh of expiring provider OAuth
 		# tokens so a long-idle Claude/Codex login stays warm and a broken refresh
@@ -434,6 +437,9 @@ after_migrate = [
 	# operator-tier gateway commands (/approve, /deny) have a gate to check.
 	# Idempotent.
 	"frappe.friday_core.gateway.after_migrate.ensure_command_roles",
+	# Friday (design 87): ensure the 'Friday Cron Manager' role exists so an
+	# operator can manage scheduled Cron Jobs without System Manager. Idempotent.
+	"frappe.friday_core.cron.after_migrate.ensure_cron_role",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]
