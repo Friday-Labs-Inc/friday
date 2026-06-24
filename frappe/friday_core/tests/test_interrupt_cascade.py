@@ -108,7 +108,12 @@ class TestChatPipelineInterrupted(unittest.TestCase):
 
 
 class TestTaskPathInterrupted(unittest.TestCase):
-	def test_interrupted_child_is_cancelled_not_completed(self):
+	def _run_interrupted(self, force_killed_by):
+		"""Run _run_task_agentic with run_turn raising TurnInterrupted.
+
+		`force_killed_by` is what `frappe.db.get_value("Task", …, "force_killed_by")`
+		returns — None for a plain cascade `/stop`, a user for `/stop force`.
+		"""
 		from frappe.friday_core.tasks import runner
 
 		task = MagicMock()
@@ -116,7 +121,7 @@ class TestTaskPathInterrupted(unittest.TestCase):
 		task.title = "do thing"
 		task.description = "..."
 		with (
-			patch(f"{_TR}.frappe"),
+			patch(f"{_TR}.frappe") as fr,
 			patch(f"{_TR}.emit"),
 			patch(f"{_TR}.now_datetime"),
 			patch(f"{_TR}._elapsed_ms", return_value=10),
@@ -126,10 +131,21 @@ class TestTaskPathInterrupted(unittest.TestCase):
 				side_effect=TurnInterrupted("(interrupted by operator)"),
 			),
 		):
+			fr.db.get_value.return_value = force_killed_by
 			runner._run_task_agentic(task, "P")
+		return task
 
+	def test_plain_interrupt_marks_cancelled(self):
+		# Design 85 — a cascade /stop with no force-kill → Cancelled.
+		task = self._run_interrupted(force_killed_by=None)
 		self.assertEqual(task.workflow_state, "Cancelled")
 		self.assertEqual(task.blocked_reason, "interrupted")
+
+	def test_force_killed_task_is_not_downgraded_to_cancelled(self):
+		# Design 83b — the kill path already set ForceKilled; the interrupted
+		# horse must NOT overwrite it with Cancelled.
+		task = self._run_interrupted(force_killed_by="op@x.com")
+		self.assertNotEqual(task.workflow_state, "Cancelled")
 
 
 class TestStopReportsBreadth(unittest.TestCase):

@@ -487,6 +487,10 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			frappe.db.rollback()
 		except Exception:
 			_logger.exception("rollback failed before _run_task_agentic interrupt save")
+		# Design 83b — if the operator `/stop force`d this task, the kill path
+		# already set ForceKilled + audit fields; don't downgrade it to Cancelled.
+		if frappe.db.get_value("Task", task.name, "force_killed_by"):
+			return
 		task.result = frappe.as_json({"status": "interrupted"})
 		task.workflow_state = "Cancelled"
 		task.blocked_reason = "interrupted"
@@ -555,6 +559,10 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 		_post_warroom(task.name, "blocked", {"profile": profile_name, "issue": issue})
 		return
 
+	# Design 83b — if the operator `/stop force`d this task while it was finishing,
+	# the kill path already set ForceKilled; don't override it with Completed.
+	if frappe.db.get_value("Task", task.name, "force_killed_by"):
+		return
 	task.result = frappe.as_json({"status": "success", "summary": summary})
 	task.workflow_state = "Completed"
 	task.completed_at = now_datetime()
