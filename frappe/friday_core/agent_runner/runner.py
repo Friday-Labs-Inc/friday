@@ -50,6 +50,8 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_messages_surrogates,
 	sanitize_surrogates,
 )
+from frappe.friday_core.gateway.interrupt import clear_interrupt, is_interrupt_requested
+from frappe.friday_core.gateway.steer import clear_steer, drain_steer
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.error_classifier import classify_api_error
@@ -80,6 +82,11 @@ _EMPTY_RESPONSE_FALLBACK = (
 # the LLM call (Hermes' compress-then-restart, conversation_loop.py). Capped so a
 # persistent overflow surfaces as a real error instead of looping.
 MAX_COMPRESS_RETRIES = 1
+
+# Design 83 — the clean reply written when an operator `/stop`s the turn. The
+# already-executed tool calls stay (governed + audited + committed); only the
+# ReAct loop stops.
+_INTERRUPTED_REPLY = "(interrupted by operator)"
 
 
 def run_turn(
@@ -130,6 +137,12 @@ def run_turn(
 	if isinstance(inbound_content, str):
 		inbound_content = sanitize_surrogates(inbound_content)
 
+	# Design 83/84 (Q3/Q4) — clear any stale interrupt flag and steer slot at
+	# entry. The session lock guarantees one turn per session, so only a `/stop`
+	# or `/steer` issued DURING this turn will be seen by the loop below.
+	clear_interrupt(session_id)
+	clear_steer(session_id)
+
 	skill_definitions = load_for_profile(profile_name)
 
 	# Design 79 — the self-improvement review runs a tool-restricted turn: keep
@@ -174,6 +187,22 @@ def run_turn(
 	compress_retries = 0
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
+		# Design 83 — cooperative interrupt: an operator `/stop` set the flag.
+		# Check it at the iteration boundary (before the next LLM call) and bail
+		# cleanly. Friday's blocking provider call means this is the soonest the
+		# turn can notice — see docs/design/83.
+		if is_interrupt_requested(session_id):
+			clear_interrupt(session_id)
+			return _INTERRUPTED_REPLY
+
+		# Design 84 — cooperative steer: an operator `/steer`ed mid-turn. Drain
+		# the nudge and let the model see it on THIS iteration's call. Hermes
+		# frames it as part of the tool output ("User guidance: …") rather than a
+		# new user demand — see docs/design/84.
+		_steer = drain_steer(session_id)
+		if _steer:
+			_inject_steer(messages, _steer)
+
 		# Design 61b — heartbeat once per ReAct iteration so the durability
 		# reconciler's executing-stale sweep distinguishes a long but healthy
 		# agentic turn from a runner that died mid-execution. Optional + best-
@@ -330,6 +359,28 @@ def _assistant_message(content: str, tool_calls: list[dict]) -> dict:
 			}
 		)
 	return {"role": "assistant", "content": content or "", "tool_calls": wire_calls}
+
+
+def _inject_steer(messages: list[dict], text: str) -> None:
+	"""Append an operator steer to the running conversation (Design 84, Q2).
+
+	Hermes-faithful: ride the nudge on the LAST tool result as
+	"User guidance: {text}", so the model reads it as more context on what just
+	happened rather than a new user demand (`conversation_loop.py:754`). At the
+	no-tool-yet edge (iteration 0), there is no tool result to append to, so it
+	goes in as a plain user message instead.
+
+	Replaces the last element with a NEW dict rather than mutating in place — the
+	tail dict may be shared with the prompt's message list (shallow-copied at
+	turn start).
+	"""
+	marker = f"User guidance: {text}"
+	if messages and messages[-1].get("role") == "tool":
+		last = messages[-1]
+		joined = f"{last.get('content') or ''}\n\n{marker}"
+		messages[-1] = {**last, "content": joined}
+	else:
+		messages.append({"role": "user", "content": marker})
 
 
 def _is_permission_denial(result: DispatchResult) -> bool:

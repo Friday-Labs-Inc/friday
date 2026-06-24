@@ -155,5 +155,42 @@ class TestOutbound(unittest.TestCase):
 		mock_frappe.log_error.assert_called_once()
 
 
+class TestCommands(unittest.TestCase):
+	"""Design 82 — slash commands are caught at the edge, never run as a turn."""
+
+	@patch(f"{_A}._handle_command")
+	@patch(f"{_A}._friday_bot_user", return_value="friday-bot")
+	@patch(f"{_A}.frappe")
+	def test_dm_command_is_dispatched_not_conversational(self, mock_frappe, _bot, mock_handle):
+		mock_frappe.db.get_value.return_value = _channel(is_dm=1)
+		mock_frappe.db.exists.return_value = True  # bot is a member
+		raven_adapter.handle_raven_message(_raven_msg(content="/status"))
+		# Routed to the command handler, with the channel + sender + raw text.
+		mock_handle.assert_called_once_with("CH-001", "human@example.com", "/status")
+		# No conversational inbound row written by handle_raven_message itself.
+		mock_frappe.get_doc.assert_not_called()
+
+	@patch("frappe.friday_core.gateway.commands.dispatch_command")
+	@patch(f"{_A}.frappe")
+	def test_handle_command_writes_two_audit_rows(self, mock_frappe, mock_dispatch):
+		result = MagicMock()
+		result.reply = "Session CH-001 — 0 pending approval(s)."
+		mock_dispatch.return_value = result
+
+		raven_adapter._handle_command("CH-001", "op@example.com", "/status")
+
+		mock_dispatch.assert_called_once()
+		# Two rows: the command (inbound) and its reply (outbound), both audited.
+		self.assertEqual(mock_frappe.get_doc.call_count, 2)
+		rows = [c[0][0] for c in mock_frappe.get_doc.call_args_list]
+		self.assertTrue(all(r["is_command"] == 1 for r in rows))
+		self.assertTrue(all(r["processed"] == 1 for r in rows))
+		self.assertEqual(rows[0]["direction"], "inbound")
+		self.assertEqual(rows[0]["content"], "/status")
+		self.assertEqual(rows[1]["direction"], "outbound")
+		self.assertEqual(rows[1]["content"], result.reply)
+		self.assertEqual(rows[1]["sender_id"], "system")
+
+
 if __name__ == "__main__":
 	unittest.main()

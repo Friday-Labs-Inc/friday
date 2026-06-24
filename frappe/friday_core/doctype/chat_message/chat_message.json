@@ -14,7 +14,8 @@
   "retry_count",
   "failure_reason",
   "compacted",
-  "job_id"
+  "job_id",
+  "is_command"
  ],
  "fields": [
   {
@@ -93,6 +94,13 @@
    "fieldtype": "Data",
    "label": "Job ID",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set to 1 for gateway command traffic (Design 82): a slash command and its reply are audited as Chat Message rows but never enter the conversational pipeline. handle_inbound skips is_command rows.",
+   "fieldname": "is_command",
+   "fieldtype": "Check",
+   "label": "Is Command"
   }
  ],
  "links": [],

@@ -85,6 +85,15 @@ def handle_raven_message(doc, method=None) -> None:
 		if bot_user not in mentioned:
 			return
 
+	# Design 82 — slash commands are caught at the edge, BEFORE a conversational
+	# row is written. A command never reaches run_turn; it is dispatched here and
+	# its reply posted straight back into the channel.
+	from frappe.friday_core.gateway.commands import is_command
+
+	if is_command(content):
+		_handle_command(doc.channel_id, doc.owner, content)
+		return
+
 	profile = _resolve_profile(doc.channel_id)
 	if not profile:
 		frappe.logger("friday.raven").warning(
@@ -142,6 +151,51 @@ def handle_outbound_to_raven(doc, method=None) -> None:
 	except Exception:
 		frappe.db.rollback(save_point="friday_raven_post")
 		frappe.log_error(title="friday.raven outbound post failed")
+
+
+# ---------------------------------------------------------------------------
+# Commands (Design 82)
+# ---------------------------------------------------------------------------
+
+
+def _handle_command(channel_id: str, owner: str, content: str) -> None:
+	"""Dispatch a slash command and audit it as two `is_command` rows.
+
+	The command and its reply are recorded as Chat Message rows so governance
+	actions (e.g. `/approve`) leave a trail — but both carry `is_command=1`, so
+	the gateway hook skips them (no conversational turn) and the reply row is
+	posted into Raven by the normal `handle_outbound_to_raven` path.
+	"""
+	from frappe.friday_core.gateway.commands import dispatch_command
+
+	result = dispatch_command(
+		platform=RAVEN_PLATFORM, session_id=channel_id, user=owner, raw=content
+	)
+
+	# Audit the command itself (inbound, already handled).
+	_insert_command_row(channel_id, sender_id=owner, content=content, direction="inbound")
+	# The reply (outbound) — its insert fires handle_outbound_to_raven, which
+	# posts it into the channel.
+	_insert_command_row(
+		channel_id, sender_id="system", content=result.reply, direction="outbound"
+	)
+
+
+def _insert_command_row(channel_id: str, sender_id: str, content: str, direction: str) -> None:
+	"""Insert one `is_command=1` Chat Message row (processed, never run)."""
+	frappe.get_doc(
+		{
+			"doctype": "Chat Message",
+			"session_id": channel_id,
+			"platform": RAVEN_PLATFORM,
+			"direction": direction,
+			"sender_id": sender_id,
+			"content": content,
+			"timestamp": frappe.utils.now_datetime(),
+			"processed": 1,
+			"is_command": 1,
+		}
+	).insert(ignore_permissions=True)
 
 
 # ---------------------------------------------------------------------------
