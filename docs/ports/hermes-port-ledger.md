@@ -28,33 +28,33 @@ really Hermes, not an approximation.
 | # | Component | Overall status | Remaining gap |
 |---|-----------|----------------|---------------|
 | 1 | Agent ReAct loop | **COMPLETE** | — learning loop (D79, both slices), interrupt, on-error compress+retry all shipped |
-| 2 | Connection surfaces | diverged (by design) | **2nd surface (Slack/Telegram) MISSING** — only Raven + RandomPack exist |
+| 2 | Connection surfaces | diverged (by design) | **2nd surface = Slack SHIPPED (D90, PR #141)**; Telegram/others are now just more adapters |
 | 3 | Context assembly | **COMPLETE** | — USER.md split, date line, SKILLS_GUIDANCE, prompt caching, project-isolation all shipped |
 | 4 | Context compression | **COMPLETE** | — on-error retry, 13-section prompt, last-user-in-tail shipped; tool-result pruning is **moot** (Friday never persists tool rows) |
 | 5 | Gateway | **COMPLETE** | session manager + delivery + cron all shipped; lifecycle hooks **deliberately deferred** (D88). [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
-| 6 | Memory (3 forms) | **mostly shipped** | semantic (pgvector) + memory-FTS + USER.md split all shipped; **`session_search` (transcript FTS + skill) PARTIAL** — agent can't search its own past conversations |
+| 6 | Memory (3 forms) | **COMPLETE** (Mem0 deferred) | semantic (pgvector) + memory-FTS + USER.md split + **`session_search` SHIPPED (D89)** all done; remaining: external providers (Mem0) — deliberate v0.1 defer |
 | 7 | Cron jobs | **SHIPPED** (both slices) | — `Cron Job` doctype + tick + delivery + `manage-cron-jobs` skill |
 
 > ### ⚠️ Re-audit 2026-06-24 (post-gateway-program)
 >
 > A full re-verification against current code (4 parallel read-only audits) found
-> the ledger was **badly stale** — almost every "gap" had been built. The TRUE
-> remaining gaps, ranked:
+> the ledger was **badly stale** — almost every "gap" had been built. The two real
+> remaining high-value gaps it surfaced (**Slack 2nd surface** and
+> **`session_search`**) have since BOTH shipped (D90 #141, D89 #140). Status:
 >
-> | Gap | Status | Value | Notes |
-> |---|---|---|---|
-> | **2nd chat surface (Slack)** | MISSING | High | A thin adapter writing `Chat Message` rows; proves the unified gateway is multi-surface. `surfaces/` has only `raven_adapter` + `randompack`. |
-> | **`session_search`** | PARTIAL | High | Memory-FTS shipped (`llm/after_migrate`), but no FTS on `Chat Message` + no `session_search` skill → the agent can't recall its own past conversations. The "long-lived agent" gap. |
-> | **A2A (agent-to-agent)** | MISSING | Medium | Design 81e, deferred. No surface/protocol. |
-> | progressive streaming · `runtime_footer`/`display_config` · `mirror` | MISSING/partial | Polish | LLM streams internally; gateway writes one finished row. Per-surface display tiers + transparency footer + out-of-turn transcript mirroring absent. |
-> | tool-result pruning | **moot** | — | Friday's row model never persists tool messages, so there's nothing to prune. Strike from the backlog. |
-> | lifecycle hooks · external memory providers (Mem0) | deferred | — | D88 (hooks) + deliberate v0.1 defer (Mem0); first-party pgvector covers semantic recall. |
+> | Gap | Status | Notes |
+> |---|---|---|
+> | **2nd chat surface (Slack)** | **SHIPPED (D90, #141)** | Thin adapter mirroring `raven_adapter` — signed webhook in, `chat.postMessage` out. Proves the gateway is multi-surface. |
+> | **`session_search`** | **SHIPPED (D89, #140)** | `Chat Message` FTS (`content_search`) + a caller-scoped skill — the agent searches its own past conversations. |
+> | **A2A (agent-to-agent)** | MISSING (deferred) | Design 81e. No surface/protocol yet. |
+> | progressive streaming · `runtime_footer`/`display_config` · `mirror` | MISSING/partial (polish) | LLM streams internally; gateway writes one finished row. Per-surface display tiers + transparency footer + out-of-turn transcript mirroring absent. |
+> | tool-result pruning | **moot** | Friday's row model never persists tool messages — nothing to prune. Struck from the backlog. |
+> | lifecycle hooks · external memory providers (Mem0) | deferred | D88 (hooks) + deliberate v0.1 defer (Mem0); first-party pgvector covers semantic recall. |
 >
-> **Net:** the Hermes port is ~complete. The two real, high-value remaining
-> builds are the **2nd chat surface (Slack)** and **`session_search`**. Everything
-> else is polish or a justified defer. The per-component matrix above and the
-> backlog below are updated; treat anything still marked MISSING in the OLD
-> backlog as suspect until re-verified.
+> **Net: the Hermes port is COMPLETE** — every real gap is shipped; what remains is
+> polish (streaming, display tiers, mirror) and justified defers (A2A, Mem0,
+> lifecycle hooks). Treat anything still marked MISSING in the OLD backlog below as
+> suspect until re-verified.
 
 Confirmed along the way: the transcript's claim that Hermes cron is stored as
 plain JSON (`~/.hermes/cron/jobs.json`), not SQLite, is **correct in source**
@@ -80,11 +80,13 @@ Ranked by value-to-effort for a single-tenant enterprise deployment.
    field + split recall + tighter schema wording. Effort: medium.
 
 ### Tier 2 — long-lived-agent recall
-3. **session_search + full-text index.** Hermes: `tools/session_search_tool.py`
-   over SQLite FTS5 (`hermes_state.py:256–308`). Friday: **none** — the agent
-   cannot search its own past transcripts. Port = Postgres `tsvector`+GIN on
-   `Chat Message` + a `session_search` skill. Effort: high (most valuable
-   long-term).
+3. ~~**session_search + full-text index.**~~ — **SHIPPED (Design 89).** Postgres
+   `content_search` tsvector+GIN on `Chat Message` (`llm/after_migrate.ensure_chatmessage_search_schema`,
+   mirrors the memory-FTS pattern) + a `session_search` skill
+   (`skills/handlers_session_search.py`) scoped to the calling agent's own
+   messages, ranked via the same `ts_rank_cd` + AND→OR `plainto_tsquery` as
+   `_recall_scored`. Port of Hermes `tools/session_search_tool.py`. See
+   `docs/design/89`.
 4. **External memory providers.** Hermes: `agent/memory_provider.py` (ABC) +
    `agent/memory_manager.py` (orchestration) + Mem0/Supermemory/Honcho plugins.
    Friday: **none** (fence helpers ported in `llm/memory.py:44–69`; the machinery

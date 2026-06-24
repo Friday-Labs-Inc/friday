@@ -443,6 +443,10 @@ after_migrate = [
 	# Friday (design 87 slice 2): provision the agent-facing 'manage-cron-jobs'
 	# skill so an agent can schedule its own recurring work. Idempotent.
 	"frappe.friday_core.skills.bootstrap_cron.provision",
+	# Friday (design 89): Postgres FTS index on Chat Message + provision the
+	# 'session_search' skill so an agent can search its own past conversations.
+	"frappe.friday_core.llm.after_migrate.ensure_chatmessage_search_schema",
+	"frappe.friday_core.skills.bootstrap_session_search.provision",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]

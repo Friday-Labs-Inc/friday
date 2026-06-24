@@ -75,6 +75,37 @@ def ensure_memory_search_schema() -> None:
 		)
 
 
+def ensure_chatmessage_search_schema() -> None:
+	"""Postgres full-text index on Chat Message so an agent can search its own
+	past conversations (Design 89 — `session_search`).
+
+	A generated ``content_search`` tsvector column on ``tabChat Message`` + a GIN
+	index. Mirrors ``ensure_memory_search_schema`` exactly (the proven pattern):
+	Postgres-only, idempotent (``IF NOT EXISTS``), savepoint-protected so a missing
+	prerequisite is non-fatal — a failed DDL rolls back to the savepoint instead of
+	poisoning the migrate transaction (the lesson from PR #132). Without it,
+	``session_search`` simply falls back to a recency LIKE scan.
+	"""
+	if frappe.db.db_type != "postgres":
+		return
+	try:
+		frappe.db.savepoint("friday_chat_search_ddl")
+		frappe.db.sql_ddl(
+			'ALTER TABLE "tabChat Message" ADD COLUMN IF NOT EXISTS content_search tsvector '
+			"GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED"
+		)
+		frappe.db.sql_ddl(
+			'CREATE INDEX IF NOT EXISTS "tabChat Message_fts_gin" '
+			'ON "tabChat Message" USING GIN (content_search)'
+		)
+	except Exception:
+		frappe.db.rollback(save_point="friday_chat_search_ddl")
+		frappe.logger("friday.memory").warning(
+			"ensure_chatmessage_search_schema failed; session_search will fall back to recency",
+			exc_info=True,
+		)
+
+
 def ensure_memory_embedding_schema() -> None:
 	"""Create the pgvector shadow table for semantic memory recall (design 80 step 2b-2).
 
