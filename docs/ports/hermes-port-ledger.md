@@ -31,7 +31,7 @@ really Hermes, not an approximation.
 | 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
 | 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade** | queue+slash+interrupt+steer done 2026-06-24; `/stop` cascade to delegated work done (D85). Remaining: delivery DSL; lifecycle hooks; hard kill (`/stop force`). Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade + hard-kill** | queue+slash+interrupt+steer+cascade+`/stop force` (D85/D86/D87/D83b) all done 2026-06-24; delivery DSL shipped (D86). Remaining: lifecycle hooks. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
 | 7 | Cron jobs | **Slice 1 SHIPPED** (Design 87) | `Cron Job` doctype + `*/1` tick + delivery-on-completion (consumes the #86 router); agent-facing cron *skill* = Slice 2 (deferred) |
 
@@ -248,7 +248,10 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
    `/stop` now stops the whole active delegated subtree (roots via
    `Task.originating_session`, descendants via `parent_task`) — `run_turn` raises
    `TurnInterrupted` so an interrupted child is marked Cancelled, not Completed.
-   Still deferred: hard kill (`send_stop_job_command`, `/stop force`). See
+   **Hard kill SHIPPED (Design 83b):** `/stop force` SIGTERMs the in-flight RQ
+   job(s) via `send_stop_job_command` (chat turn via `Chat Message.job_id` +
+   cascade subtree), marks delegated Tasks `ForceKilled` with audit fields;
+   reconciler auto-heal left untouched (operator-initiated only). See
    `docs/design/83`, `docs/design/85`.
 2. ~~**STEER**~~ — **SHIPPED 2026-06-24 (Design 84).** `/steer <text>` pushes a
    coalescing Redis slot `friday:steer:{session_id}`, drained at each ReAct

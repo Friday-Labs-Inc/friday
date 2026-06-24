@@ -30,6 +30,8 @@ returns. A hard kill (`send_stop_job_command`) is a named follow-up.
 from __future__ import annotations
 
 import frappe
+from frappe.utils.background_jobs import get_queue
+from rq.command import send_stop_job_command
 
 # One Redis key per session. Matches the session-lock keyspace convention.
 _INTERRUPT_PREFIX = "friday:interrupt:"
@@ -144,3 +146,105 @@ def _cancel_task(task_name: str) -> None:
 		frappe.logger("friday.interrupt").warning(
 			f"cascade cancel failed for {task_name!r}", exc_info=True
 		)
+
+
+# ---------------------------------------------------------------------------
+# Hard kill — `/stop force` (Design 83b)
+# ---------------------------------------------------------------------------
+
+# `FORCE_KILLED` is the operator-killed terminal Task state (Design 83b). It is
+# set ONLY by an operator `/stop force` — the reconciler's stale-Executing
+# auto-heal (Blocked → re-Pend → retry) is deliberately left untouched, so a
+# transient runner loss still self-heals.
+FORCE_KILLED_STATE = "ForceKilled"
+_FRIDAY_QUEUE = "friday"
+
+
+def force_kill_session(session_id: str, user: str) -> dict:
+	"""Hard-kill the in-flight turn(s) for a session. Returns an audit summary.
+
+	Cooperative `/stop` (Design 83/85) waits for the next ReAct boundary — useless
+	when a turn is wedged inside one long tool/LLM call. `/stop force` SIGTERMs the
+	running RQ job(s) instead, via rq's `send_stop_job_command` (the REAL primitive
+	— `Job.cancel()` only dequeues a not-yet-started job, it can't stop a running
+	one).
+
+	What it kills:
+	  - the channel's own chat turn — its RQ job id is on the latest unprocessed
+	    inbound `Chat Message` (`gateway/service._enqueue_pipeline`);
+	  - every active delegated Task in the cascade subtree (Design 85), whose RQ
+	    job is named `task:{name}` — each is then marked `ForceKilled` with the
+	    audit fields (the dead worker can't write its own terminal state).
+
+	Idempotent: a job that already finished is a counted no-op, never an error.
+	"""
+	result = {"jobs_cancelled": 0, "jobs_already_done": 0, "tasks_now_forcekilled": []}
+
+	# Also raise the cooperative flag: if the turn happens to reach a boundary
+	# before the SIGTERM lands, it bails cleanly and releases its lock.
+	request_interrupt(session_id)
+
+	chat_job = _latest_running_job(session_id)
+	if chat_job:
+		_record_stop(chat_job, result)
+
+	now = frappe.utils.now_datetime()
+	for task_name in collect_active_subtree(session_id):
+		_record_stop(f"task:{task_name}", result)
+		# The horse is being SIGTERM'd, so it won't write its own terminal state —
+		# we set ForceKilled + audit directly here.
+		frappe.db.set_value(
+			"Task",
+			task_name,
+			{
+				"workflow_state": FORCE_KILLED_STATE,
+				"force_killed_by": user,
+				"force_killed_at": now,
+				"force_kill_reason": "operator /stop force",
+			},
+			update_modified=False,
+		)
+		result["tasks_now_forcekilled"].append(task_name)
+
+	_emit_force_kill(session_id, user, result)
+	return result
+
+
+def _latest_running_job(session_id: str) -> str | None:
+	"""The RQ job id of the session's still-running chat turn, if any."""
+	rows = frappe.get_all(
+		"Chat Message",
+		filters={"session_id": session_id, "direction": "inbound", "processed": 0},
+		fields=["job_id"],
+		order_by="creation desc",
+		limit=1,
+	)
+	return (rows[0].get("job_id") if rows else None) or None
+
+
+def _record_stop(job_id: str, result: dict) -> None:
+	"""SIGTERM one running RQ job by id; tally cancelled vs already-done."""
+	try:
+		send_stop_job_command(get_queue(_FRIDAY_QUEUE).connection, job_id)
+		result["jobs_cancelled"] += 1
+	except Exception:
+		# Not running / already finished / unknown id — idempotent no-op.
+		result["jobs_already_done"] += 1
+
+
+def _emit_force_kill(session_id: str, user: str, result: dict) -> None:
+	"""Write one `gateway.force_kill` audit event. Best-effort."""
+	try:
+		from frappe.friday_core.observability import emit
+
+		emit(
+			"gateway.force_kill",
+			trigger_source="operator",
+			summary=(
+				f"/stop force by {user}: {result['jobs_cancelled']} job(s) cancelled, "
+				f"{len(result['tasks_now_forcekilled'])} task(s) ForceKilled"
+			),
+			payload={"session_id": session_id, "operator": user, **result},
+		)
+	except Exception:
+		frappe.logger("friday.interrupt").warning("force_kill emit failed", exc_info=True)
