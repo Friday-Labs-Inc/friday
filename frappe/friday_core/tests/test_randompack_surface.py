@@ -2,25 +2,19 @@
 # License: MIT. See license.txt
 
 """
-Unit tests for the RandomPack integration surface (design 60a, LOCKED).
+Unit tests for the RandomPack DOMAIN surface (Design 81b — connector #1).
 
-Mock-based — no DB, no network. Pins the locked contract:
-  - Stripe-style signature: valid passes; bad v1 fails BEFORE freshness;
-    stale t fails AFTER a valid v1; malformed headers fail closed
-  - UUID dedupe: a duplicate delivery is a 200 no-op (no second row)
-  - process_event: Processed replays skip; handler errors → Failed + reason
-    (the row is the error ledger); unhandled types → Processed "recorded"
+Mock-based — no DB, no network. The generic spine (signature, dispatch,
+transport) is tested in test_connector_core.py; this file pins the RandomPack
+*meaning* + thin-adapter behaviour that stays in domain:randompack:
   - brief ingestion: field mapping, list joining, unmapped keys preserved in
     notes, frozen-snapshot idempotency (never overwrite)
-  - outbound client: token auth header, NEVER raises (returns None on any
-    failure), heartbeat-safety (progress alone carries no status), the
-    upload_file → attach_deliverable chaining, Pending Review signalling
+  - outbound contract calls: endpoint-path resolution, heartbeat-safety
+    (progress alone carries no status), the upload_file → attach_deliverable
+    chaining, Pending Review signalling
 """
 
-import hashlib
-import hmac
 import json
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -29,89 +23,6 @@ from frappe.friday_core.surfaces import randompack
 
 _S = "frappe.friday_core.surfaces.randompack"
 _C = "frappe.friday_core.integrations.randompack_client"
-
-SECRET = "test-secret"
-
-
-def _sign(body: bytes, t: float | None = None, secret: str = SECRET) -> str:
-	t = t if t is not None else time.time()
-	v1 = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
-	return f"t={t},v1={v1}"
-
-
-class TestSignature(unittest.TestCase):
-	def test_valid_signature_passes(self):
-		body = b'{"id": "evt-1"}'
-		self.assertTrue(randompack.verify_signature(body, _sign(body), SECRET, 300))
-
-	def test_wrong_secret_fails(self):
-		body = b"{}"
-		self.assertFalse(randompack.verify_signature(body, _sign(body, secret="other"), SECRET, 300))
-
-	def test_tampered_body_fails(self):
-		header = _sign(b'{"amount": 1}')
-		self.assertFalse(randompack.verify_signature(b'{"amount": 9}', header, SECRET, 300))
-
-	def test_stale_t_fails_even_with_valid_v1(self):
-		body = b"{}"
-		old = time.time() - 3600
-		self.assertFalse(randompack.verify_signature(body, _sign(body, t=old), SECRET, 300))
-
-	def test_fresh_replay_with_new_t_passes(self):
-		# The backend re-signs replays with fresh t (locked contract).
-		body = b'{"id": "evt-1"}'
-		self.assertTrue(randompack.verify_signature(body, _sign(body), SECRET, 300))
-
-	def test_malformed_headers_fail_closed(self):
-		for header in ("", "t=123", "v1=abc", "junk", "t=abc,v1=zzz"):
-			self.assertFalse(randompack.verify_signature(b"{}", header, SECRET, 300))
-
-	def test_missing_secret_fails_closed(self):
-		body = b"{}"
-		self.assertFalse(randompack.verify_signature(body, _sign(body), "", 300))
-
-
-class TestProcessEvent(unittest.TestCase):
-	def _event(self, event_type="payment.received", status="Received", payload=None):
-		event = MagicMock()
-		event.event_type = event_type
-		event.status = status
-		event.payload = json.dumps(payload or {})
-		return event
-
-	@patch(f"{_S}.frappe")
-	def test_processed_replay_is_skipped(self, mock_frappe):
-		event = self._event(status="Processed")
-		mock_frappe.get_doc.return_value = event
-		randompack.process_event("evt-1")
-		event.save.assert_not_called()
-
-	@patch(f"{_S}.frappe")
-	def test_dict_payload_tolerated(self, mock_frappe):
-		# Frappe's JSON fieldtype returns a parsed dict on Postgres reads.
-		event = self._event(event_type="gate.opened")
-		event.payload = {"already": "parsed"}
-		mock_frappe.get_doc.return_value = event
-		randompack.process_event("evt-1")
-		self.assertEqual(event.status, "Processed")
-
-	@patch(f"{_S}.frappe")
-	def test_unhandled_type_recorded_for_60b(self, mock_frappe):
-		event = self._event(event_type="gate.opened")
-		mock_frappe.get_doc.return_value = event
-		randompack.process_event("evt-1")
-		self.assertEqual(event.status, "Processed")
-		self.assertIn("60b", event.failure_reason)
-
-	@patch.dict(randompack._HANDLERS, {"boom.event": MagicMock(side_effect=RuntimeError("kaput"))})
-	@patch(f"{_S}.frappe")
-	def test_handler_error_marks_failed_with_reason(self, mock_frappe):
-		event = self._event(event_type="boom.event")
-		mock_frappe.get_doc.return_value = event
-		randompack.process_event("evt-1")
-		self.assertEqual(event.status, "Failed")
-		self.assertIn("RuntimeError", event.failure_reason)
-		mock_frappe.log_error.assert_called_once()
 
 
 class TestBriefIngestion(unittest.TestCase):
@@ -153,38 +64,21 @@ class TestBriefIngestion(unittest.TestCase):
 		mock_frappe.get_doc.assert_not_called()
 
 
-class TestOutboundClient(unittest.TestCase):
-	def _settings(self, enabled=1):
-		settings = MagicMock()
-		settings.enabled = enabled
-		settings.api_base_url = "https://ops.randompack.com"
-		settings.api_key = "key123"
-		settings.get_password.return_value = "sec456"
-		return settings
-
-	@patch(f"{_C}.requests")
-	@patch(f"{_C}.frappe")
-	def test_token_auth_and_endpoint_shape(self, mock_frappe, mock_requests):
-		mock_frappe.get_cached_doc.return_value = self._settings()
-		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
+class TestOutboundContractCalls(unittest.TestCase):
+	@patch(f"{_C}.connector_client")
+	def test_send_resolves_v1_path_and_connector(self, mock_cc):
+		# bare contract names resolve under the backend's locked v1 module, and
+		# every send goes through the randompack-system connector.
 		randompack_client.send("update_task_progress", {"task": "T-1"})
-		url = mock_requests.post.call_args[0][0]
-		self.assertEqual(url, "https://ops.randompack.com/api/method/randompack.api.v1.update_task_progress")
-		headers = mock_requests.post.call_args.kwargs["headers"]
-		self.assertEqual(headers["Authorization"], "token key123:sec456")
+		mock_cc.send.assert_called_once()
+		args = mock_cc.send.call_args[0]
+		self.assertEqual(args[0], "randompack-system")
+		self.assertEqual(args[1], "randompack.api.v1.update_task_progress")
 
-	@patch(f"{_C}.requests")
-	@patch(f"{_C}.frappe")
-	def test_never_raises_returns_none_on_failure(self, mock_frappe, mock_requests):
-		mock_frappe.get_cached_doc.return_value = self._settings()
-		mock_requests.post.side_effect = RuntimeError("network down")
-		self.assertIsNone(randompack_client.send("post_project_note", {"note": "x"}))
-		mock_frappe.log_error.assert_called_once()
-
-	@patch(f"{_C}.frappe")
-	def test_disabled_integration_drops_send(self, mock_frappe):
-		mock_frappe.get_cached_doc.return_value = self._settings(enabled=0)
-		self.assertIsNone(randompack_client.send("post_project_note", {"note": "x"}))
+	@patch(f"{_C}.connector_client")
+	def test_send_passes_dotted_path_through(self, mock_cc):
+		randompack_client.send("x.y.z", {"a": 1})
+		self.assertEqual(mock_cc.send.call_args[0][1], "x.y.z")
 
 	@patch(f"{_C}.send")
 	def test_heartbeat_progress_never_carries_status(self, mock_send):

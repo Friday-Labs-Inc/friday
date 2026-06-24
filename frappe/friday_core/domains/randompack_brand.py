@@ -47,6 +47,13 @@ WORKFLOW_NAME = "RandomPack Brand Pipeline"
 BUNDLE_NAME = "randompack-brand"
 STATE_FIELD = "workflow_state"
 
+# Design 81 — RandomPack is connector #1 (system modality). The Connector row is
+# the registry entry; its secrets are carried over from the old RandomPack
+# Settings by the 81b migration patch. This module is the connector's handler
+# module (its HANDLERS dict is what connectors.core.process_event dispatches).
+CONNECTOR_NAME = "randompack-system"
+CONNECTOR_HANDLER_MODULE = "frappe.friday_core.surfaces.randompack"
+
 # Generic engine skill (Design 75 Phase 1.1): lets a phase read the outputs of
 # the earlier phases of the same work-item. Domain-agnostic — provisioned here
 # because the brand bundle is the first to need it. Handler:
@@ -326,6 +333,7 @@ def provision() -> dict:
 	_ensure_profiles()
 	_ensure_gateway_account()
 	_ensure_work_item_perms()
+	_ensure_connector()
 
 	frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 	summary = {
@@ -338,6 +346,38 @@ def provision() -> dict:
 	}
 	print(f"✓ RandomPack brand bundle provisioned: {summary}")
 	return summary
+
+
+def _ensure_connector() -> None:
+	"""Ensure the randompack-system Connector registry row exists (Design 81b).
+
+	Idempotent + secret-safe: on a fresh site this creates a DISABLED stub (an
+	operator fills in the secrets + flips enabled); on an existing site it only
+	repairs the modality/direction/handler_module pointer and NEVER touches the
+	secrets or the enabled flag (those were migrated from RandomPack Settings by
+	the 81b patch, or set by an operator).
+	"""
+	if frappe.db.exists("Connector", CONNECTOR_NAME):
+		frappe.db.set_value(
+			"Connector",
+			CONNECTOR_NAME,
+			{"modality": "system", "handler_module": CONNECTOR_HANDLER_MODULE},
+			update_modified=False,
+		)
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Connector",
+			"connector_name": CONNECTOR_NAME,
+			"modality": "system",
+			"direction": "Both",
+			"enabled": 0,
+			"handler_module": CONNECTOR_HANDLER_MODULE,
+			"signature_tolerance_seconds": 300,
+			"description": "RandomPack ops backend — connector #1 (Design 81). "
+			"Fill in the API base URL, token key/secret, and webhook secret, then enable.",
+		}
+	).insert(ignore_permissions=True)
 
 
 def _ensure_roles() -> None:

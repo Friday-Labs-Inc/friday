@@ -4,6 +4,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "connector",
   "event_id",
   "event_type",
   "version",
@@ -16,7 +17,16 @@
  ],
  "fields": [
   {
-   "description": "The backend's event UUID \u2014 the idempotency key. Unique: a duplicate delivery cannot create a second row.",
+   "description": "Which Connector this event arrived through.",
+   "fieldname": "connector",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Connector",
+   "options": "Connector"
+  },
+  {
+   "description": "The source system's event UUID — the idempotency key. Unique: a duplicate delivery cannot create a second row.",
    "fieldname": "event_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -38,14 +48,14 @@
    "label": "Version"
   },
   {
-   "description": "The backend's occurred_at timestamp (informational; signature freshness uses the per-attempt t).",
+   "description": "The source system's occurred_at timestamp (informational; signature freshness uses the per-attempt t).",
    "fieldname": "occurred_at",
    "fieldtype": "Data",
    "label": "Occurred At"
   },
   {
    "default": "Received",
-   "description": "Received = persisted + queued. Processed = handler succeeded. Failed = handler errored (failure_reason set); a backend replay re-runs it.",
+   "description": "Received = persisted + queued. Processed = handler succeeded. Failed = handler errored (failure_reason set); a source replay re-runs it.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -70,7 +80,7 @@
   },
   {
    "default": "0",
-   "description": "Reconciler-issued retries of process_event for events stuck Received or Failed. Capped at 3; beyond that the event stays Failed for a human (or a backend replay with a fresh signature).",
+   "description": "Reconciler-issued retries of process_event for events stuck Received or Failed. Capped at 3; beyond that the event stays Failed for a human (or a source replay with a fresh signature).",
    "fieldname": "retry_count",
    "fieldtype": "Int",
    "label": "Retry Count",
@@ -79,7 +89,7 @@
  ],
  "links": [],
  "module": "Friday Core",
- "name": "RandomPack Event",
+ "name": "Connector Event",
  "naming_rule": "By fieldname",
  "permissions": [
   {

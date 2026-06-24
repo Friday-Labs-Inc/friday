@@ -99,7 +99,7 @@ HUB_CARDS: list[dict] = [
 	{"label": "Work", "links": ["Project", "Task", "Issue", "Task Dependency"]},
 	{"label": "Agents", "links": ["Agent Profile", "Agent Settings", "Agent Memory"]},
 	{"label": "Models & Skills", "links": ["LLM Provider", "LLM Usage Log", "Skill", "MCP Server"]},
-	{"label": "Conversations & Surfaces", "links": ["Chat Message", "Chat Platform", "RandomPack Settings"]},
+	{"label": "Conversations & Surfaces", "links": ["Chat Message", "Chat Platform", "Connector", "Connector Event"]},
 	{
 		"label": "Governance & Logs",
 		"links": ["Permission Decision Log", "Execution Log", "Workflow Request", "Compaction Summary"],

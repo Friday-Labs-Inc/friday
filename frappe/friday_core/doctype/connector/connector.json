@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "autoname": "field:connector_name",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "connector_name",
+  "modality",
+  "direction",
+  "enabled",
+  "handler_module",
+  "description",
+  "outbound_section",
+  "api_base_url",
+  "api_key",
+  "api_secret",
+  "inbound_column",
+  "webhook_secret",
+  "signature_tolerance_seconds",
+  "config_section",
+  "config"
+ ],
+ "fields": [
+  {
+   "description": "Unique id of this integration, e.g. randompack-system.",
+   "fieldname": "connector_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Connector Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "system",
+   "description": "What kind of ecosystem this talks to. system = signed-event business system (RandomPack). chat/mcp/a2a land in later slices.",
+   "fieldname": "modality",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Modality",
+   "options": "system\nchat\nmcp\na2a",
+   "reqd": 1
+  },
+  {
+   "default": "Both",
+   "description": "Whether Friday receives from, sends to, or both.",
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Direction",
+   "options": "Both\nInbound\nOutbound"
+  },
+  {
+   "default": "0",
+   "description": "Master switch. When off, inbound intake rejects events and the outbound client refuses to send.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "description": "Dotted Python module that exposes this connector's inbound handlers as a HANDLERS dict (system modality). e.g. frappe.friday_core.surfaces.randompack",
+   "fieldname": "handler_module",
+   "fieldtype": "Data",
+   "label": "Handler Module"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "outbound_section",
+   "fieldtype": "Section Break",
+   "label": "Outbound (API)"
+  },
+  {
+   "description": "Base URL of the external system, e.g. https://ops.randompack.com",
+   "fieldname": "api_base_url",
+   "fieldtype": "Data",
+   "label": "API Base URL"
+  },
+  {
+   "description": "API key for token auth (token key:secret).",
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "description": "API secret — stored encrypted at rest, never in code or git.",
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "inbound_column",
+   "fieldtype": "Column Break",
+   "label": "Inbound (signed events)"
+  },
+  {
+   "description": "Shared HMAC secret for inbound signed events (X-RP-Signature style). Stored encrypted at rest.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret"
+  },
+  {
+   "default": "300",
+   "description": "Reject inbound signatures whose per-attempt timestamp `t` is older/newer than this many seconds.",
+   "fieldname": "signature_tolerance_seconds",
+   "fieldtype": "Int",
+   "label": "Signature Tolerance (seconds)"
+  },
+  {
+   "fieldname": "config_section",
+   "fieldtype": "Section Break",
+   "label": "Adapter Config"
+  },
+  {
+   "description": "Adapter-specific config (JSON). e.g. modality-typed options the thin adapter reads.",
+   "fieldname": "config",
+   "fieldtype": "JSON",
+   "label": "Config"
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Connector",
+ "naming_rule": "By fieldname",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Agent Supervisor"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

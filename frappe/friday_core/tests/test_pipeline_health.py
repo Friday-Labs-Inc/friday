@@ -171,7 +171,7 @@ class TestRandomPackHealth(unittest.TestCase):
 		mock_inflight.return_value = {"default": 0, "friday": 0}
 
 		def count(doctype, filters=None):
-			if doctype != "RandomPack Event":
+			if doctype != "Connector Event":
 				return 0
 			s = (filters or {}).get("status")
 			if s == "Received":
@@ -184,8 +184,8 @@ class TestRandomPackHealth(unittest.TestCase):
 
 		out = pipeline_health()
 
-		self.assertEqual(out["randompack"]["events_received_pending"], 4)
-		self.assertEqual(out["randompack"]["events_failed_retriable"], 1)
+		self.assertEqual(out["connectors"]["events_received_pending"], 4)
+		self.assertEqual(out["connectors"]["events_failed_retriable"], 1)
 
 
 class TestFailLoud(unittest.TestCase):
