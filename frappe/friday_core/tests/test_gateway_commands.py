@@ -201,5 +201,34 @@ class TestDeny(unittest.TestCase):
 		self.assertTrue(result.ok)
 
 
+class TestStop(unittest.TestCase):
+	"""Design 83 — /stop sets the session interrupt flag (operator-tier)."""
+
+	@patch("frappe.friday_core.gateway.interrupt.request_interrupt")
+	@patch(f"{_C}.frappe")
+	def test_stop_sets_interrupt_flag_for_operator(self, fr, mock_request):
+		from frappe.friday_core.gateway import commands
+
+		fr.get_roles.return_value = ["Friday Operator"]
+		result = commands.dispatch_command(
+			platform="raven", session_id="S-1", user="op@x.com", raw="/stop"
+		)
+		mock_request.assert_called_once_with("S-1")
+		self.assertTrue(result.ok)
+		self.assertIn("stop", result.reply.lower())
+
+	@patch("frappe.friday_core.gateway.interrupt.request_interrupt")
+	@patch(f"{_C}.frappe")
+	def test_stop_refused_without_operator_role(self, fr, mock_request):
+		from frappe.friday_core.gateway import commands
+
+		fr.get_roles.return_value = ["Some Other Role"]
+		result = commands.dispatch_command(
+			platform="raven", session_id="S-1", user="nobody@x.com", raw="/stop"
+		)
+		mock_request.assert_not_called()  # the gate held — no interrupt set
+		self.assertFalse(result.ok)
+
+
 if __name__ == "__main__":
 	unittest.main()

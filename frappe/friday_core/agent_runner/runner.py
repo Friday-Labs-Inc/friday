@@ -50,6 +50,7 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_messages_surrogates,
 	sanitize_surrogates,
 )
+from frappe.friday_core.gateway.interrupt import clear_interrupt, is_interrupt_requested
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.error_classifier import classify_api_error
@@ -80,6 +81,11 @@ _EMPTY_RESPONSE_FALLBACK = (
 # the LLM call (Hermes' compress-then-restart, conversation_loop.py). Capped so a
 # persistent overflow surfaces as a real error instead of looping.
 MAX_COMPRESS_RETRIES = 1
+
+# Design 83 — the clean reply written when an operator `/stop`s the turn. The
+# already-executed tool calls stay (governed + audited + committed); only the
+# ReAct loop stops.
+_INTERRUPTED_REPLY = "(interrupted by operator)"
 
 
 def run_turn(
@@ -130,6 +136,11 @@ def run_turn(
 	if isinstance(inbound_content, str):
 		inbound_content = sanitize_surrogates(inbound_content)
 
+	# Design 83 (Q3) — clear any stale interrupt flag at entry. The session lock
+	# guarantees one turn per session, so only a `/stop` issued DURING this turn
+	# will be seen by the loop below.
+	clear_interrupt(session_id)
+
 	skill_definitions = load_for_profile(profile_name)
 
 	# Design 79 — the self-improvement review runs a tool-restricted turn: keep
@@ -174,6 +185,14 @@ def run_turn(
 	compress_retries = 0
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
+		# Design 83 — cooperative interrupt: an operator `/stop` set the flag.
+		# Check it at the iteration boundary (before the next LLM call) and bail
+		# cleanly. Friday's blocking provider call means this is the soonest the
+		# turn can notice — see docs/design/83.
+		if is_interrupt_requested(session_id):
+			clear_interrupt(session_id)
+			return _INTERRUPTED_REPLY
+
 		# Design 61b — heartbeat once per ReAct iteration so the durability
 		# reconciler's executing-stale sweep distinguishes a long but healthy
 		# agentic turn from a runner that died mid-execution. Optional + best-

@@ -31,7 +31,7 @@ really Hermes, not an approximation.
 | 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
 | 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | diverged (by design); **queue shipped** | **interrupt + steer** (queue done 2026-06-24); slash dispatch; lifecycle hooks. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 5 | Gateway | diverged (by design); **queue + slash + interrupt shipped** | **steer** (queue/slash/interrupt done 2026-06-24); lifecycle hooks; subagent cascade. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
 | 7 | Cron jobs | **MISSING** (infra-only scheduler) | user-schedulable recurring agent jobs + home-channel delivery |
 
@@ -236,11 +236,14 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
 **true gateway gaps**, ranked for a single-tenant Raven-first deployment:
 
 **Tier A — session-manager completion (the headline gap)**
-1. **INTERRUPT** — cancel a running turn from an in-band message. Friday has the
-   hook already: `job_id` is on every row (`service.py:118`), so the port is
-   "cancel the RQ job + set a Redis interrupt flag the `run_turn` loop checks
-   each iteration (`runner.py:176`)". Needs a `Chat Message.gateway_status` field
-   and one slash command (`/stop`). Effort ~1d.
+1. ~~**INTERRUPT**~~ — **SHIPPED 2026-06-24 (Design 83).** Cooperative Redis
+   flag `friday:interrupt:{session_id}`, set by the operator-tier `/stop`
+   command, checked at each ReAct boundary in `run_turn` (`runner.py`), cleared
+   at entry (session lock makes a generation counter unnecessary). Boundary-
+   granular (Friday's blocking LLM call can't be aborted mid-flight) — disclosed
+   divergence from Hermes' 0.3s poll. Deferred follow-ups: hard kill
+   (`send_stop_job_command`, `/stop force`) and **subagent cascade** (children
+   are separate Task jobs with their own sessions). See `docs/design/83`.
 2. **STEER** — inject a mid-turn nudge. A Redis steer-inbox polled inside the
    loop; appended to the last tool result (Hermes `run.py:3183`). Effort ~2d.
    _Open fork (carried from row #5): auto-interrupt vs queue-by-default. Friday
@@ -280,12 +283,13 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
 
 ### Recommended gateway build order
 
-1. **Slash dispatch (#3)** first — it's the prerequisite for the headline work
-   and small on its own (a parse step + a command table).
-2. **INTERRUPT (#1)** — highest user-visible value; the `job_id` + loop already
-   make it cheap.
-3. **slash_access (#4)** alongside, so commands ship gated.
-4. **STEER (#2)** — the harder half of the session manager.
+1. ~~**Slash dispatch (#3)**~~ — **SHIPPED (Design 82).** Prerequisite for the
+   rest; `gateway/commands.py` + the operator-role gate.
+2. ~~**INTERRUPT (#1)**~~ — **SHIPPED (Design 83).** `/stop` + the Redis flag.
+3. **slash_access (#4)** — partly covered: commands already gate on the
+   `Friday Operator` role (Design 82, Q4). The DM-vs-group scope split is the
+   remaining piece.
+4. **STEER (#2)** — the harder half of the session manager (next up).
 5. **delivery DSL (#5)** — sequence with the Cron-jobs port (row #7); they share
    the home-channel delivery target.
 6. Defer C-hooks / mirror / streaming / footer / display tiers until a concrete

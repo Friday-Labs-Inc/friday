@@ -17,9 +17,10 @@ only job is to (1) notice a leading "/", (2) call `dispatch_command(...)`, and
 (3) deliver the returned reply through its own send path. The logic of *what a
 command does* lives here, once, so Raven and CLI never drift.
 
-v1 commands (Design 82, Q2):
+v1 commands (Design 82, Q2; `/stop` added by Design 83):
   /approve [id]        — approve a paused, human-gated action
   /deny [reason]       — reject it (records the reason)
+  /stop                — interrupt the running turn for this session
   /status              — show this session's state (read-only)
   /help                — list the commands
 
@@ -130,6 +131,7 @@ def _cmd_help(session_id: str, user: str, args: list[str]) -> CommandResult:
 		"Commands:",
 		"  /approve [id]   — approve the paused action (oldest in this channel, or a named request)",
 		"  /deny [reason]  — reject the paused action (reason recorded)",
+		"  /stop           — interrupt the running turn for this session",
 		"  /status         — show this session's state",
 		"  /help           — show this list",
 	]
@@ -174,6 +176,19 @@ def _cmd_approve(session_id: str, user: str, args: list[str]) -> CommandResult:
 			handled=True, ok=False, reply=f"Could not approve {request_name}: {exc}"
 		)
 	return CommandResult(handled=True, ok=True, reply=f"✅ Approved {request_name}.")
+
+
+def _cmd_stop(session_id: str, user: str, args: list[str]) -> CommandResult:
+	"""Interrupt the running turn for this session (Design 83).
+
+	Sets the interrupt flag; the worker running the turn checks it at its next
+	ReAct boundary and stops cleanly. A no-op when nothing is running — the flag
+	self-expires (TTL) and the next turn clears it at entry.
+	"""
+	from frappe.friday_core.gateway.interrupt import request_interrupt
+
+	request_interrupt(session_id)
+	return CommandResult(handled=True, ok=True, reply="🛑 Stopping the current turn.")
 
 
 def _cmd_deny(session_id: str, user: str, args: list[str]) -> CommandResult:
@@ -227,6 +242,7 @@ def _resolve_pending_request(session_id: str, explicit_id: str | None) -> str | 
 _COMMANDS: dict[str, tuple] = {
 	"approve": (_cmd_approve, _OPERATOR_ROLE),
 	"deny": (_cmd_deny, _OPERATOR_ROLE),
+	"stop": (_cmd_stop, _OPERATOR_ROLE),
 	"status": (_cmd_status, None),
 	"help": (_cmd_help, None),
 }
