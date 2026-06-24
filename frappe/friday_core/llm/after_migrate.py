@@ -49,7 +49,13 @@ def ensure_memory_search_schema() -> None:
 	"""
 	if frappe.db.db_type != "postgres":
 		return
+	# A failed DDL aborts the whole Postgres transaction; the savepoint lets us
+	# roll back JUST this side-channel work so the rest of `bench migrate`
+	# survives. Without it, a failure here surfaces as InFailedSqlTransaction in
+	# an unrelated LATER after_migrate hook (caught on an AWS box without the
+	# tsvector prerequisites). This is what makes "best-effort" actually true.
 	try:
+		frappe.db.savepoint("friday_memory_search_ddl")
 		frappe.db.sql_ddl(
 			'ALTER TABLE "tabAgent Memory" ADD COLUMN IF NOT EXISTS memory_search tsvector '
 			"GENERATED ALWAYS AS ("
@@ -62,6 +68,7 @@ def ensure_memory_search_schema() -> None:
 			'ON "tabAgent Memory" USING GIN (memory_search)'
 		)
 	except Exception:
+		frappe.db.rollback(save_point="friday_memory_search_ddl")
 		frappe.logger("friday.memory").warning(
 			"ensure_memory_search_schema failed; scored recall will fall back to recency",
 			exc_info=True,
@@ -87,12 +94,18 @@ def ensure_memory_embedding_schema() -> None:
 	"""
 	if frappe.db.db_type != "postgres":
 		return
+	# Savepoint so a failed DDL (most commonly: pgvector not installed, so
+	# `vector(N)` is an unknown type) rolls back cleanly instead of poisoning the
+	# migrate transaction. The bug this guards: on a box without pgvector the
+	# CREATE TABLE aborted the txn and every later after_migrate hook then died
+	# with InFailedSqlTransaction — deceptively, far from here.
 	try:
+		frappe.db.savepoint("friday_memory_embed_ddl")
 		from frappe.friday_core.llm.embed import embedding_dim
 
 		dim = embedding_dim()
 		# pgvector must be present; this is a no-op if the extension is missing
-		# (the CREATE TABLE then fails and is caught).
+		# (the CREATE TABLE then fails and we roll back to the savepoint).
 		existing = frappe.db.sql(
 			"SELECT a.atttypmod FROM pg_attribute a "
 			"WHERE a.attrelid = to_regclass('\"tabAgent Memory Embedding\"') "
@@ -116,6 +129,7 @@ def ensure_memory_embedding_schema() -> None:
 			'ON "tabAgent Memory Embedding" USING hnsw (embedding vector_cosine_ops)'
 		)
 	except Exception:
+		frappe.db.rollback(save_point="friday_memory_embed_ddl")
 		frappe.logger("friday.memory").warning(
 			"ensure_memory_embedding_schema failed; semantic recall stays off "
 			"(recall falls back to keyword+recency)",
