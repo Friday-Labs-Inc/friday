@@ -31,7 +31,7 @@ really Hermes, not an approximation.
 | 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
 | 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade + hard-kill** | queue+slash+interrupt+steer+cascade+`/stop force` (D85/D86/D87/D83b) all done 2026-06-24; delivery DSL shipped (D86). Remaining: lifecycle hooks. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 5 | Gateway | **COMPLETE** (every named gap resolved) | session manager (queue/slash/interrupt/steer/cascade/`/stop force`) + delivery DSL (D86) + cron (D87) all shipped; lifecycle hooks **deliberately deferred** (Design 88 — code-loader security surface, no consumer, eventing already met). Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
 | 7 | Cron jobs | **Slice 1 SHIPPED** (Design 87) | `Cron Job` doctype + `*/1` tick + delivery-on-completion (consumes the #86 router); agent-facing cron *skill* = Slice 2 (deferred) |
 
@@ -281,9 +281,14 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
    Full faithful port incl. free targeting — governance lives at the skill layer,
    not the router (user-accepted divergence). Ships ahead of its first consumer
    (cron, gap #7). `thread_id` parsed but ignored on Raven. See `docs/design/86`.
-6. **`hooks.py` lifecycle HookRegistry** — agent:start/step/end extension point.
-   No equivalent; Frappe signals could back it. Low urgency until plugins want
-   to hook the agent loop.
+6. ~~**`hooks.py` lifecycle HookRegistry**~~ — **DELIBERATELY DEFERRED (Design 88).**
+   Hermes' version loads arbitrary `handler.py` from disk via `importlib` — a
+   code-execution surface (HIGH severity per the v0.1 trust model) with **no
+   consumer** in single-tenant first-party Friday. The eventing need is already
+   met by `observability.emit` (`runner.*`, `workflow.*`, `gateway.*`,
+   `reconciler.*`) feeding the Dispatcher Console. If ever needed, the safe shape
+   is in-process registered callables, not filesystem code-loading. See
+   `docs/design/88`.
 7. **`mirror.py` transcript mirroring** — when an agent posts outside its own
    turn (cron, `share-deliverables`), write that into the session transcript so
    context stays complete. Partly covered ad-hoc; needs the disambiguation logic.
