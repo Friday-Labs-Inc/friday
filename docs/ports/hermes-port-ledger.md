@@ -31,7 +31,7 @@ really Hermes, not an approximation.
 | 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
 | 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | diverged (by design); **queue + slash + interrupt shipped** | **steer** (queue/slash/interrupt done 2026-06-24); lifecycle hooks; subagent cascade. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 5 | Gateway | diverged (by design); **session manager COMPLETE** | queue+slash+interrupt+steer all done 2026-06-24. Remaining: lifecycle hooks; delivery DSL; subagent cascade. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
 | 7 | Cron jobs | **MISSING** (infra-only scheduler) | user-schedulable recurring agent jobs + home-channel delivery |
 
@@ -244,12 +244,15 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
    divergence from Hermes' 0.3s poll. Deferred follow-ups: hard kill
    (`send_stop_job_command`, `/stop force`) and **subagent cascade** (children
    are separate Task jobs with their own sessions). See `docs/design/83`.
-2. **STEER** — inject a mid-turn nudge. A Redis steer-inbox polled inside the
-   loop; appended to the last tool result (Hermes `run.py:3183`). Effort ~2d.
-   _Open fork (carried from row #5): auto-interrupt vs queue-by-default. Friday
-   chose queue-by-default; interrupt/steer become opt-in slash commands, not the
-   default reaction to a second message. This is a deliberate divergence — name
-   it when built._
+2. ~~**STEER**~~ — **SHIPPED 2026-06-24 (Design 84).** `/steer <text>` pushes a
+   coalescing Redis slot `friday:steer:{session_id}`, drained at each ReAct
+   boundary and appended to the last tool result as "User guidance: {text}"
+   (Hermes-faithful framing, `conversation_loop.py:754`); clear-at-entry; a
+   missed steer is dropped (disclosed divergence from Hermes' `pending_steer`).
+   See `docs/design/84`. **The three-mode session manager is now complete**
+   (queue ✅80, interrupt ✅83, steer ✅84). _Resolved fork: Friday chose
+   queue-by-default — interrupt/steer are opt-in `/stop` `/steer` commands, never
+   the default reaction to a second message._
 
 **Tier B — the command surface (unlocks A)**
 3. **Slash-command dispatch** — there is *no* command parser on any inbound path
@@ -289,7 +292,7 @@ Stripping out buckets 3 and 4 (correctly absent) and bucket 1 (done), the
 3. **slash_access (#4)** — partly covered: commands already gate on the
    `Friday Operator` role (Design 82, Q4). The DM-vs-group scope split is the
    remaining piece.
-4. **STEER (#2)** — the harder half of the session manager (next up).
+4. ~~**STEER (#2)**~~ — **SHIPPED (Design 84).** The session manager is complete.
 5. **delivery DSL (#5)** — sequence with the Cron-jobs port (row #7); they share
    the home-channel delivery target.
 6. Defer C-hooks / mirror / streaming / footer / display tiers until a concrete

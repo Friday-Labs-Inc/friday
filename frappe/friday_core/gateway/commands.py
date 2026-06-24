@@ -17,10 +17,11 @@ only job is to (1) notice a leading "/", (2) call `dispatch_command(...)`, and
 (3) deliver the returned reply through its own send path. The logic of *what a
 command does* lives here, once, so Raven and CLI never drift.
 
-v1 commands (Design 82, Q2; `/stop` added by Design 83):
+v1 commands (Design 82, Q2; `/stop` by Design 83, `/steer` by Design 84):
   /approve [id]        — approve a paused, human-gated action
   /deny [reason]       — reject it (records the reason)
   /stop                — interrupt the running turn for this session
+  /steer <text>        — nudge the running turn without stopping it
   /status              — show this session's state (read-only)
   /help                — list the commands
 
@@ -132,6 +133,7 @@ def _cmd_help(session_id: str, user: str, args: list[str]) -> CommandResult:
 		"  /approve [id]   — approve the paused action (oldest in this channel, or a named request)",
 		"  /deny [reason]  — reject the paused action (reason recorded)",
 		"  /stop           — interrupt the running turn for this session",
+		"  /steer <text>   — nudge the running turn without stopping it",
 		"  /status         — show this session's state",
 		"  /help           — show this list",
 	]
@@ -191,6 +193,23 @@ def _cmd_stop(session_id: str, user: str, args: list[str]) -> CommandResult:
 	return CommandResult(handled=True, ok=True, reply="🛑 Stopping the current turn.")
 
 
+def _cmd_steer(session_id: str, user: str, args: list[str]) -> CommandResult:
+	"""Nudge the running turn for this session without stopping it (Design 84).
+
+	Pushes the guidance into the steer slot; the worker running the turn drains
+	it at its next ReAct boundary and the model sees it on the next call. A
+	no-op when nothing is running — the slot self-expires (TTL) and the next
+	turn clears it at entry.
+	"""
+	from frappe.friday_core.gateway.steer import push_steer
+
+	text = " ".join(args).strip()
+	if not text:
+		return CommandResult(handled=True, ok=False, reply="usage: /steer <guidance>")
+	push_steer(session_id, text)
+	return CommandResult(handled=True, ok=True, reply="↪ Steering the current turn.")
+
+
 def _cmd_deny(session_id: str, user: str, args: list[str]) -> CommandResult:
 	"""Reject the channel's oldest Pending Workflow Request, recording a reason.
 
@@ -243,6 +262,7 @@ _COMMANDS: dict[str, tuple] = {
 	"approve": (_cmd_approve, _OPERATOR_ROLE),
 	"deny": (_cmd_deny, _OPERATOR_ROLE),
 	"stop": (_cmd_stop, _OPERATOR_ROLE),
+	"steer": (_cmd_steer, _OPERATOR_ROLE),
 	"status": (_cmd_status, None),
 	"help": (_cmd_help, None),
 }

@@ -230,5 +230,46 @@ class TestStop(unittest.TestCase):
 		self.assertFalse(result.ok)
 
 
+class TestSteer(unittest.TestCase):
+	"""Design 84 — /steer pushes a mid-turn nudge (operator-tier)."""
+
+	@patch("frappe.friday_core.gateway.steer.push_steer")
+	@patch(f"{_C}.frappe")
+	def test_steer_pushes_text_for_operator(self, fr, mock_push):
+		from frappe.friday_core.gateway import commands
+
+		fr.get_roles.return_value = ["Friday Operator"]
+		result = commands.dispatch_command(
+			platform="raven", session_id="S-1", user="op@x.com", raw="/steer use the staging DB"
+		)
+		mock_push.assert_called_once_with("S-1", "use the staging DB")
+		self.assertTrue(result.ok)
+
+	@patch("frappe.friday_core.gateway.steer.push_steer")
+	@patch(f"{_C}.frappe")
+	def test_steer_without_text_is_rejected(self, fr, mock_push):
+		from frappe.friday_core.gateway import commands
+
+		fr.get_roles.return_value = ["Friday Operator"]
+		result = commands.dispatch_command(
+			platform="raven", session_id="S-1", user="op@x.com", raw="/steer"
+		)
+		mock_push.assert_not_called()
+		self.assertFalse(result.ok)
+		self.assertIn("usage", result.reply.lower())
+
+	@patch("frappe.friday_core.gateway.steer.push_steer")
+	@patch(f"{_C}.frappe")
+	def test_steer_refused_without_operator_role(self, fr, mock_push):
+		from frappe.friday_core.gateway import commands
+
+		fr.get_roles.return_value = []
+		result = commands.dispatch_command(
+			platform="raven", session_id="S-1", user="nobody@x.com", raw="/steer hi"
+		)
+		mock_push.assert_not_called()
+		self.assertFalse(result.ok)
+
+
 if __name__ == "__main__":
 	unittest.main()

@@ -51,6 +51,7 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_surrogates,
 )
 from frappe.friday_core.gateway.interrupt import clear_interrupt, is_interrupt_requested
+from frappe.friday_core.gateway.steer import clear_steer, drain_steer
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.error_classifier import classify_api_error
@@ -136,10 +137,11 @@ def run_turn(
 	if isinstance(inbound_content, str):
 		inbound_content = sanitize_surrogates(inbound_content)
 
-	# Design 83 (Q3) — clear any stale interrupt flag at entry. The session lock
-	# guarantees one turn per session, so only a `/stop` issued DURING this turn
-	# will be seen by the loop below.
+	# Design 83/84 (Q3/Q4) — clear any stale interrupt flag and steer slot at
+	# entry. The session lock guarantees one turn per session, so only a `/stop`
+	# or `/steer` issued DURING this turn will be seen by the loop below.
 	clear_interrupt(session_id)
+	clear_steer(session_id)
 
 	skill_definitions = load_for_profile(profile_name)
 
@@ -192,6 +194,14 @@ def run_turn(
 		if is_interrupt_requested(session_id):
 			clear_interrupt(session_id)
 			return _INTERRUPTED_REPLY
+
+		# Design 84 — cooperative steer: an operator `/steer`ed mid-turn. Drain
+		# the nudge and let the model see it on THIS iteration's call. Hermes
+		# frames it as part of the tool output ("User guidance: …") rather than a
+		# new user demand — see docs/design/84.
+		_steer = drain_steer(session_id)
+		if _steer:
+			_inject_steer(messages, _steer)
 
 		# Design 61b — heartbeat once per ReAct iteration so the durability
 		# reconciler's executing-stale sweep distinguishes a long but healthy
@@ -349,6 +359,28 @@ def _assistant_message(content: str, tool_calls: list[dict]) -> dict:
 			}
 		)
 	return {"role": "assistant", "content": content or "", "tool_calls": wire_calls}
+
+
+def _inject_steer(messages: list[dict], text: str) -> None:
+	"""Append an operator steer to the running conversation (Design 84, Q2).
+
+	Hermes-faithful: ride the nudge on the LAST tool result as
+	"User guidance: {text}", so the model reads it as more context on what just
+	happened rather than a new user demand (`conversation_loop.py:754`). At the
+	no-tool-yet edge (iteration 0), there is no tool result to append to, so it
+	goes in as a plain user message instead.
+
+	Replaces the last element with a NEW dict rather than mutating in place — the
+	tail dict may be shared with the prompt's message list (shallow-copied at
+	turn start).
+	"""
+	marker = f"User guidance: {text}"
+	if messages and messages[-1].get("role") == "tool":
+		last = messages[-1]
+		joined = f"{last.get('content') or ''}\n\n{marker}"
+		messages[-1] = {**last, "content": joined}
+	else:
+		messages.append({"role": "user", "content": marker})
 
 
 def _is_permission_denial(result: DispatchResult) -> bool:
