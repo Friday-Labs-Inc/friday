@@ -50,6 +50,7 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_messages_surrogates,
 	sanitize_surrogates,
 )
+from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 from frappe.friday_core.gateway.interrupt import clear_interrupt, is_interrupt_requested
 from frappe.friday_core.gateway.steer import clear_steer, drain_steer
 from frappe.friday_core.llm import get_provider_for_profile
@@ -193,7 +194,10 @@ def run_turn(
 		# turn can notice — see docs/design/83.
 		if is_interrupt_requested(session_id):
 			clear_interrupt(session_id)
-			return _INTERRUPTED_REPLY
+			# Design 85 (Q3) — RAISE, don't return. A typed signal can't be mistaken
+			# for a real reply, so the Task path marks an interrupted child Cancelled
+			# (not Completed) and the chat pipeline writes a clean outbound.
+			raise TurnInterrupted(_INTERRUPTED_REPLY)
 
 		# Design 84 — cooperative steer: an operator `/steer`ed mid-turn. Drain
 		# the nudge and let the model see it on THIS iteration's call. Hermes

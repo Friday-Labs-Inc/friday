@@ -204,9 +204,10 @@ class TestDeny(unittest.TestCase):
 class TestStop(unittest.TestCase):
 	"""Design 83 — /stop sets the session interrupt flag (operator-tier)."""
 
+	@patch("frappe.friday_core.gateway.interrupt.cascade_interrupt", return_value=0)
 	@patch("frappe.friday_core.gateway.interrupt.request_interrupt")
 	@patch(f"{_C}.frappe")
-	def test_stop_sets_interrupt_flag_for_operator(self, fr, mock_request):
+	def test_stop_sets_interrupt_flag_for_operator(self, fr, mock_request, _cascade):
 		from frappe.friday_core.gateway import commands
 
 		fr.get_roles.return_value = ["Friday Operator"]

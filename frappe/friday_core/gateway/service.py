@@ -55,6 +55,7 @@ and re-read `docs/design/47-gateway-design-decisions.md` §9.
 from __future__ import annotations
 
 import frappe
+from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 from frappe.friday_core.agent_runner.runner import run_turn
 from frappe.friday_core.gateway.batching import flush_batch
 from frappe.friday_core.permissions.matrix import check as permission_check
@@ -315,6 +316,18 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		from frappe.friday_core.agent_runner.self_review import enqueue_if_due
 
 		enqueue_if_due(session_id, profile_name)
+
+	except TurnInterrupted:
+		# Design 85 (Q3) — the operator `/stop`ped this turn. Not a failure:
+		# write a clean interrupted reply and mark processed WITHOUT bumping
+		# retry_count or recording a failure_reason.
+		_write_outbound(
+			inbound,
+			content="(interrupted by operator)",
+			processed=True,
+			sender_label="system",
+		)
+		_mark_processed(inbound, retry_count=inbound.retry_count or 0)
 
 	except Exception as exc:
 		# Log full traceback to Frappe Error Log AND write a system-error

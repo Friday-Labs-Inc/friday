@@ -19,6 +19,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from frappe.friday_core.agent_runner.dispatcher import DispatchResult
+from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 
 _I = "frappe.friday_core.gateway.interrupt"
 _R = "frappe.friday_core.agent_runner.runner"
@@ -58,7 +59,12 @@ def _patched_run(interrupt_side_effect, provider):
 	):
 		from frappe.friday_core.agent_runner.runner import run_turn
 
-		result = run_turn("P", "S", "hi")
+		# Design 85 (Q3): an interrupt RAISES TurnInterrupted rather than
+		# returning a sentinel string. Capture it so callers can assert.
+		try:
+			result = run_turn("P", "S", "hi")
+		except TurnInterrupted as exc:
+			result = exc
 	return result, provider, clear_mock
 
 
@@ -100,7 +106,8 @@ class TestRunnerHonorsInterrupt(unittest.TestCase):
 		prov.chat.return_value = _resp(tool_calls=[_tc()])
 		result, prov, clear_mock = _patched_run([False, True], prov)
 
-		self.assertIn("interrupt", result.lower())
+		# Design 85 (Q3): raises TurnInterrupted, not a string return.
+		self.assertIsInstance(result, TurnInterrupted)
 		# Bailed at the 2nd boundary → only ONE LLM call happened.
 		self.assertEqual(prov.chat.call_count, 1)
 		# The flag was cleared on honor (and at entry).
