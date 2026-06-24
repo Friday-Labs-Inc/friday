@@ -111,14 +111,29 @@ Runs in parallel with the remaining Core/Hermes-port gaps (interrupt/steer).
 
 ## Locked slice plan
 
-1. **81a — the spine:** `Connector` DocType + registry + `Connector Event` audit
-   + generic signed-event intake + permission scoping. (No new ecosystem yet.)
-2. **81b — connector #1:** refactor the RandomPack seam onto the spine (system
-   connector); RandomPack domain mapping unchanged; prove parity on the live
-   round-trip.
+1. **81a — the spine:** ✅ **SHIPPED 2026-06-24.** `Connector` DocType + registry
+   + `Connector Event` audit + generic signed-event intake (`connectors/core.py`)
+   + generic outbound client (`connectors/client.py`). Permission scoping deferred
+   to 81c/81d (see note below). (No new ecosystem yet.)
+2. **81b — connector #1:** ✅ **SHIPPED 2026-06-24.** Refactored the LIVE
+   RandomPack seam onto the spine (`randompack-system` system connector);
+   RandomPack domain mapping unchanged (`surfaces/randompack.HANDLERS` +
+   `randompack_client` thin adapter). Parity proven: 60/60 tests + clean migrate.
+   `RandomPack Settings` → Connector row + `RandomPack Event` → Connector Event
+   (renamed, history preserved) via two idempotent patches. See
+   [[connector-framework-81ab-2026-06-24]].
 3. **81c — MCP** folded under the registry (mcp modality).
 4. **81d — chat** connectors (Slack/Telegram, Hermes adapter ports) into the
-   unified gateway.
+   unified gateway. **Permission scoping gets its teeth here** (an agent actually
+   invokes the connector mid-turn).
 5. **81e — A2A** (protocol decided then).
 
 Runs in parallel with the remaining Core/Hermes-port gap (interrupt/steer).
+
+### Permission-scoping note (81a/81b divergence, justified)
+
+The spine calls for per-connector permission scoping. For the `system` modality
+that has no teeth yet: inbound is HMAC-authenticated (no agent), outbound is
+system-triggered (workflow/bridge, not an agent turn). So enforcement is deferred
+to `mcp`/`chat` (81c/81d), where an agent picks up and uses a connector during a
+turn. The **audit** half (Connector Event) shipped in 81a.

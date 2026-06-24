@@ -106,9 +106,9 @@ def _build_snapshot() -> dict:
 		),
 	}
 
-	randompack = {
-		"events_received_pending": frappe.db.count("RandomPack Event", {"status": "Received"}),
-		"events_failed_retriable": frappe.db.count("RandomPack Event", {"status": "Failed"}),
+	connectors = {
+		"events_received_pending": frappe.db.count("Connector Event", {"status": "Received"}),
+		"events_failed_retriable": frappe.db.count("Connector Event", {"status": "Failed"}),
 	}
 
 	open_issues = frappe.db.count("Issue", {"status": "Open"})
@@ -127,7 +127,7 @@ def _build_snapshot() -> dict:
 		"workers": workers,
 		"tasks_by_state": tasks_by_state,
 		"stuck": stuck,
-		"randompack": randompack,
+		"connectors": connectors,
 		"open_issues": open_issues,
 		"thresholds": {
 			"scheduler_tick_max_age_seconds": SCHEDULER_TICK_MAX_AGE_SECONDS,

@@ -20,81 +20,48 @@ the backend's replay-mirror on our side). Needs-human is signalled as status
 "Pending Review" + a note carrying the Issue reference — never "failed".
 
 Auth: Frappe token auth (`Authorization: token key:secret`) — the backend's
-"Friday Integration" API user. Secret lives encrypted in RandomPack Settings.
+"Friday Integration" API user. Transport + secrets now come from the generic
+connector client (Design 81); the secret lives encrypted on the
+`randompack-system` Connector row. This module is the thin domain adapter: it
+keeps the five locked contract calls and resolves their endpoint paths.
 """
 
 from __future__ import annotations
 
-import requests
+from frappe.friday_core.connectors import client as connector_client
 
-import frappe
-
-_TIMEOUT_SECONDS = 20
+# The randompack-system Connector row carries the base URL + token auth secret.
+CONNECTOR_NAME = "randompack-system"
 PENDING_REVIEW = "Pending Review"  # the locked needs-human status
 
 
-def _settings():
-	settings = frappe.get_cached_doc("RandomPack Settings")
-	if not settings.enabled:
-		return None
-	return settings
+def _resolve_path(method: str) -> str:
+	"""Map a contract method name to the backend's dotted endpoint path.
 
-
-def _headers(settings) -> dict:
-	# get_password RAISES (not None) when the encrypted field was never set —
-	# an unconfigured secret must mean "send unauthenticated", not "crash".
-	try:
-		secret = settings.get_password("api_secret") or ""
-	except Exception:
-		secret = ""
-	return {"Authorization": f"token {settings.api_key}:{secret}"}
+	A dotted name (e.g. "x.y.z") is used as-is; `upload_file` is the
+	Frappe-native multipart endpoint; bare names resolve under the backend's
+	locked v1 API module.
+	"""
+	if "." in method:
+		return method
+	if method == "upload_file":
+		return "upload_file"
+	return f"randompack.api.v1.{method}"
 
 
 def send(method: str, payload: dict, files: dict | None = None) -> dict | None:
-	"""POST one backend API call. NEVER raises — returns the JSON or None.
+	"""POST one backend API call through the randompack-system connector.
 
-	`method` is the dotted endpoint name (e.g. "update_task_progress" or a
-	full "x.y.z" path); bare names resolve under the backend's v1 API module.
-	`upload_file` is the Frappe-native multipart endpoint, not a v1 method.
+	NEVER raises — returns the JSON or None (the reliability contract is now
+	enforced by the generic connector client). `method` is a contract method
+	name resolved to a dotted endpoint by `_resolve_path`.
 	"""
-	settings = _settings()
-	if settings is None:
-		frappe.logger("friday.randompack").warning(
-			f"RandomPack integration disabled — dropped outbound {method!r}"
-		)
-		return None
-	if "." in method:
-		path = method
-	elif method == "upload_file":
-		path = "upload_file"  # Frappe-native multipart upload
-	else:
-		path = f"randompack.api.v1.{method}"  # the locked contract lives in api/v1
-	url = f"{(settings.api_base_url or '').rstrip('/')}/api/method/{path}"
-	try:
-		if files:
-			response = requests.post(
-				url, data=payload, files=files, headers=_headers(settings), timeout=_TIMEOUT_SECONDS
-			)
-		else:
-			response = requests.post(url, json=payload, headers=_headers(settings), timeout=_TIMEOUT_SECONDS)
-		response.raise_for_status()
-		return response.json()
-	except Exception as exc:
-		frappe.logger("friday.randompack").warning(f"Outbound {method!r} failed: {type(exc).__name__}")
-		frappe.log_error(title=f"friday.randompack outbound failed: {method}")
-		return None
+	return connector_client.send(CONNECTOR_NAME, _resolve_path(method), payload, files=files)
 
 
 def enqueue_send(method: str, payload: dict) -> None:
 	"""Fire-and-forget with the queue's retry semantics (for must-deliver calls)."""
-	frappe.enqueue(
-		"frappe.friday_core.integrations.randompack_client.send",
-		method=method,
-		payload=payload,
-		queue="friday",
-		timeout=120,
-		enqueue_after_commit=True,
-	)
+	connector_client.enqueue_send(CONNECTOR_NAME, _resolve_path(method), payload)
 
 
 # ── The contract calls ──────────────────────────────────────────────────────

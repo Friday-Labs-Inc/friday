@@ -22,7 +22,7 @@ the heartbeat, and the event is only an optimisation. Every 60 seconds
     Assigned, no in-flight job, > 30s old  → re-enqueue the runner trigger
     Executing, no fresh heartbeat (15min)  → Block + raise a Failure Issue
     Blocked (transient), retry budget left → re-Pend; the dispatcher tries again
-    RandomPack Event in Received/Failed    → re-enqueue process_event
+    Connector Event in Received/Failed     → re-enqueue process_event
 
 The heartbeat (`last_heartbeat_at`) is updated by the runner during real
 work, so genuinely long agentic runs are not killed by the executing-stale
@@ -76,15 +76,15 @@ TRANSIENT_BLOCKED_REASONS = (
 	"server_error",
 )
 
-# Stuck RandomPack Event grace: shorter than tasks because events are dirt-cheap
+# Stuck Connector Event grace: shorter than tasks because events are dirt-cheap
 # to re-process (the handler is idempotent / status-guarded already).
-RANDOMPACK_RECEIVED_GRACE_SECONDS = 60
-RANDOMPACK_FAILED_GRACE_MINUTES = 5
+CONNECTOR_EVENT_RECEIVED_GRACE_SECONDS = 60
+CONNECTOR_EVENT_FAILED_GRACE_MINUTES = 5
 
 # The single job-name convention used everywhere the runner is enqueued. Lets
 # get_jobs() tell us "is this task already in flight" without false positives.
 TASK_JOB_NAME = "task:{name}"
-EVENT_JOB_NAME = "rp:{event_id}"
+EVENT_JOB_NAME = "connector-event:{event_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def tick() -> None:
 		("assigned_orphans", _reconcile_assigned_orphans),
 		("executing_stale", _reconcile_executing_stale),
 		("transient_blocked", _reconcile_transient_blocked),
-		("randompack_events", _reconcile_randompack_events),
+		("connector_events", _reconcile_connector_events),
 	):
 		try:
 			# Each sweep returns its action count; legacy sweeps return None
@@ -327,13 +327,13 @@ def _reconcile_transient_blocked() -> int:
 	return acted
 
 
-def _reconcile_randompack_events() -> int:
+def _reconcile_connector_events() -> int:
 	"""
-	Q7a — the RandomPack contract durability gap. The receiver acks 200 and
-	persists the event row as `Received`, then enqueues processing on the
-	friday queue. If that worker was down at the moment of enqueue, the
-	event sits Received forever — the backend sees `Delivered` but Friday
-	never processed it (the same disease this design treats for tasks).
+	The connector durability gap (Design 81; was Q7a for RandomPack). The
+	intake acks 200 and persists the event row as `Received`, then enqueues
+	processing on the friday queue. If that worker was down at the moment of
+	enqueue, the event sits Received forever — the source sees `Delivered` but
+	Friday never processed it (the same disease this design treats for tasks).
 
 	The sweep re-enqueues:
 	  - Received events older than 60s (the original enqueue was lost), and
@@ -347,15 +347,15 @@ def _reconcile_randompack_events() -> int:
 	# (the original enqueue should have fired by now), Failed events get a
 	# longer 5-minute backoff before retrying.
 	received_cutoff = frappe.utils.add_to_date(
-		frappe.utils.now_datetime(), seconds=-RANDOMPACK_RECEIVED_GRACE_SECONDS
+		frappe.utils.now_datetime(), seconds=-CONNECTOR_EVENT_RECEIVED_GRACE_SECONDS
 	)
 	failed_cutoff = frappe.utils.add_to_date(
-		frappe.utils.now_datetime(), minutes=-RANDOMPACK_FAILED_GRACE_MINUTES
+		frappe.utils.now_datetime(), minutes=-CONNECTOR_EVENT_FAILED_GRACE_MINUTES
 	)
 	rows = frappe.db.sql(
 		"""
 		SELECT name, status
-		FROM `tabRandomPack Event`
+		FROM `tabConnector Event`
 		WHERE status IN ('Received', 'Failed')
 		  AND retry_count < %(budget)s
 		  AND (
@@ -381,18 +381,18 @@ def _reconcile_randompack_events() -> int:
 		# is still marked as having been retried — exactly what we want for
 		# observability (no infinite "we keep trying but no-one knows" loops).
 		frappe.db.sql(
-			"UPDATE `tabRandomPack Event` SET retry_count = COALESCE(retry_count, 0) + 1 WHERE name = %s",
+			"UPDATE `tabConnector Event` SET retry_count = COALESCE(retry_count, 0) + 1 WHERE name = %s",
 			(row["name"],),
 		)
 		frappe.enqueue(
-			"frappe.friday_core.surfaces.randompack.process_event",
+			"frappe.friday_core.connectors.core.process_event",
 			queue="friday",
 			timeout=600,
 			job_name=EVENT_JOB_NAME.format(event_id=row["name"]),
 			event_id=row["name"],
 		)
 		_logger.warning(
-			"reconciler: re-enqueuing stuck RandomPack Event %s (was %s)",
+			"reconciler: re-enqueuing stuck Connector Event %s (was %s)",
 			row["name"],
 			row["status"],
 		)

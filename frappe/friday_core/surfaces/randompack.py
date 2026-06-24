@@ -2,25 +2,18 @@
 # For license information, please see license.txt
 
 """
-The RandomPack webhook surface (design 60a, LOCKED).
+The RandomPack domain surface — connector #1's event handlers (Design 81b).
 
 PLAIN ENGLISH
 =============
-RandomPack (the ops backend) POSTs signed events here. We:
-
-  1. Verify the Stripe-style per-attempt signature
-     (`X-RP-Signature: t=<unix>,v1=HMAC-SHA256(secret, "{t}.{raw_body}")`):
-     constant-time compare on v1 FIRST, then a freshness window on `t`
-     (default 300s). Backend replays re-sign with fresh `t`, so replays
-     stay valid — and our UUID dedupe keeps them boring.
-  2. Persist the envelope as a RandomPack Event row — `event_id` is UNIQUE,
-     so a duplicate delivery is a 200 no-op.
-  3. Ack 200 immediately; the handler runs on the dedicated `friday` queue.
-
-Handlers live in the registry below. 60a ships the surface + the handlers
-that need no command-center machinery (brief ingestion on payment); the
-project/task handlers land in 60b — until then their events are recorded and
-marked Processed with action "recorded (handler lands in 60b)".
+RandomPack (the ops backend) POSTs signed events to the back-compat URL
+`receive_event` below, which simply delegates to the GENERIC connector spine
+(`connectors.core`): that verifies the HMAC signature, persists a Connector
+Event row, acks 200, and queues processing on the `friday` queue. The seam is
+generic core; what lives HERE is purely the RandomPack *meaning* — the HANDLERS
+registry + handler functions that turn each event into a Friday action (brief
+ingestion, pipeline start, gate transitions, etc.). `connectors.core.process_event`
+imports this module and dispatches through `HANDLERS`.
 
 CONTRACT NOTES (agreed with the randompack side, design 60):
   - comment.added never echoes Friday's own notes back — no self-dedupe here.
@@ -29,19 +22,18 @@ CONTRACT NOTES (agreed with the randompack side, design 60):
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
-import time
 
 import frappe
 
-SIGNATURE_HEADER = "X-RP-Signature"
-DEFAULT_TOLERANCE_SECONDS = 300
+from frappe.friday_core.connectors import core as connector_core
+
+# This connector's registry id (the Connector row created by the 81b migration).
+CONNECTOR_NAME = "randompack-system"
 
 
 # ---------------------------------------------------------------------------
-# The endpoint
+# The endpoint (thin wrapper — generic intake lives in connectors.core)
 # ---------------------------------------------------------------------------
 
 
@@ -49,118 +41,17 @@ DEFAULT_TOLERANCE_SECONDS = 300
 def receive_event():
 	"""POST /api/method/frappe.friday_core.surfaces.randompack.receive_event
 
+	Back-compat URL for the RandomPack backend. Delegates to the generic
+	signed-event intake (Design 81): the `randompack-system` Connector row
+	carries the HMAC secret + tolerance, and the HANDLERS registry at the bottom
+	of this module is what `connectors.core.process_event` dispatches through.
 	Guest-reachable by design: the HMAC signature IS the authentication.
-	Returns fast; processing is queued.
 	"""
-	settings = frappe.get_cached_doc("RandomPack Settings")
-	if not settings.enabled:
-		frappe.throw(frappe._("RandomPack integration is disabled."), frappe.PermissionError)
-
-	raw_body = frappe.request.get_data() or b""
-	header = frappe.get_request_header(SIGNATURE_HEADER) or ""
-	try:
-		secret = settings.get_password("webhook_secret") or ""
-	except Exception:
-		secret = ""  # unset secret → verify_signature fails closed (401)
-	tolerance = settings.signature_tolerance_seconds or DEFAULT_TOLERANCE_SECONDS
-
-	if not verify_signature(raw_body, header, secret, tolerance):
-		frappe.throw(frappe._("Invalid webhook signature."), frappe.AuthenticationError)
-
-	envelope = json.loads(raw_body)
-	event_id = envelope.get("id")
-	event_type = envelope.get("type")
-	if not event_id or not event_type:
-		frappe.throw(frappe._("Envelope must carry id and type."), frappe.ValidationError)
-
-	# UUID dedupe (Q1): the unique event_id makes duplicates a clean no-op.
-	if frappe.db.exists("RandomPack Event", event_id):
-		return {"ok": True, "deduped": True, "event": event_id}
-
-	frappe.get_doc(
-		{
-			"doctype": "RandomPack Event",
-			"event_id": event_id,
-			"event_type": event_type,
-			"version": str(envelope.get("version") or ""),
-			"occurred_at": str(envelope.get("occurred_at") or ""),
-			"payload": frappe.as_json(envelope.get("data") or {}),
-			"status": "Received",
-		}
-	).insert(ignore_permissions=True)
-
-	frappe.enqueue(
-		"frappe.friday_core.surfaces.randompack.process_event",
-		event_id=event_id,
-		queue="friday",
-		timeout=600,
-		enqueue_after_commit=True,
-	)
-	return {"ok": True, "event": event_id}
-
-
-def verify_signature(raw_body: bytes, header: str, secret: str, tolerance_seconds: int) -> bool:
-	"""Verify the Stripe-style per-attempt signature (locked contract).
-
-	Order matters: constant-time verify v1 FIRST (an attacker learns nothing
-	from timing), then enforce the freshness window on `t`.
-	"""
-	if not secret or not header:
-		return False
-	parts = dict(part.split("=", 1) for part in header.split(",") if "=" in part)
-	t = parts.get("t")
-	v1 = parts.get("v1")
-	if not t or not v1:
-		return False
-
-	signed = f"{t}.".encode() + raw_body
-	expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-	if not hmac.compare_digest(expected, v1):
-		return False
-
-	try:
-		age = abs(time.time() - float(t))
-	except (TypeError, ValueError):
-		return False
-	return age <= tolerance_seconds
+	return connector_core.receive_event(CONNECTOR_NAME)
 
 
 # ---------------------------------------------------------------------------
-# Processing (runs on the friday queue)
-# ---------------------------------------------------------------------------
-
-
-def process_event(event_id: str) -> None:
-	"""Route one persisted event through the handler registry. Idempotent."""
-	event = frappe.get_doc("RandomPack Event", event_id)
-	if event.status == "Processed":
-		return  # replay of a success — skip
-
-	handler = _HANDLERS.get(event.event_type)
-	# Frappe's JSON fieldtype returns an already-parsed dict on Postgres
-	# reads and a string elsewhere — tolerate both.
-	data = event.payload or {}
-	if isinstance(data, str):
-		data = json.loads(data or "{}")
-	try:
-		if handler:
-			handler(data, event)
-			note = ""
-		else:
-			note = "recorded (handler lands in 60b)"
-		event.status = "Processed"
-		event.failure_reason = note
-		event.processed_at = frappe.utils.now_datetime()
-		event.save(ignore_permissions=True)
-	except Exception as exc:
-		event.status = "Failed"
-		event.failure_reason = f"{type(exc).__name__}: {str(exc)[:300]}"
-		event.save(ignore_permissions=True)
-		frappe.log_error(title=f"friday.randompack handler failed: {event.event_type}")
-
-
-# ---------------------------------------------------------------------------
-# Handlers (60a scope: brief ingestion; the rest land with 60b)
+# Handlers (the RandomPack event meaning — stays in domain:randompack)
 # ---------------------------------------------------------------------------
 
 # Their brief field → our Brand Brief field. Unknown keys fall through to
@@ -520,7 +411,7 @@ def _remember(memory: str, subject: str) -> None:
 	).insert(ignore_permissions=True)
 
 
-_HANDLERS = {
+HANDLERS = {
 	"payment.received": handle_payment_received,
 	"project.created": handle_project_created,
 	"gate.decided": handle_gate_decided,

@@ -172,25 +172,25 @@ class TestReconcilerRandomPackEvents(unittest.TestCase):
 
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
 	def test_received_event_over_60s_old_reenqueues(self, mock_frappe):
-		from frappe.friday_core.tasks.reconciler import _reconcile_randompack_events
+		from frappe.friday_core.tasks.reconciler import _reconcile_connector_events
 
 		mock_frappe.db.sql.return_value = [{"name": "EV-1", "status": "Received"}]
 
-		_reconcile_randompack_events()
+		_reconcile_connector_events()
 
 		mock_frappe.enqueue.assert_called_once()
 		call = mock_frappe.enqueue.call_args
-		self.assertEqual(call.args[0], "frappe.friday_core.surfaces.randompack.process_event")
+		self.assertEqual(call.args[0], "frappe.friday_core.connectors.core.process_event")
 		self.assertEqual(call.kwargs["queue"], "friday")
 		self.assertEqual(call.kwargs["event_id"], "EV-1")
 
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
 	def test_sql_filters_received_and_failed_under_retry_budget(self, mock_frappe):
-		from frappe.friday_core.tasks.reconciler import _reconcile_randompack_events
+		from frappe.friday_core.tasks.reconciler import _reconcile_connector_events
 
 		mock_frappe.db.sql.return_value = []
 
-		_reconcile_randompack_events()
+		_reconcile_connector_events()
 
 		sql = mock_frappe.db.sql.call_args[0][0]
 		# Received OR Failed → both eligible, distinct grace periods (60s / 5min).
@@ -204,7 +204,7 @@ class TestReconcilerRandomPackEvents(unittest.TestCase):
 class TestTickWiring(unittest.TestCase):
 	"""tick() drives all four sub-reconciles in order, failures are isolated."""
 
-	@patch("frappe.friday_core.tasks.reconciler._reconcile_randompack_events")
+	@patch("frappe.friday_core.tasks.reconciler._reconcile_connector_events")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_transient_blocked")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_executing_stale")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_assigned_orphans")
@@ -218,7 +218,7 @@ class TestTickWiring(unittest.TestCase):
 		mock_b.assert_called_once()
 		mock_r.assert_called_once()
 
-	@patch("frappe.friday_core.tasks.reconciler._reconcile_randompack_events")
+	@patch("frappe.friday_core.tasks.reconciler._reconcile_connector_events")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_transient_blocked")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_executing_stale")
 	@patch("frappe.friday_core.tasks.reconciler._reconcile_assigned_orphans")
