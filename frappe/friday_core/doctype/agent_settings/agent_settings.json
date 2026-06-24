@@ -11,7 +11,11 @@
         "compression_model",
         "setup_complete",
         "max_delegation_depth",
-        "delegation_depth_hard_ceiling"
+        "delegation_depth_hard_ceiling",
+        "max_concurrent_turns",
+        "memory_review_interval",
+        "skill_review_interval",
+        "review_model"
     ],
     "fields": [
         {
@@ -57,6 +61,34 @@
             "fieldtype": "Int",
             "label": "Delegation Depth Hard Ceiling",
             "read_only": 1
+        },
+        {
+            "default": "1",
+            "description": "How many agent turns the dedicated 'friday' queue runs at once. 1 (default) = today's single-worker behaviour, zero change. Higher values start that many friday worker PROCESSES so concurrent chats/tasks overlap their model-wait instead of queueing (proven ~5x throughput at 10 concurrent turns on Legion). Clamped to 1..16 in code. Takes effect when the friday worker is (re)started.",
+            "fieldname": "max_concurrent_turns",
+            "fieldtype": "Int",
+            "label": "Max Concurrent Turns"
+        },
+        {
+            "default": "3",
+            "description": "Self-improvement review (design 79/80): after every N conversational turns the agent reflects on the conversation and saves durable facts/preferences to memory. 0 = off. Only conversational (gateway) turns count; pipeline tasks never trigger it.",
+            "fieldname": "memory_review_interval",
+            "fieldtype": "Int",
+            "label": "Memory Review Interval"
+        },
+        {
+            "default": "0",
+            "description": "Governed skill-proposal review (design 79 Slice 2): after every N conversational turns the agent reviews the conversation for reusable how-to lessons and PROPOSES skill changes (Skill Proposal rows, Pending human approval — never auto-applied). 0 = off (default until validated in production).",
+            "fieldname": "skill_review_interval",
+            "fieldtype": "Int",
+            "label": "Skill Review Interval"
+        },
+        {
+            "description": "Optional LLM Provider used to RUN the self-improvement review (a cheap model is fine — it just reads the conversation and writes short facts). Leave blank to use the agent's own provider.",
+            "fieldname": "review_model",
+            "fieldtype": "Link",
+            "label": "Review Model Provider",
+            "options": "LLM Provider"
         }
     ],
     "links": [],

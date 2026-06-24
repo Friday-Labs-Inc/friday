@@ -200,6 +200,14 @@ class TestBuildSystemPrompt(unittest.TestCase):
 		result = _build_system_prompt(profile)
 		self.assertTrue(result.startswith("You are a Friday AI Agent."))
 
+	def test_includes_date_line_and_tool_discipline(self):
+		"""Design 80 — the frame carries today's date + the tool-use discipline."""
+		profile = frappe.get_doc("Agent Profile", PROFILE_WITH_TOOLS)
+		result = _build_system_prompt(profile)
+		self.assertIn("Today's date is", result)
+		self.assertIn(frappe.utils.today(), result)
+		self.assertIn("Call each tool at most once", result)
+
 
 # ---------------------------------------------------------------------------
 # _load_history tests

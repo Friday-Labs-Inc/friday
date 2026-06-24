@@ -232,24 +232,24 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 	)
 	acquired = lock.acquire(blocking=True)
 	if not acquired:
-		# Couldn't get the lock within the wait window — another turn
-		# for the same session is still running.
-		if in_worker and lock_retry == 0:
-			# Q3 (design 55): requeue ONCE — the fresh job waits another
-			# full lock window before we give up, so a burst feels
-			# queued rather than rejected. The row stays processed=0;
-			# the requeued job (or the recovery sweeper) owns it now.
-			_enqueue_pipeline(inbound.name, lock_retry=1)
-			return
-		# Inline run, or the one requeue already spent: write a busy
-		# outbound so the user gets a clear signal.
-		_write_outbound(
-			inbound,
-			content="(session is busy with another message — please try again in a moment)",
-			processed=True,
-			sender_label="system",
-		)
-		_mark_processed(inbound, retry_count=inbound.retry_count or 0)
+		# Design 80 queue phase — another turn for this session holds the lock.
+		# QUEUE, don't drop: leave the row processed=0 and return. The turn that
+		# holds the lock re-dispatches the oldest queued row the instant it
+		# releases (see `_drain_next_in_session` in the finally below); the
+		# orphan sweeper (gateway/recovery.py, every minute) is the backstop.
+		# Queue-by-default — no message is lost and the running turn is never
+		# interrupted.
+		return
+
+	# Re-check after acquiring the lock: while we waited, the turn that held it
+	# — or a drain / orphan re-enqueue — may already have processed this exact
+	# row. Skip to avoid a duplicate reply (double-dispatch guard, important now
+	# that drain + sweeper + a concurrent worker pool can all enqueue a row).
+	if frappe.db.get_value("Chat Message", inbound.name, "processed"):
+		try:
+			lock.release()
+		except Exception:
+			pass
 		return
 
 	try:
@@ -303,6 +303,13 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		# crash between these two, recovery sweeper picks it up.
 		_mark_processed(inbound, retry_count=inbound.retry_count or 0)
 
+		# Design 79/80 — after a successful conversational turn, maybe queue a
+		# self-improvement memory review (cadence-gated; best-effort). Only the
+		# gateway path triggers it, so pipeline-task turns never do.
+		from frappe.friday_core.agent_runner.self_review import enqueue_if_due
+
+		enqueue_if_due(session_id, profile_name)
+
 	except Exception as exc:
 		# Log full traceback to Frappe Error Log AND write a system-error
 		# outbound row so the user gets feedback. Don't re-raise: in sync
@@ -328,6 +335,37 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 			lock.release()
 		except Exception:
 			pass
+		# Design 80 queue phase — the lock is now free; pull the next message
+		# that queued up for this session (oldest first) so a burst drains in
+		# FIFO order without waiting on the orphan sweeper.
+		_drain_next_in_session(session_id)
+
+
+def _drain_next_in_session(session_id: str) -> None:
+	"""Re-dispatch the oldest still-unprocessed inbound for a session.
+
+	Called after a turn releases the session lock. A message that arrived while
+	the session was busy was left ``processed=0`` (not dropped); now the lock is
+	free we enqueue the oldest such row so queued messages drain in order.
+
+	Best-effort: any failure is swallowed — the orphan sweeper
+	(``gateway/recovery.py``) is the backstop. No-op when no friday worker is
+	alive (sync/CLI has no queue; the sweeper covers async platforms).
+	"""
+	try:
+		nxt = frappe.get_all(
+			"Chat Message",
+			filters={"session_id": session_id, "direction": "inbound", "processed": 0},
+			fields=["name"],
+			order_by="creation asc",
+			limit=1,
+		)
+		if nxt and _friday_worker_alive():
+			_enqueue_pipeline(nxt[0]["name"], lock_retry=0)
+	except Exception:
+		frappe.logger("friday.gateway").warning(
+			f"queue drain failed for session {session_id!r}", exc_info=True
+		)
 
 
 # ---------------------------------------------------------------------------

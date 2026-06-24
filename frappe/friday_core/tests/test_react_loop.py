@@ -279,5 +279,64 @@ class TestIsPermissionDenial(unittest.TestCase):
 		mock_frappe.db.get_value.assert_not_called()
 
 
+class TestOnErrorCompressRetry(unittest.TestCase):
+	"""Design 80 — a context-overflow LLMError triggers compress + retry once."""
+
+	def _run(self, *chat_outcomes, should_compress=True, skip_compression=False):
+		from frappe.friday_core.agent_runner.runner import run_turn
+		from frappe.friday_core.llm.provider import LLMError
+
+		prov = MagicMock()
+		prov.chat.side_effect = list(chat_outcomes)
+		prov.get_default_model.return_value = "m"
+		prompt = {"messages": [{"role": "user", "content": "hi"}], "tools": [], "model": "m"}
+		classified = MagicMock(should_compress=should_compress)
+		compress = MagicMock()
+		with (
+			patch(f"{_R}.maybe_compress_session", compress),
+			patch(f"{_R}.load_for_profile", return_value=[]),
+			patch(f"{_R}.build", return_value=prompt) as build_mock,
+			patch(f"{_R}.get_provider_for_profile", return_value=prov),
+			patch(f"{_R}.dispatch", side_effect=[]),
+			patch(f"{_R}._is_permission_denial", return_value=False),
+			patch(f"{_R}.classify_api_error", return_value=classified),
+		):
+			# LLMError is the type the runner catches; expose it to the caller.
+			self._LLMError = LLMError
+			result = run_turn("P", "S", "hi", skip_compression=skip_compression)
+		return result, prov, compress, build_mock
+
+	def test_overflow_then_success_compresses_and_retries(self):
+		from frappe.friday_core.llm.provider import LLMError
+
+		result, prov, compress, build_mock = self._run(
+			LLMError("context_length_exceeded"), _resp(content="recovered")
+		)
+		self.assertEqual(result, "recovered")
+		# compress fires twice: the normal pre-build pass + the on-overflow retry.
+		self.assertEqual(compress.call_count, 2)
+		self.assertEqual(prov.chat.call_count, 2)  # failed once, retried once
+		self.assertEqual(build_mock.call_count, 2)  # initial build + rebuild after compress
+
+	def test_second_overflow_raises(self):
+		from frappe.friday_core.llm.provider import LLMError
+
+		with self.assertRaises(LLMError):
+			self._run(LLMError("overflow"), LLMError("overflow again"))
+
+	def test_non_compress_error_raises_immediately(self):
+		from frappe.friday_core.llm.provider import LLMError
+
+		with self.assertRaises(LLMError):
+			self._run(LLMError("auth failed"), should_compress=False)
+
+	def test_skip_compression_does_not_retry(self):
+		from frappe.friday_core.llm.provider import LLMError
+
+		# A review turn (skip_compression=True) must never compress-retry.
+		with self.assertRaises(LLMError):
+			self._run(LLMError("overflow"), should_compress=True, skip_compression=True)
+
+
 if __name__ == "__main__":
 	unittest.main()

@@ -52,7 +52,9 @@ from frappe.friday_core.agent_runner.message_hygiene import (
 )
 from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
+from frappe.friday_core.llm.error_classifier import classify_api_error
 from frappe.friday_core.llm.prompt_builder import build
+from frappe.friday_core.llm.provider import LLMError
 from frappe.friday_core.llm.reasoning import strip_reasoning
 from frappe.friday_core.llm.usage import record_usage
 from frappe.friday_core.skills.loader import load_for_profile
@@ -74,14 +76,36 @@ _EMPTY_RESPONSE_FALLBACK = (
 	"The model returned an empty response after several retries. Please try rephrasing your request."
 )
 
+# Design 80 — on a context-window-overflow error, compress the session and retry
+# the LLM call (Hermes' compress-then-restart, conversation_loop.py). Capped so a
+# persistent overflow surfaces as a real error instead of looping.
+MAX_COMPRESS_RETRIES = 1
 
-def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat=None) -> str:
+
+def run_turn(
+	profile_name: str,
+	session_id: str,
+	inbound_content: str,
+	heartbeat=None,
+	allowed_skills: "set[str] | None" = None,
+	skip_compression: bool = False,
+	provider_override=None,
+) -> str:
 	"""Produce one agent reply for one user message via the ReAct loop.
 
 	Arguments:
 	  - `profile_name`: the Agent Profile name (Frappe primary key).
 	  - `session_id`: the conversation's session UUID.
 	  - `inbound_content`: the user's message text.
+	  - `allowed_skills`: when given, HARD-restrict the toolset to skills whose
+	    name is in this set. Used by the self-improvement review (design 79) to
+	    run a memory/skill-proposal-only turn — the model cannot reach any other
+	    tool. `None` (the default) = the profile's full permitted toolset, i.e.
+	    today's behaviour. Mirrors Hermes' `set_thread_tool_whitelist`.
+	  - `skip_compression`: when True, do NOT run the session-compression pass.
+	    The review turn (design 79) reads the live session as read-only context
+	    and must never compress the real conversation. Default False = today's
+	    behaviour.
 
 	Returns the reply text the gateway writes to the single outbound Chat
 	Message row for this turn.
@@ -108,17 +132,26 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat
 
 	skill_definitions = load_for_profile(profile_name)
 
+	# Design 79 — the self-improvement review runs a tool-restricted turn: keep
+	# only the skills it is allowed to call (memory / skill-proposal). A None
+	# allowlist (the default) leaves the profile's full toolset untouched.
+	if allowed_skills is not None:
+		skill_definitions = [s for s in skill_definitions if s.name in allowed_skills]
+
 	# Feature C: fold old turns into a summary if this session has grown large,
 	# BEFORE assembling the prompt — build() then sees the summary + the
 	# shortened (uncompacted) tail. Best-effort: a compression failure must
 	# never break the turn, so we log and continue with the full prompt.
-	try:
-		maybe_compress_session(profile_name, session_id)
-	except Exception as exc:
-		frappe.logger("friday.compression").warning(
-			f"Compression pass errored for session {session_id!r}: "
-			f"{type(exc).__name__}; continuing with the full prompt."
-		)
+	# Design 79 — a review turn skips this: it reads the live session as
+	# read-only context and must not compress the real conversation.
+	if not skip_compression:
+		try:
+			maybe_compress_session(profile_name, session_id)
+		except Exception as exc:
+			frappe.logger("friday.compression").warning(
+				f"Compression pass errored for session {session_id!r}: "
+				f"{type(exc).__name__}; continuing with the full prompt."
+			)
 
 	prompt = build(
 		profile_name=profile_name,
@@ -126,7 +159,10 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat
 		inbound_content=inbound_content,
 		tools=skill_definitions,
 	)
-	provider = get_provider_for_profile(profile_name)
+	# Design 80 — the self-improvement review may run on a cheaper model
+	# (Agent Settings.review_model); the caller passes it as provider_override.
+	# Default (None) resolves the profile's own provider — today's behaviour.
+	provider = provider_override or get_provider_for_profile(profile_name)
 
 	# A working copy of the conversation that the loop appends to.
 	messages: list[dict] = list(prompt["messages"])
@@ -135,6 +171,7 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat
 
 	last_assistant_content = ""
 	empty_retries = 0
+	compress_retries = 0
 
 	for _iteration in range(MAX_REACT_ITERATIONS):
 		# Design 61b — heartbeat once per ReAct iteration so the durability
@@ -149,7 +186,39 @@ def run_turn(profile_name: str, session_id: str, inbound_content: str, heartbeat
 		# Scrub surrogates from the whole message list before the API call —
 		# reasoning/tool fields can carry them too (Hermes sanitizes pre-call).
 		sanitize_messages_surrogates(messages)
-		response = provider.chat(messages=messages, tools=tools, model=model)
+		try:
+			response = provider.chat(messages=messages, tools=tools, model=model)
+		except LLMError as exc:
+			# Design 80 — on a context-window overflow the classifier sets
+			# should_compress. Compress the session, rebuild the (now shorter)
+			# prompt, and retry once. Any other LLM error — or a second overflow —
+			# propagates unchanged. Review turns (skip_compression) never retry.
+			classified = classify_api_error(error=exc)
+			if (
+				classified.should_compress
+				and not skip_compression
+				and compress_retries < MAX_COMPRESS_RETRIES
+			):
+				compress_retries += 1
+				frappe.logger("friday.compression").warning(
+					f"Context overflow on session {session_id!r}; compressing and "
+					f"retrying (attempt {compress_retries})."
+				)
+				try:
+					maybe_compress_session(profile_name, session_id)
+				except Exception:
+					pass
+				prompt = build(
+					profile_name=profile_name,
+					session_id=session_id,
+					inbound_content=inbound_content,
+					tools=skill_definitions,
+				)
+				messages = list(prompt["messages"])
+				tools = prompt["tools"]
+				model = prompt["model"]
+				continue
+			raise
 		# Usage accounting — one LLM Usage Log row per call (tokens + estimated
 		# cost). record_usage never raises; a logging failure can't break a turn.
 		record_usage(
