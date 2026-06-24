@@ -25,15 +25,36 @@ really Hermes, not an approximation.
 
 ## Summary matrix
 
-| # | Component | Overall status | Highest-value gap |
-|---|-----------|----------------|-------------------|
-| 1 | Agent ReAct loop | faithful core, **2 critical gaps** | **post-turn memory/skill review (learning step)**; interrupt handling |
-| 2 | Connection surfaces | diverged (by design) | — (unified gateway is the chosen improvement) |
-| 3 | Context assembly | frappe-adapted + gaps | USER.md two-store split + auto-update; date line; SKILLS_GUIDANCE; prompt caching |
-| 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
-| 5 | Gateway | **COMPLETE** (every named gap resolved) | session manager (queue/slash/interrupt/steer/cascade/`/stop force`) + delivery DSL (D86) + cron (D87) all shipped; lifecycle hooks **deliberately deferred** (Design 88 — code-loader security surface, no consumer, eventing already met). Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
-| 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
-| 7 | Cron jobs | **SHIPPED** (Design 87, both slices) | Slice 1: `Cron Job` doctype + `*/1` tick + delivery. Slice 2: agent-facing `manage-cron-jobs` skill (own-jobs-only, role-gated, deliver-to-channel default) |
+| # | Component | Overall status | Remaining gap |
+|---|-----------|----------------|---------------|
+| 1 | Agent ReAct loop | **COMPLETE** | — learning loop (D79, both slices), interrupt, on-error compress+retry all shipped |
+| 2 | Connection surfaces | diverged (by design) | **2nd surface (Slack/Telegram) MISSING** — only Raven + RandomPack exist |
+| 3 | Context assembly | **COMPLETE** | — USER.md split, date line, SKILLS_GUIDANCE, prompt caching, project-isolation all shipped |
+| 4 | Context compression | **COMPLETE** | — on-error retry, 13-section prompt, last-user-in-tail shipped; tool-result pruning is **moot** (Friday never persists tool rows) |
+| 5 | Gateway | **COMPLETE** | session manager + delivery + cron all shipped; lifecycle hooks **deliberately deferred** (D88). [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
+| 6 | Memory (3 forms) | **mostly shipped** | semantic (pgvector) + memory-FTS + USER.md split all shipped; **`session_search` (transcript FTS + skill) PARTIAL** — agent can't search its own past conversations |
+| 7 | Cron jobs | **SHIPPED** (both slices) | — `Cron Job` doctype + tick + delivery + `manage-cron-jobs` skill |
+
+> ### ⚠️ Re-audit 2026-06-24 (post-gateway-program)
+>
+> A full re-verification against current code (4 parallel read-only audits) found
+> the ledger was **badly stale** — almost every "gap" had been built. The TRUE
+> remaining gaps, ranked:
+>
+> | Gap | Status | Value | Notes |
+> |---|---|---|---|
+> | **2nd chat surface (Slack)** | MISSING | High | A thin adapter writing `Chat Message` rows; proves the unified gateway is multi-surface. `surfaces/` has only `raven_adapter` + `randompack`. |
+> | **`session_search`** | PARTIAL | High | Memory-FTS shipped (`llm/after_migrate`), but no FTS on `Chat Message` + no `session_search` skill → the agent can't recall its own past conversations. The "long-lived agent" gap. |
+> | **A2A (agent-to-agent)** | MISSING | Medium | Design 81e, deferred. No surface/protocol. |
+> | progressive streaming · `runtime_footer`/`display_config` · `mirror` | MISSING/partial | Polish | LLM streams internally; gateway writes one finished row. Per-surface display tiers + transparency footer + out-of-turn transcript mirroring absent. |
+> | tool-result pruning | **moot** | — | Friday's row model never persists tool messages, so there's nothing to prune. Strike from the backlog. |
+> | lifecycle hooks · external memory providers (Mem0) | deferred | — | D88 (hooks) + deliberate v0.1 defer (Mem0); first-party pgvector covers semantic recall. |
+>
+> **Net:** the Hermes port is ~complete. The two real, high-value remaining
+> builds are the **2nd chat surface (Slack)** and **`session_search`**. Everything
+> else is polish or a justified defer. The per-component matrix above and the
+> backlog below are updated; treat anything still marked MISSING in the OLD
+> backlog as suspect until re-verified.
 
 Confirmed along the way: the transcript's claim that Hermes cron is stored as
 plain JSON (`~/.hermes/cron/jobs.json`), not SQLite, is **correct in source**
