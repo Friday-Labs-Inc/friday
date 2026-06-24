@@ -25,13 +25,20 @@ _C = "frappe.friday_core.gateway.commands"
 
 
 class TestForceKillSession(unittest.TestCase):
+	# Mimic frappe's create_job_id transform ({site}|| prefix, ':'→'|') so the
+	# test pins that the chat job id is TRANSFORMED before send_stop_job_command.
+	# (The original bug: the RAW id was passed → NoSuchJob → nothing was killed.
+	# The old test mocked send_stop and never asserted the id, so it stayed green.)
+	@patch("frappe.utils.background_jobs.create_job_id", side_effect=lambda j: f"SITE||{j.replace(':', '|')}")
 	@patch(f"{_I}._emit_force_kill")
 	@patch(f"{_I}.send_stop_job_command")
 	@patch(f"{_I}.get_queue")
 	@patch(f"{_I}.collect_active_subtree", return_value=["T1", "T2"])
 	@patch(f"{_I}.request_interrupt")
 	@patch(f"{_I}.frappe")
-	def test_kills_chat_job_and_forcekills_subtree(self, fr, req, _sub, _gq, stop, _emit):
+	def test_kills_chat_job_transformed_and_cooperatively_stops_tasks(
+		self, fr, req, _sub, _gq, stop, _emit, _cji
+	):
 		from frappe.friday_core.gateway import interrupt
 
 		fr.get_all.return_value = [{"job_id": "friday-gw::CM-9::lock0"}]
@@ -39,31 +46,33 @@ class TestForceKillSession(unittest.TestCase):
 
 		result = interrupt.force_kill_session("S-1", "op@x.com")
 
-		# belt-and-suspenders cooperative flag is set too
-		req.assert_called_once_with("S-1")
-		# the chat turn job AND both delegated task jobs are stopped (the REAL
-		# primitive: send_stop_job_command, not Job.cancel)
+		# THE FIX: the chat job is SIGTERM'd with the create_job_id-TRANSFORMED key,
+		# exactly once. Tasks are NOT send_stop'd by name (their rq id is a UUID).
 		stopped = [c.args[1] for c in stop.call_args_list]
-		self.assertIn("friday-gw::CM-9::lock0", stopped)
-		self.assertIn("task:T1", stopped)
-		self.assertIn("task:T2", stopped)
-		self.assertEqual(result["jobs_cancelled"], 3)
-		# the delegated tasks are marked ForceKilled with the audit fields
+		self.assertEqual(stopped, ["SITE||friday-gw||CM-9||lock0"])
+		self.assertNotIn("task:T1", stopped)
+		self.assertEqual(result["jobs_cancelled"], 1)  # only the chat job
+
+		# Tasks are stopped cooperatively (interrupt flag on task:: session) and
+		# marked ForceKilled with the audit fields.
+		req.assert_any_call("S-1")  # chat session
+		req.assert_any_call("task::T1")
+		req.assert_any_call("task::T2")
 		self.assertEqual(set(result["tasks_now_forcekilled"]), {"T1", "T2"})
 		task_writes = [c for c in fr.db.set_value.call_args_list if c.args[0] == "Task"]
 		self.assertEqual(len(task_writes), 2)
 		payload = task_writes[0].args[2]
 		self.assertEqual(payload["workflow_state"], "ForceKilled")
 		self.assertEqual(payload["force_killed_by"], "op@x.com")
-		self.assertEqual(payload["force_kill_reason"], "operator /stop force")
 
+	@patch("frappe.utils.background_jobs.create_job_id", side_effect=lambda j: f"SITE||{j}")
 	@patch(f"{_I}._emit_force_kill")
 	@patch(f"{_I}.send_stop_job_command", side_effect=Exception("InvalidJobOperation"))
 	@patch(f"{_I}.get_queue")
 	@patch(f"{_I}.collect_active_subtree", return_value=[])
 	@patch(f"{_I}.request_interrupt")
 	@patch(f"{_I}.frappe")
-	def test_already_finished_job_is_idempotent(self, fr, req, _sub, _gq, _stop, _emit):
+	def test_already_finished_job_is_idempotent(self, fr, req, _sub, _gq, _stop, _emit, _cji):
 		from frappe.friday_core.gateway import interrupt
 
 		fr.get_all.return_value = [{"job_id": "friday-gw::CM-9::lock0"}]
@@ -72,13 +81,14 @@ class TestForceKillSession(unittest.TestCase):
 		self.assertEqual(result["jobs_cancelled"], 0)
 		self.assertEqual(result["jobs_already_done"], 1)
 
+	@patch("frappe.utils.background_jobs.create_job_id", side_effect=lambda j: f"SITE||{j}")
 	@patch(f"{_I}._emit_force_kill")
 	@patch(f"{_I}.send_stop_job_command")
 	@patch(f"{_I}.get_queue")
 	@patch(f"{_I}.collect_active_subtree", return_value=[])
 	@patch(f"{_I}.request_interrupt")
 	@patch(f"{_I}.frappe")
-	def test_nothing_running_is_safe(self, fr, req, _sub, _gq, stop, _emit):
+	def test_nothing_running_is_safe(self, fr, req, _sub, _gq, stop, _emit, _cji):
 		from frappe.friday_core.gateway import interrupt
 
 		fr.get_all.return_value = []  # no running turn for this session

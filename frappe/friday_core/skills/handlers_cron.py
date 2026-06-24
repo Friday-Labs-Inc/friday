@@ -68,8 +68,11 @@ def _create(agent_profile: str, session_id: str, p: dict) -> dict:
 		raise ValueError("create requires 'schedule_expression'")
 
 	# Default delivery: back into the channel the agent is in; else a private file.
+	# "origin" is accepted as a friendly alias for "this channel" — agents reach
+	# for it naturally, and a cron run has no live origin session at fire time, so
+	# resolve it here to the channel the job was created in.
 	deliver = (p.get("deliver") or "").strip()
-	if not deliver:
+	if not deliver or deliver.lower() == "origin":
 		deliver = f"raven:{session_id}" if session_id else "local"
 
 	job = frappe.get_doc(

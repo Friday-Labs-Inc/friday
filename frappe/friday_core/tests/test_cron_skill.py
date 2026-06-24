@@ -36,6 +36,23 @@ class TestManageCronJobs(unittest.TestCase):
 		self.assertEqual(res["status"], "created")
 
 	@patch(f"{_CS}.frappe")
+	def test_create_aliases_origin_to_current_channel(self, fr):
+		# Agents reach for deliver="origin"; resolve it to the channel they're in
+		# so the result actually posts there (not the silent local fallback).
+		from frappe.friday_core.skills import handlers_cron
+
+		fr.flags.get.return_value = {"agent_profile": "Friday", "session_id": "CH-7"}
+		job = MagicMock()
+		job.name = "CRON-1"
+		job.next_run_at = "T"
+		fr.get_doc.return_value = job
+		handlers_cron.manage_cron_jobs(
+			"manage-cron-jobs",
+			{"action": "create", "prompt": "p", "schedule_expression": "0 9 * * *", "deliver": "origin"},
+		)
+		self.assertEqual(fr.get_doc.call_args[0][0]["deliver"], "raven:CH-7")
+
+	@patch(f"{_CS}.frappe")
 	def test_create_requires_prompt(self, fr):
 		from frappe.friday_core.skills import handlers_cron
 

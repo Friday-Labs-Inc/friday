@@ -169,30 +169,41 @@ def force_kill_session(session_id: str, user: str) -> dict:
 	— `Job.cancel()` only dequeues a not-yet-started job, it can't stop a running
 	one).
 
-	What it kills:
-	  - the channel's own chat turn — its RQ job id is on the latest unprocessed
-	    inbound `Chat Message` (`gateway/service._enqueue_pipeline`);
-	  - every active delegated Task in the cascade subtree (Design 85), whose RQ
-	    job is named `task:{name}` — each is then marked `ForceKilled` with the
-	    audit fields (the dead worker can't write its own terminal state).
+	What it does:
+	  - **the chat turn** — SIGTERMs its RQ job. The job id is stored RAW on the
+	    latest unprocessed inbound `Chat Message` (`friday-gw::ROW::lockN`); rq
+	    keys it under `create_job_id()` (site-prefixed, `:`→`|`), so we MUST apply
+	    that transform before `send_stop_job_command` or it targets a non-existent
+	    key (the bug AWS caught: "0 jobs cancelled").
+	  - **delegated tasks** — these are enqueued with `job_name` (not `job_id`), so
+	    frappe gives them a random-UUID rq id that is NOT reconstructable from the
+	    task name. They therefore can't be SIGTERM'd by id. Instead we raise the
+	    **cooperative interrupt flag** on each task's `task::{name}` session (the
+	    horse bails at its next boundary) and mark the row `ForceKilled` + audit.
+	    `_run_task_agentic` honours `force_killed_by` so the interrupted task lands
+	    in `ForceKilled`, not `Cancelled`/`Completed`.
 
 	Idempotent: a job that already finished is a counted no-op, never an error.
 	"""
+	from frappe.utils.background_jobs import create_job_id
+
 	result = {"jobs_cancelled": 0, "jobs_already_done": 0, "tasks_now_forcekilled": []}
 
-	# Also raise the cooperative flag: if the turn happens to reach a boundary
-	# before the SIGTERM lands, it bails cleanly and releases its lock.
+	# Also raise the cooperative flag on the chat session: if the turn reaches a
+	# boundary before the SIGTERM lands, it bails cleanly and releases its lock.
 	request_interrupt(session_id)
 
 	chat_job = _latest_running_job(session_id)
 	if chat_job:
-		_record_stop(chat_job, result)
+		# Apply frappe's rq-id transform — `send_stop_job_command` needs the real key.
+		_record_stop(create_job_id(chat_job), result)
 
 	now = frappe.utils.now_datetime()
 	for task_name in collect_active_subtree(session_id):
-		_record_stop(f"task:{task_name}", result)
-		# The horse is being SIGTERM'd, so it won't write its own terminal state —
-		# we set ForceKilled + audit directly here.
+		# Task rq jobs aren't addressable by id (UUID) — stop them cooperatively.
+		request_interrupt(f"task::{task_name}")
+		# Mark ForceKilled + audit now; the task path won't override it (it checks
+		# force_killed_by). A not-yet-running task is simply terminal and skipped.
 		frappe.db.set_value(
 			"Task",
 			task_name,
