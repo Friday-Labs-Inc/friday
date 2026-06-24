@@ -132,7 +132,7 @@ def _cmd_help(session_id: str, user: str, args: list[str]) -> CommandResult:
 		"Commands:",
 		"  /approve [id]   — approve the paused action (oldest in this channel, or a named request)",
 		"  /deny [reason]  — reject the paused action (reason recorded)",
-		"  /stop           — interrupt the running turn for this session",
+		"  /stop [force]   — interrupt the running turn (force = hard-kill a stuck turn)",
 		"  /steer <text>   — nudge the running turn without stopping it",
 		"  /status         — show this session's state",
 		"  /help           — show this list",
@@ -189,6 +189,24 @@ def _cmd_stop(session_id: str, user: str, args: list[str]) -> CommandResult:
 	Reports how many delegated tasks were stopped.
 	"""
 	from frappe.friday_core.gateway.interrupt import cascade_interrupt, request_interrupt
+
+	# Design 83b — `/stop force` HARD-kills the in-flight job(s) (SIGTERM), for a
+	# turn wedged inside one long tool/LLM call where cooperative `/stop` can't
+	# land. Plain `/stop` stays the cooperative path (Design 83/85).
+	if args and args[0].lower() == "force":
+		from frappe.friday_core.gateway.interrupt import force_kill_session
+
+		r = force_kill_session(session_id, user)
+		n = len(r["tasks_now_forcekilled"])
+		extra = ""
+		if r["jobs_already_done"]:
+			extra += f", {r['jobs_already_done']} already done"
+		extra += f", {n} task(s) ForceKilled." if n else "."
+		return CommandResult(
+			handled=True,
+			ok=True,
+			reply=f"💀 Force-killed: {r['jobs_cancelled']} job(s) cancelled{extra}",
+		)
 
 	request_interrupt(session_id)
 	delegated = cascade_interrupt(session_id)

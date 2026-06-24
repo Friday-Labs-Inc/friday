@@ -51,6 +51,12 @@ MODULE = "Friday Core"
 # The canonical Task workflow states, in pipeline order. This list is the single
 # source of truth shared by the Kanban columns AND the Task.workflow_state Select
 # options — ``test_console_views`` pins the two together so they can't drift.
+#
+# ``ForceKilled`` (Design 83b) is the operator-/reconciler-killed terminal state.
+# Distinct from ``Blocked`` (which is "stuck, waiting for a human or a dependency")
+# because operators need to see at-a-glance which tasks they (or the auto-heal)
+# have force-terminated — a Kanban column next to ``Blocked`` makes the signal
+# visible during an incident without joining the Dispatcher Event table.
 TASK_STATES = [
 	"Pending",
 	"Assigned",
@@ -59,6 +65,7 @@ TASK_STATES = [
 	"Completed",
 	"Blocked",
 	"Cancelled",
+	"ForceKilled",
 ]
 
 # Kanban column indicator colour per state (Frappe's fixed indicator palette).
@@ -70,6 +77,7 @@ _STATE_INDICATOR = {
 	"Completed": "Green",
 	"Blocked": "Red",
 	"Cancelled": "Gray",
+	"ForceKilled": "Orange",
 }
 
 WORKSPACE_NAME = "Projects"
