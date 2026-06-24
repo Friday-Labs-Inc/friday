@@ -33,7 +33,7 @@ really Hermes, not an approximation.
 | 4 | Context compression | core verbatim, edges simplified | on-error compress+retry; 13-section summary prompt; tool-result pruning |
 | 5 | Gateway | diverged (by design); **session manager COMPLETE + cascade + hard-kill** | queue+slash+interrupt+steer+cascade+`/stop force` (D85/D86/D87/D83b) all done 2026-06-24; delivery DSL shipped (D86). Remaining: lifecycle hooks. Full file-by-file pass: [§ Gateway deep audit](#gateway-deep-audit-2026-06-24-file-by-file) |
 | 6 | Memory (3 forms) | 1 form adapted, 2 **MISSING** | **external providers (Mem0/etc.)**; **session_search + full-text** |
-| 7 | Cron jobs | **Slice 1 SHIPPED** (Design 87) | `Cron Job` doctype + `*/1` tick + delivery-on-completion (consumes the #86 router); agent-facing cron *skill* = Slice 2 (deferred) |
+| 7 | Cron jobs | **SHIPPED** (Design 87, both slices) | Slice 1: `Cron Job` doctype + `*/1` tick + delivery. Slice 2: agent-facing `manage-cron-jobs` skill (own-jobs-only, role-gated, deliver-to-channel default) |
 
 Confirmed along the way: the transcript's claim that Hermes cron is stored as
 plain JSON (`~/.hermes/cron/jobs.json`), not SQLite, is **correct in source**

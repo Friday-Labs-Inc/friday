@@ -515,6 +515,7 @@ from frappe.friday_core.skills import handlers_engine as _handlers_engine  # des
 from frappe.friday_core.skills import handlers_deliverables as _handlers_deliverables  # design 73 #5
 from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
 from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
+from frappe.friday_core.skills import handlers_cron as _handlers_cron  # design 87 slice 2
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
 from frappe.friday_core.skills import handlers_project as _handlers_project
 from frappe.friday_core.skills import (
