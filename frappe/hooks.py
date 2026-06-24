@@ -401,6 +401,15 @@ after_migrate = [
 	# Creates one row named "Agent Settings" if none exists. Safe to call
 	# repeatedly — Frappe will raise if a second row is created.
 	"frappe.friday_core.llm.after_migrate.ensure_agent_settings",
+	# Friday (design 80 step 2a): Postgres full-text index on Agent Memory so
+	# recall ranks by relevance+recency, not newest-first. Postgres-only,
+	# idempotent, best-effort — recall falls back to recency if absent.
+	"frappe.friday_core.llm.after_migrate.ensure_memory_search_schema",
+	# Friday (design 80 step 2b-2): pgvector shadow table for semantic recall,
+	# sized to the active embedding backend. Postgres-only, idempotent,
+	# best-effort — semantic recall stays off (keyword+recency) until vectors
+	# exist, so no regression if pgvector/embeddings aren't set up.
+	"frappe.friday_core.llm.after_migrate.ensure_memory_embedding_schema",
 	# Friday (design 61b, Q4): register the 'friday' background queue in
 	# common_site_config.json so a fresh clone doesn't silently lose the
 	# runner trigger to an unknown-queue error. Idempotent + atomic.

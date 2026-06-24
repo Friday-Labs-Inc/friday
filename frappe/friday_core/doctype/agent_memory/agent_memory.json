@@ -7,6 +7,7 @@
         "agent_profile",
         "project",
         "subject",
+        "memory_type",
         "status",
         "source_session"
     ],
@@ -41,6 +42,14 @@
             "fieldtype": "Data",
             "in_list_view": 1,
             "label": "Subject"
+        },
+        {
+            "default": "general",
+            "description": "Hermes USER.md/MEMORY.md split (design 80): 'user_profile' = a fact about the USER (role, preferences, working style, pet peeves); 'general' = the agent's own notes (decisions, conventions, learnings). Recall labels them so the model treats user facts as 'about you'.",
+            "fieldname": "memory_type",
+            "fieldtype": "Select",
+            "label": "Memory Type",
+            "options": "general\nuser_profile"
         },
         {
             "default": "Active",

@@ -126,8 +126,8 @@ class TestRouterWorkerPath(unittest.TestCase):
 		mock_frappe.enqueue.assert_not_called()
 
 
-class TestBusySessionRequeue(unittest.TestCase):
-	"""Q3 — first lock failure in a worker requeues once; the second goes busy."""
+class TestBusySessionQueues(unittest.TestCase):
+	"""Design 80 queue phase — a busy session QUEUES the message, never drops it."""
 
 	def _run_with_lock_denied(self, in_worker, lock_retry):
 		from frappe.friday_core.gateway import service
@@ -138,32 +138,84 @@ class TestBusySessionRequeue(unittest.TestCase):
 		with (
 			patch(f"{_S}.frappe") as mock_frappe,
 			patch(f"{_S}.flush_batch", side_effect=AssertionError("pipeline must not run")),
-			patch(f"{_S}._enqueue_pipeline") as mock_requeue,
+			patch(f"{_S}._enqueue_pipeline") as mock_enqueue,
 			patch(f"{_S}._write_outbound") as mock_out,
 			patch(f"{_S}._mark_processed") as mock_mark,
+			patch(f"{_S}._drain_next_in_session") as mock_drain,
 		):
 			mock_frappe.cache.return_value.lock.return_value = lock
 			service._run_pipeline(doc, in_worker=in_worker, lock_retry=lock_retry)
-		return mock_requeue, mock_out, mock_mark
+		return mock_enqueue, mock_out, mock_mark, mock_drain
 
-	def test_worker_first_failure_requeues_once_no_busy_message(self):
-		requeue, out, mark = self._run_with_lock_denied(in_worker=True, lock_retry=0)
-		requeue.assert_called_once_with("CM-1", lock_retry=1)
-		out.assert_not_called()  # no busy message yet
-		mark.assert_not_called()  # row stays processed=0 for the retry
+	def test_busy_leaves_row_unprocessed_no_drop(self):
+		# The whole point: nothing is written, nothing is marked processed —
+		# the row stays processed=0 so the holder's drain / sweeper re-runs it.
+		for in_worker in (True, False):
+			enqueue, out, mark, drain = self._run_with_lock_denied(in_worker, lock_retry=0)
+			self.assertFalse(out.called, "no busy message — message is queued, not rejected")
+			self.assertFalse(mark.called, "row must stay processed=0")
+			# busy path returns before the try/finally, so no drain on this path
+			self.assertFalse(drain.called)
 
-	def test_worker_second_failure_writes_busy(self):
-		requeue, out, mark = self._run_with_lock_denied(in_worker=True, lock_retry=1)
-		requeue.assert_not_called()  # the one allowed requeue is spent
-		out.assert_called_once()  # busy outbound written
-		mark.assert_called_once()
 
-	def test_inline_failure_goes_straight_to_busy(self):
-		# No queue to wait on in inline mode — v1 behaviour preserved.
-		requeue, out, mark = self._run_with_lock_denied(in_worker=False, lock_retry=0)
-		requeue.assert_not_called()
-		out.assert_called_once()
-		mark.assert_called_once()
+class TestDrainNextInSession(unittest.TestCase):
+	"""The drain re-dispatches the oldest queued inbound after the lock frees."""
+
+	def test_enqueues_oldest_unprocessed_when_worker_alive(self):
+		from frappe.friday_core.gateway import service
+
+		with (
+			patch(f"{_S}.frappe") as mock_frappe,
+			patch(f"{_S}._friday_worker_alive", return_value=True),
+			patch(f"{_S}._enqueue_pipeline") as mock_enqueue,
+		):
+			mock_frappe.get_all.return_value = [{"name": "CM-NEXT"}]
+			service._drain_next_in_session("sess-1")
+		mock_enqueue.assert_called_once_with("CM-NEXT", lock_retry=0)
+
+	def test_noop_when_nothing_queued(self):
+		from frappe.friday_core.gateway import service
+
+		with (
+			patch(f"{_S}.frappe") as mock_frappe,
+			patch(f"{_S}._friday_worker_alive", return_value=True),
+			patch(f"{_S}._enqueue_pipeline") as mock_enqueue,
+		):
+			mock_frappe.get_all.return_value = []
+			service._drain_next_in_session("sess-1")
+		mock_enqueue.assert_not_called()
+
+	def test_noop_when_no_worker(self):
+		from frappe.friday_core.gateway import service
+
+		with (
+			patch(f"{_S}.frappe") as mock_frappe,
+			patch(f"{_S}._friday_worker_alive", return_value=False),
+			patch(f"{_S}._enqueue_pipeline") as mock_enqueue,
+		):
+			mock_frappe.get_all.return_value = [{"name": "CM-NEXT"}]
+			service._drain_next_in_session("sess-1")
+		mock_enqueue.assert_not_called()
+
+
+class TestDoubleDispatchGuard(unittest.TestCase):
+	"""A row already processed while we waited on the lock is skipped (no dup reply)."""
+
+	def test_skips_already_processed_after_lock(self):
+		from frappe.friday_core.gateway import service
+
+		doc = _inbound()
+		lock = MagicMock()
+		lock.acquire.return_value = True  # we GET the lock...
+		with (
+			patch(f"{_S}.frappe") as mock_frappe,
+			patch(f"{_S}.flush_batch", side_effect=AssertionError("turn must not run")),
+			patch(f"{_S}._drain_next_in_session"),
+		):
+			mock_frappe.cache.return_value.lock.return_value = lock
+			mock_frappe.db.get_value.return_value = 1  # ...but the row is already processed
+			service._run_pipeline(doc, in_worker=True, lock_retry=0)
+		lock.release.assert_called_once()  # released the lock, ran no turn
 
 
 class TestWorkerAliveDetection(unittest.TestCase):

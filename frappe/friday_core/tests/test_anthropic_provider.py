@@ -136,6 +136,7 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 		self.assertEqual(assistant["role"], "assistant")
 		blocks = assistant["content"]
 		self.assertEqual(blocks[0], {"type": "text", "text": "sure"})
+		blocks[1].pop("cache_control", None)  # caching marks the last block; check translation shape
 		self.assertEqual(
 			blocks[1],
 			{"type": "tool_use", "id": "call_1", "name": "create_note", "input": {"title": "x"}},
@@ -157,6 +158,8 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 		)
 		last = _sent(mock_post)["messages"][-1]
 		self.assertEqual(last["role"], "user")
+		for b in last["content"]:
+			b.pop("cache_control", None)  # caching marks the last block; check translation shape
 		self.assertEqual(
 			last["content"],
 			[{"type": "tool_result", "tool_use_id": "call_1", "content": "Note created"}],
@@ -212,7 +215,7 @@ class TestAnthropicRequestTranslation(unittest.TestCase):
 
 
 class TestAnthropicPromptCaching(unittest.TestCase):
-	"""Prompt caching (port of Hermes prompt_caching, system-prefix scope)."""
+	"""Prompt caching — full Hermes `system_and_3` (system prefix + last 3 msgs)."""
 
 	@patch(_POST)
 	def test_system_carries_ephemeral_cache_control(self, mock_post):
@@ -234,19 +237,47 @@ class TestAnthropicPromptCaching(unittest.TestCase):
 		self.assertNotIn("system", sent)
 
 	@patch(_POST)
-	def test_messages_are_not_polluted_with_cache_markers(self, mock_post):
-		# v0.1 caches the static prefix only — history messages stay untouched.
+	def test_last_three_messages_carry_cache_control(self, mock_post):
+		# system_and_3: system prefix + the last 3 non-system messages are cached,
+		# for 4 breakpoints total (Anthropic's cap).
 		mock_post.return_value = _ok()
 		_p().chat(
 			messages=[
 				{"role": "system", "content": "You are Friday."},
-				{"role": "user", "content": "hi"},
-				{"role": "assistant", "content": "hello"},
-				{"role": "user", "content": "again"},
+				{"role": "user", "content": "one"},
+				{"role": "assistant", "content": "two"},
+				{"role": "user", "content": "three"},
 			]
 		)
-		for msg in _sent(mock_post)["messages"]:
-			self.assertNotIn("cache_control", json.dumps(msg))
+		sent = _sent(mock_post)
+		marked_msgs = sum(1 for m in sent["messages"] if "cache_control" in json.dumps(m))
+		self.assertEqual(marked_msgs, 3)  # the 3 non-system messages
+		system_marked = "cache_control" in json.dumps(sent.get("system", ""))
+		self.assertTrue(system_marked)
+		self.assertEqual(marked_msgs + int(system_marked), 4)  # total breakpoints
+
+	@patch(_POST)
+	def test_caps_breakpoints_when_many_messages(self, mock_post):
+		# With many messages, only the LAST 3 are marked (4 total with system).
+		mock_post.return_value = _ok()
+		_p().chat(
+			messages=[{"role": "system", "content": "sys"}]
+			+ [{"role": "user", "content": f"m{i}"} for i in range(8)]
+		)
+		sent = _sent(mock_post)
+		marked_msgs = sum(1 for m in sent["messages"] if "cache_control" in json.dumps(m))
+		self.assertEqual(marked_msgs, 3)  # never more than 3, regardless of count
+
+	@patch(_POST)
+	def test_caller_messages_not_mutated(self, mock_post):
+		# The deep-copy means the caller's original list stays clean.
+		mock_post.return_value = _ok()
+		original = [
+			{"role": "system", "content": "sys"},
+			{"role": "user", "content": "hi"},
+		]
+		_p().chat(messages=original)
+		self.assertNotIn("cache_control", json.dumps(original))
 
 
 class TestAnthropicResponseTranslation(unittest.TestCase):

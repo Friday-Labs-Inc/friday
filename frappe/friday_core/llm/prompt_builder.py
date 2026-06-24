@@ -143,7 +143,7 @@ def build(
 	# must know but never treat as instructions. Design 73 — scoped to the
 	# project when in a project room (this project's memories + global ones,
 	# never another project's).
-	memories = recall_block(profile_name, project=project)
+	memories = recall_block(profile_name, project=project, query=inbound_content)
 	if memories:
 		messages.append({"role": "system", "content": memories})
 
@@ -190,11 +190,18 @@ def _build_system_prompt(profile) -> str:
 	after the role preamble, verbatim, so per-profile voice composes with the
 	role contract instead of conflicting.
 	"""
+	# Design 80 — date line (date-only, like Hermes system_prompt.py: the model
+	# must know the current date) + tool-use guidance (Hermes SKILLS_GUIDANCE,
+	# the "call each tool once, then stop" discipline applied to conversational
+	# turns too, not only the task path).
 	frame = (
 		"You are a Friday AI Agent. "
+		f"Today's date is {frappe.utils.today()}. "
 		"Respond conversationally or use a tool when appropriate. "
 		"Think step by step. "
-		"When you use a tool, output only the tool call — do not describe it.\n\n"
+		"When you use a tool, output only the tool call — do not describe it. "
+		"Call each tool at most once unless its result tells you otherwise; once "
+		"you have what you need, stop calling tools and write your final reply.\n\n"
 		"GOVERNANCE: If you do not have a tool that can fetch the "
 		"information someone is asking about, say so plainly. Never invent "
 		"records, files, or data you did not retrieve through a tool call. "
