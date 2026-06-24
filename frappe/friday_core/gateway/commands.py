@@ -181,16 +181,22 @@ def _cmd_approve(session_id: str, user: str, args: list[str]) -> CommandResult:
 
 
 def _cmd_stop(session_id: str, user: str, args: list[str]) -> CommandResult:
-	"""Interrupt the running turn for this session (Design 83).
+	"""Interrupt the running turn for this session AND its delegated work (D83/85).
 
-	Sets the interrupt flag; the worker running the turn checks it at its next
-	ReAct boundary and stops cleanly. A no-op when nothing is running — the flag
-	self-expires (TTL) and the next turn clears it at entry.
+	Sets the interrupt flag for this session's own turn, then cascades to every
+	active delegated Task underneath it (Design 85). The worker(s) honor the flag
+	at their next ReAct boundary; not-yet-running tasks are cancelled directly.
+	Reports how many delegated tasks were stopped.
 	"""
-	from frappe.friday_core.gateway.interrupt import request_interrupt
+	from frappe.friday_core.gateway.interrupt import cascade_interrupt, request_interrupt
 
 	request_interrupt(session_id)
-	return CommandResult(handled=True, ok=True, reply="🛑 Stopping the current turn.")
+	delegated = cascade_interrupt(session_id)
+	if delegated:
+		reply = f"🛑 Stopping this turn and {delegated} delegated task(s)."
+	else:
+		reply = "🛑 Stopping the current turn."
+	return CommandResult(handled=True, ok=True, reply=reply)
 
 
 def _cmd_steer(session_id: str, user: str, args: list[str]) -> CommandResult:

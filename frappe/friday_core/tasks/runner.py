@@ -28,6 +28,7 @@ runner (``friday_core.sandbox.runner``) but differ in lifecycle:
 from __future__ import annotations
 
 import frappe
+from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 from frappe.friday_core.issues.raise_issue import raise_failure_issue
 from frappe.friday_core.observability import emit
 from frappe.utils import now_datetime
@@ -478,6 +479,33 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			inbound_content=framing,
 			heartbeat=lambda: _heartbeat(task_name),
 		)
+	except TurnInterrupted:
+		# Design 85 (Q3) — this delegated child was cascaded a `/stop`. It did NOT
+		# finish, so it must NOT be marked Completed. Roll back any partial txn,
+		# mark it Cancelled with an "interrupted" reason, and stop.
+		try:
+			frappe.db.rollback()
+		except Exception:
+			_logger.exception("rollback failed before _run_task_agentic interrupt save")
+		task.result = frappe.as_json({"status": "interrupted"})
+		task.workflow_state = "Cancelled"
+		task.blocked_reason = "interrupted"
+		task.duration_ms = _elapsed_ms(started_at)
+		frappe.flags.dispatcher_event_source = "runner_interrupt"
+		try:
+			task.save(ignore_permissions=True)
+		finally:
+			frappe.flags.dispatcher_event_source = None
+		frappe.db.commit()
+		emit(
+			"runner.interrupt",
+			task=task.name,
+			project=task.get("project"),
+			agent_profile=profile_name,
+			trigger_source="runner_interrupt",
+			summary=f"{task.name}: cancelled (operator interrupt)",
+		)
+		return
 	except Exception as exc:
 		# Design 72 — roll back any poisoned transaction BEFORE we try to write
 		# the failure state (the FLI-001 guidelines bug: UniqueViolation from a
