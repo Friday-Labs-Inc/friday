@@ -151,6 +151,11 @@ def handle_outbound_to_raven(doc, method=None) -> None:
 	"""
 	if doc.direction != "outbound" or doc.platform != RAVEN_PLATFORM:
 		return
+	# Mirror rows are recorded for the agent's own history only — never re-posted
+	# to the channel (the actual content already went out out-of-band). See
+	# gateway/mirror.py.
+	if doc.is_mirror:
+		return
 	if not frappe.db.table_exists("Raven Channel"):
 		return
 

@@ -153,6 +153,10 @@ def handle_outbound_to_slack(doc, method=None) -> None:
 	"""
 	if doc.direction != "outbound" or doc.platform != SLACK_PLATFORM:
 		return
+	# Mirror rows are recorded for the agent's own history only — never re-posted
+	# (the content already went out out-of-band). See gateway/mirror.py.
+	if doc.is_mirror:
+		return
 
 	token = _bot_token()
 	if not token:

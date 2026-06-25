@@ -126,6 +126,7 @@ class TestOutbound(unittest.TestCase):
 		doc.platform = platform
 		doc.session_id = "CH-001"
 		doc.content = "**reply** from the agent"
+		doc.is_mirror = 0
 		return doc
 
 	@patch(f"{_A}.frappe")
@@ -157,6 +158,15 @@ class TestOutbound(unittest.TestCase):
 		raven_adapter.handle_outbound_to_raven(self._outbound())  # must not raise
 		mock_frappe.db.rollback.assert_called_once_with(save_point="friday_raven_post")
 		mock_frappe.log_error.assert_called_once()
+
+	@patch(f"{_A}.frappe")
+	def test_mirror_row_is_not_posted(self, mock_frappe):
+		# A mirror row is recorded for the agent's history only — never re-posted.
+		mock_frappe.db.table_exists.return_value = True
+		row = self._outbound()
+		row.is_mirror = 1
+		raven_adapter.handle_outbound_to_raven(row)
+		mock_frappe.get_doc.assert_not_called()
 
 
 class TestCommands(unittest.TestCase):
