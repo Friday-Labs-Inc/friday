@@ -238,6 +238,7 @@ doc_events = {
 		"after_insert": [
 			"frappe.friday_core.gateway.service.handle_inbound",
 			"frappe.friday_core.surfaces.raven_adapter.handle_outbound_to_raven",
+			"frappe.friday_core.surfaces.slack_adapter.handle_outbound_to_slack",
 		],
 	},
 	"Raven Message": {
@@ -447,6 +448,9 @@ after_migrate = [
 	# 'session_search' skill so an agent can search its own past conversations.
 	"frappe.friday_core.llm.after_migrate.ensure_chatmessage_search_schema",
 	"frappe.friday_core.skills.bootstrap_session_search.provision",
+	# Friday (design 90): ensure the 'slack' Chat Platform row + Slack Config
+	# single so the 2nd chat surface is ready for the operator to configure.
+	"frappe.friday_core.surfaces.bootstrap_slack.provision",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]
