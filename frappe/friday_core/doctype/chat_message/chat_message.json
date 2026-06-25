@@ -15,7 +15,8 @@
   "failure_reason",
   "compacted",
   "job_id",
-  "is_command"
+  "is_command",
+  "is_mirror"
  ],
  "fields": [
   {
@@ -101,6 +102,13 @@
    "fieldname": "is_command",
    "fieldtype": "Check",
    "label": "Is Command"
+  },
+  {
+   "default": "0",
+   "description": "Set to 1 for a transcript-mirror row (Design 91/mirror): a compact record of an out-of-band post (e.g. share-deliverables' direct file send) written into the session so the agent's own history stays complete. Appears in _load_history as an assistant message but the outbound surface adapters skip it (never re-posted to the channel).",
+   "fieldname": "is_mirror",
+   "fieldtype": "Check",
+   "label": "Is Mirror"
   }
  ],
  "links": [],

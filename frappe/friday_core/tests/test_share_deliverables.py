@@ -24,9 +24,10 @@ _MEM = "frappe.friday_core.llm.memory.project_for_session"
 
 
 class TestShareDeliverables(unittest.TestCase):
+	@patch("frappe.friday_core.gateway.mirror.mirror_to_session")
 	@patch(_MEM, return_value="Northwind")
 	@patch(f"{_H}.frappe")
-	def test_posts_package_files_as_bot(self, mock_frappe, _pfs):
+	def test_posts_package_files_as_bot(self, mock_frappe, _pfs, mock_mirror):
 		mock_frappe.flags.get.return_value = {"session_id": "CH-1"}
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.get_all.return_value = [
@@ -44,6 +45,11 @@ class TestShareDeliverables(unittest.TestCase):
 		self.assertEqual(out["posted_files"], ["deliverable-pkg.pdf", "deliverable-pkg.md"])
 		self.assertIn("2", out["result"])
 		self.assertEqual(out["project"], "Northwind")
+		# The out-of-band file send is mirrored into the session transcript so the
+		# agent's own history records what it shared.
+		mock_mirror.assert_called_once()
+		self.assertEqual(mock_mirror.call_args[0][0], "CH-1")
+		self.assertIn("2 deliverable file(s)", mock_mirror.call_args[0][1])
 
 	@patch(_MEM, return_value="Northwind")
 	@patch(f"{_H}.frappe")
@@ -58,9 +64,10 @@ class TestShareDeliverables(unittest.TestCase):
 		self.assertIn("nothing to share", out["result"].lower())
 		mock_frappe.get_doc.assert_not_called()  # the bot is never fetched
 
+	@patch("frappe.friday_core.gateway.mirror.mirror_to_session")
 	@patch(_MEM, return_value="Northwind")
 	@patch(f"{_H}.frappe")
-	def test_skips_files_without_url(self, mock_frappe, _pfs):
+	def test_skips_files_without_url(self, mock_frappe, _pfs, _mirror):
 		mock_frappe.flags.get.return_value = {"session_id": "CH-1"}
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.get_all.return_value = [

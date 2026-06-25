@@ -99,6 +99,18 @@ def share_deliverables(skill_name: str, parameters: dict) -> dict:
 			"posted_files": [],
 			"project": project,
 		}
+
+	# The files went out via bot.send_message (no Chat Message row), so the agent's
+	# own transcript wouldn't record the share. Mirror a compact note into the
+	# session so its next turn knows what it posted (best-effort; never fatal).
+	from frappe.friday_core.gateway.mirror import mirror_to_session
+
+	mirror_to_session(
+		session_id,
+		f"Shared {len(posted)} deliverable file(s) into this channel: {', '.join(posted)}.",
+		source_label=SHARE_DELIVERABLES,
+	)
+
 	return {
 		"result": f"Shared {len(posted)} deliverable file(s) into this channel: {', '.join(posted)}.",
 		"posted_files": posted,

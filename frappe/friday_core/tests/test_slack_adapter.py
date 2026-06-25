@@ -110,7 +110,16 @@ class TestOutbound(unittest.TestCase):
 		d.platform = platform
 		d.session_id = "C1"
 		d.content = "hi from the agent"
+		d.is_mirror = 0
 		return d
+
+	@patch(f"{_SA}._bot_token", return_value="xoxb-1")
+	@patch(f"{_SA}.frappe")
+	def test_mirror_row_is_not_posted(self, fr, _t):
+		row = self._row()
+		row.is_mirror = 1
+		slack_adapter.handle_outbound_to_slack(row)
+		_t.assert_not_called()  # never reaches the token/post path
 
 	@patch(f"{_SA}._bot_token", return_value="xoxb-1")
 	@patch(f"{_SA}.frappe")
