@@ -252,13 +252,16 @@ def _config():
 
 
 def _signing_secret() -> str | None:
+	# raise_exception=False — `get_password` RAISES on an UNSET Password field, and
+	# bootstrap creates an empty Slack Config on migrate. Before the operator fills
+	# it in, an unset secret must read as None (→ verify fails → clean 403), not 500.
 	cfg = _config()
-	return cfg.get_password("signing_secret") if cfg else None
+	return cfg.get_password("signing_secret", raise_exception=False) if cfg else None
 
 
 def _bot_token() -> str | None:
 	cfg = _config()
-	return cfg.get_password("bot_token") if cfg else None
+	return cfg.get_password("bot_token", raise_exception=False) if cfg else None
 
 
 def _bot_user_id() -> str | None:

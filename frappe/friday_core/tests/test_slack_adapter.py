@@ -157,5 +157,37 @@ class TestCommandAudit(unittest.TestCase):
 		self.assertEqual(rows[1]["direction"], "outbound")
 
 
+class TestUnconfiguredSecret(unittest.TestCase):
+	"""frappe's get_password() RAISES on an UNSET Password field, and bootstrap
+	creates an empty Slack Config on migrate — so an unconfigured secret must read
+	as None (→ clean 403), never blow up the webhook with a 500."""
+
+	@staticmethod
+	def _cfg_with_unset_passwords():
+		# Mimic frappe: raises unless raise_exception=False is passed.
+		def get_password(field, raise_exception=True):
+			if raise_exception:
+				raise Exception("Password not found")
+			return None
+
+		doc = MagicMock()
+		doc.get_password.side_effect = get_password
+		return doc
+
+	@patch(f"{_SA}._config")
+	def test_unset_secret_reads_none_not_raise(self, cfg):
+		cfg.return_value = self._cfg_with_unset_passwords()
+		# These must NOT raise (they would if get_password were called without the flag).
+		self.assertIsNone(slack_adapter._signing_secret())
+		self.assertIsNone(slack_adapter._bot_token())
+
+	@patch(f"{_SA}._config")
+	def test_verify_signature_clean_false_when_unconfigured(self, cfg):
+		cfg.return_value = self._cfg_with_unset_passwords()
+		# A probe to the webhook before the operator configures Slack → clean reject.
+		headers = {"X-Slack-Signature": "v0=abc", "X-Slack-Request-Timestamp": "123"}
+		self.assertFalse(slack_adapter._verify_signature(b'{"type":"x"}', headers))
+
+
 if __name__ == "__main__":
 	unittest.main()
