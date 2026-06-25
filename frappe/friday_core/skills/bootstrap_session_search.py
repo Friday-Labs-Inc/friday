@@ -27,14 +27,19 @@ _SKILL_NAME = "session_search"
 
 _SKILL = {
 	"description": (
-		"Search your own past conversations (Chat Message history) by full text. "
-		"Returns the best-matching past messages with their session + timestamp."
+		"THE tool for searching your own past conversations / chat history / earlier "
+		"messages by full text. Returns the best-matching past messages (content + "
+		"session + timestamp), scoped to your own messages."
 	),
 	"when_to_use": (
-		"Call this when you need to recall something from an earlier conversation — "
-		"'what did we decide about X', 'have I seen this error before', 'remind me "
-		"what the user asked last week'. Pass a 'query' (keywords) and an optional "
-		"'limit'. You can only search YOUR OWN messages."
+		"Use this WHENEVER you're asked to search, look through, recall, or find "
+		"anything from past conversations, chat history, earlier messages, or what "
+		"was said/decided before — e.g. 'search our past conversations for X', "
+		"'what did we decide about Y', 'have I seen this before', 'find where the "
+		"user mentioned Z'. This is the ONLY correct tool for conversation/message "
+		"history — do NOT reach for generic record-listing tools (like list-records) "
+		"for transcript searches; they cannot search message text. Pass a 'query' "
+		"(keywords) and an optional 'limit'. You can only search YOUR OWN messages."
 	),
 	"schema": {
 		"type": "object",
