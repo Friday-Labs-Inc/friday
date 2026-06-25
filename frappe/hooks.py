@@ -451,6 +451,10 @@ after_migrate = [
 	# Friday (design 90): ensure the 'slack' Chat Platform row + Slack Config
 	# single so the 2nd chat surface is ready for the operator to configure.
 	"frappe.friday_core.surfaces.bootstrap_slack.provision",
+	# Friday (design 60 / list-projects): provision the project command-loop
+	# skills (plan/status/list/update/pause) so they reliably reach every site
+	# instead of relying on a manual bench-execute. Guarded for fresh sites.
+	"frappe.friday_core.skills.bootstrap_project.provision_if_ready",
 ]
 
 otp_methods = ["OTP App", "Email", "SMS"]

@@ -59,6 +59,18 @@ _SKILLS: dict[str, dict] = {
 		},
 		"docs": [{"target_doctype": "Project", "operation": "read"}],
 	},
+	"list-projects": {
+		"description": "List ALL Friday Projects at a glance — name, status, %complete, task counts. Answers 'what projects exist / are there any (new) projects / list projects'.",
+		"when_to_use": "Use this whenever asked to LIST projects, show all projects, or 'are there any (new) projects' — i.e. when NO specific project name is given. For ONE named project's detail use project-status instead. Optional 'status' filter.",
+		"schema": {
+			"type": "object",
+			"properties": {
+				"status": {"type": "string", "description": "Optional status filter (e.g. Open, On Hold, Completed)."}
+			},
+			"required": [],
+		},
+		"docs": [{"target_doctype": "Project", "operation": "read"}],
+	},
 	"update-task": {
 		"description": "Complete or cancel ONE pipeline task on a human's instruction (completing a gate milestone unblocks its dependents).",
 		"when_to_use": "Only when a human explicitly asks to mark a task done or cancel it. Never to skip work you should do.",
@@ -152,3 +164,13 @@ def provision(profile_name: str = "Friday") -> dict:
 	summary = {"role": COMMANDER_ROLE, "skills": sorted(_SKILLS.keys()), "profile": profile_name}
 	print(f"✓ Project command loop provisioned: {summary}")
 	return summary
+
+
+def provision_if_ready() -> None:
+	"""after_migrate-safe wrapper: provision only when the default Agent Profile
+	exists, so a fresh site (pre-`bench friday setup`) doesn't break migrate on the
+	`provision()` throw. Idempotent; this is how the project command-loop skills
+	(incl. list-projects) reliably reach every site without a manual bench-execute.
+	"""
+	if frappe.db.exists("Agent Profile", "Friday"):
+		provision()

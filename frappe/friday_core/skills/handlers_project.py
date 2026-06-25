@@ -135,7 +135,40 @@ def pause_project(skill_name: str, parameters: dict) -> dict:
 	}
 
 
+def list_projects(skill_name: str, parameters: dict) -> dict:
+	"""List Friday Projects at a glance (the missing 'what projects exist?' verb).
+
+	`project-status` answers about ONE named project; this lists them all so an
+	agent can answer 'are there any projects' without being given a name. Optional
+	`status` filter. Read-only; the Project Commander role's Project:read is the gate.
+	"""
+	status = (parameters.get("status") or "").strip()
+	rows = frappe.get_all(
+		"Project",
+		filters={"status": status} if status else None,
+		fields=[
+			"name", "status", "priority", "percent_complete",
+			"total_tasks", "completed_tasks", "project_lead_profile",
+		],
+		order_by="modified desc",
+		limit=50,
+	)
+	if not rows:
+		suffix = f" with status {status!r}" if status else ""
+		return {"result": f"No projects found{suffix}.", "count": 0, "projects": []}
+
+	lines = [f"{len(rows)} project(s):"]
+	for r in rows:
+		lead = f", lead {r['project_lead_profile']}" if r.get("project_lead_profile") else ""
+		lines.append(
+			f"- {r['name']} — {r['status']}, {r.get('percent_complete') or 0}% "
+			f"({r.get('completed_tasks') or 0}/{r.get('total_tasks') or 0} tasks){lead}"
+		)
+	return {"result": "\n".join(lines), "count": len(rows), "projects": rows}
+
+
 register_skill_handler("plan-project", plan_project)
 register_skill_handler("project-status", project_status)
 register_skill_handler("update-task", update_task)
 register_skill_handler("pause-project", pause_project)
+register_skill_handler("list-projects", list_projects)
