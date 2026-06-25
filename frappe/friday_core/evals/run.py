@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import frappe
 
+from .fixtures import ensure_eval_fixtures
 from .report import render_markdown
 from .runner import run_suite
 from .seeds import SEEDS
@@ -39,6 +40,11 @@ def run(n: int = 3, out_path: str | None = None) -> dict:
 		"  Never run against production — use a disposable sandbox.\n" + "=" * 72 + "\n"
 	)
 	print(banner)
+
+	# Seed the records some scenarios need (e.g. a known project for
+	# project-status-by-name). Idempotent + sandbox-only.
+	fixtures = ensure_eval_fixtures()
+	print(f"Fixtures ensured: {fixtures}\n")
 
 	results = run_suite(SEEDS, n=n)
 	report = render_markdown(results, site=site)
