@@ -23,6 +23,14 @@ Fields
                   (per-criterion checklist). Empty → no quality scoring for this case.
   rubric_note     optional guidance handed to the judge alongside the rubric (e.g.
                   "be lenient on phrasing, strict on factual claims").
+  judge_panel     how many independent judges vote on the rubric (Slice 3). 1 = a
+                  single judge (Slice 2). N>1 = a panel: each seat judges from a
+                  distinct lens and a criterion passes by majority vote. Only matters
+                  when `rubric` is set.
+  probe           for a NON-chat scenario (Slice 3): the name of a registered probe in
+                  `evals/probes.py` that drives a different real path (e.g. a force-stop
+                  or a migrate-gate) and returns its own checks. Empty = a normal chat
+                  scenario (drive run_turn). When set, the chat/judge fields are ignored.
   tags            which axes / regressions this exercises (free-form labels).
   note            a human sentence on what the scenario is really pinning.
 """
@@ -42,6 +50,8 @@ class Scenario:
 	expect_contains: tuple[str, ...] = ()
 	rubric: tuple[str, ...] = ()
 	rubric_note: str = ""
+	judge_panel: int = 1
+	probe: str = ""
 	tags: tuple[str, ...] = ()
 	note: str = ""
 
@@ -50,3 +60,5 @@ class Scenario:
 		# so a plain assertion is enough to catch a malformed seed at import time.
 		if self.rubric and not isinstance(self.rubric, tuple):
 			raise TypeError(f"Scenario {self.name!r}: rubric must be a tuple of strings")
+		if self.judge_panel < 1:
+			raise ValueError(f"Scenario {self.name!r}: judge_panel must be >= 1")

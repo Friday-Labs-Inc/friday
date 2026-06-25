@@ -19,10 +19,12 @@ from __future__ import annotations
 import frappe
 
 from .fixtures import ensure_eval_fixtures
-from .judge import judge_quality, resolve_judge_provider
+from .judge import build_panel_seats, resolve_independent_providers, run_panel
 from .report import render_markdown
 from .runner import run_suite
 from .seeds import SEEDS
+
+_TITLE = "Friday Agentic Eval — Slice 3"
 
 
 def _profiles_in(scenarios) -> set[str]:
@@ -34,16 +36,18 @@ def run(n: int = 3, out_path: str | None = None, judge_provider: str | None = No
 	"""Run the seed suite N× on the real path, write + print a Markdown report.
 
 	`n` may arrive as a string from the `bench execute` CLI — coerced to int.
-	`judge_provider` names the independent LLM Provider that scores open-ended quality
-	(Slice 2); when omitted, the first active provider that differs from the agent's is
-	auto-discovered. If none is available, rubric scenarios report a SKIP'd quality axis.
+	`judge_provider` names the independent LLM Provider(s) that score open-ended quality
+	(Slice 2/3); when omitted, every active provider that differs from the agent's is a
+	candidate, cycled across a scenario's panel seats. If none is available, rubric
+	scenarios report a SKIP'd quality axis. Probe scenarios (Slice 3) make no LLM call
+	and run regardless.
 	"""
 	n = int(n)
 	site = getattr(frappe.local, "site", "") or ""
 
 	banner = (
 		"\n" + "=" * 72 + "\n"
-		f"  Friday Agentic Eval (Design 91 · Slices 1-2)\n"
+		f"  Friday Agentic Eval (Design 91 · Slices 1-3)\n"
 		f"  Site: {site}   ·   {n} run(s) per scenario   ·   {len(SEEDS)} scenarios\n"
 		"  Drives the REAL agent path + makes REAL LLM calls on THIS site.\n"
 		"  Never run against production — use a disposable sandbox.\n" + "=" * 72 + "\n"
@@ -55,20 +59,27 @@ def run(n: int = 3, out_path: str | None = None, judge_provider: str | None = No
 	fixtures = ensure_eval_fixtures()
 	print(f"Fixtures ensured: {fixtures}\n")
 
-	# Resolve an INDEPENDENT judge for the quality axis (Slice 2). The judge must run
-	# on a different LLM Provider than the agent; resolve against the suite's profile.
+	# Resolve the INDEPENDENT judge provider(s) for the quality axis (Slice 2/3). A
+	# judge must run on a different LLM Provider than the agent; a panel cycles all of
+	# them across its seats. Resolve against the suite's profile.
 	profile = next(iter(_profiles_in(SEEDS)), "Friday")
-	resolved = resolve_judge_provider(profile, judge_provider)
-	judge_name = resolved.get("name")
+	resolved = resolve_independent_providers(profile, judge_provider)
+	names = resolved.get("names", [])
+	# Build one seat to confirm at least one provider actually constructs; if not, the
+	# quality axis is unavailable (skipped), matching the "no independent judge" path —
+	# never a hard fail just because a named provider can't be built.
+	judge_name = None
 	judge_fn = None
-	if resolved.get("provider") is not None:
-		print(f"Quality judge: {judge_name!r} (independent of agent profile {profile!r})\n")
-		judge_fn = _bind_judge(resolved["provider"])
+	if names and build_panel_seats(names, 1):
+		judge_name = ", ".join(names)
+		print(f"Quality judge provider(s): {judge_name} (independent of agent profile {profile!r})\n")
+		judge_fn = _bind_panel_judge(names)
 	else:
-		print(f"Quality judge UNAVAILABLE — rubric scenarios will SKIP. Reason: {resolved.get('reason')}\n")
+		reason = resolved.get("reason") or "no independent judge provider could be built"
+		print(f"Quality judge UNAVAILABLE — rubric scenarios will SKIP. Reason: {reason}\n")
 
 	results = run_suite(SEEDS, n=n, judge=judge_fn)
-	report = render_markdown(results, site=site, judge_name=judge_name)
+	report = render_markdown(results, title=_TITLE, site=site, judge_name=judge_name)
 
 	out_path = out_path or frappe.get_site_path("private", "files", "friday-eval-report.md")
 	with open(out_path, "w") as fh:
@@ -84,14 +95,20 @@ def run(n: int = 3, out_path: str | None = None, judge_provider: str | None = No
 		"fully_passing": sum(1 for r in results if r["pass_rate"] == 1.0),
 		"judge_provider": judge_name,
 		"quality_blocked": sum(1 for r in results if r.get("quality_unavailable")),
+		"probe_scenarios": sum(1 for r in results if r.get("is_probe")),
 		"report_path": out_path,
 	}
 
 
-def _bind_judge(provider):
-	"""Bind a resolved provider into a `(reply, rubric) -> verdict` callable for the runner."""
+def _bind_panel_judge(names: list[str]):
+	"""Bind the independent provider names into a `(reply, rubric, panel_size) -> verdict`.
 
-	def _judge(reply, rubric):
-		return judge_quality(reply, rubric, provider=provider)
+	Per call it builds `panel_size` seats (cycling `names`, one lens each) and votes via
+	`run_panel`. `panel_size=1` collapses to a single-judge verdict (Slice 2 behaviour).
+	"""
+
+	def _judge(reply, rubric, panel_size):
+		seats = build_panel_seats(names, panel_size)
+		return run_panel(reply, rubric, seats)
 
 	return _judge

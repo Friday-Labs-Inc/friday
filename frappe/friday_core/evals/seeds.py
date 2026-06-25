@@ -32,6 +32,15 @@ for "covers all four".
 Outcome (`expect_contains`) is intentionally light here — the tool-selection seeds
 score mainly tool-selection + economics. Open-ended quality is scored by the Slice 2
 LLM-judge (the `rubric` field), which `self-intro-quality` exercises.
+
+Slice 3 adds three more:
+  * `explain-clearly-panel` — a CONTESTED rubric (is it "clear to a beginner"?) graded
+    by a 3-judge PANEL (`judge_panel=3`); a criterion passes by majority vote, each
+    seat judging from a different lens. Exercises the panel path.
+  * `force-kill-audit`      — a NON-chat probe (#138): drives the real `/stop force`
+    path against a live task and scores the audit trail (Task → ForceKilled + fields).
+  * `pgvector-no-poison`    — a NON-chat probe (#132): re-runs the real pgvector schema
+    setup and proves a failed DDL inside a savepoint doesn't poison the transaction.
 """
 
 from __future__ import annotations
@@ -111,6 +120,52 @@ SEEDS: list[Scenario] = [
 			"The open-ended seed. A self-intro can't be graded by substring — an "
 			"independent LLM-judge scores it against the rubric. Exercises the Slice 2 "
 			"judge path on every real run (and reports SKIP if no second provider exists)."
+		),
+	),
+	Scenario(
+		name="explain-clearly-panel",
+		profile="Friday",
+		prompt="Explain, in 3-4 plain sentences a non-technical person could follow, what an AI agent is.",
+		rubric=(
+			"The explanation is accurate — it does not state anything false about AI agents.",
+			"It is genuinely beginner-friendly: no unexplained jargon, understandable to a non-technical reader.",
+			"It stays within roughly 3-4 sentences and does not pad with filler.",
+		),
+		rubric_note="'Beginner-friendly' is subjective on purpose — that's why a panel votes.",
+		judge_panel=3,
+		tags=("quality", "open-ended", "judge-panel"),
+		note=(
+			"The panel seed. 'Clear to a beginner' is a contested judgement, so a single "
+			"judge is shaky — a 3-seat panel (strict / charitable / fact-focused lenses) "
+			"votes per criterion by majority. With only one independent provider the seats "
+			"share it but keep distinct lenses; with more, they cycle across providers."
+		),
+	),
+	Scenario(
+		name="force-kill-audit",
+		profile="Friday",
+		probe="force_kill_audit",
+		prompt="(probe — no chat turn)",
+		tags=("robustness", "probe", "regression:#138"),
+		note=(
+			"#138 as a real-path probe: create a live Executing Task + an in-flight chat "
+			"job row, drive the genuine force_kill_session, and assert the audit trail — "
+			"Task → ForceKilled with force_killed_by/reason set + the job-id transform ran "
+			"without throwing. (The exact job-id-key regression stays pinned by the mocked "
+			"unit test; this proves the live audit outcome a unit test can't.)"
+		),
+	),
+	Scenario(
+		name="pgvector-no-poison",
+		profile="Friday",
+		probe="pgvector_no_poison",
+		prompt="(probe — no chat turn)",
+		tags=("migrate-gate", "probe", "regression:#132"),
+		note=(
+			"#132 as a real-path probe: re-run the real (idempotent) pgvector + FTS schema "
+			"setup, then prove on THIS Postgres that a failed statement inside a savepoint, "
+			"rolled back, leaves the transaction usable — the exact invariant whose absence "
+			"poisoned migrate. On a non-Postgres backend the probe cleanly skips."
 		),
 	),
 ]
