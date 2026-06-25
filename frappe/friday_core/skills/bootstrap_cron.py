@@ -22,8 +22,10 @@ _SKILL_NAME = "manage-cron-jobs"
 _SKILL = {
 	"description": (
 		"Schedule, list, pause, resume, remove, or trigger your own recurring "
-		"agent runs (Cron Jobs). One 'action' parameter drives it. A job runs the "
-		"given prompt on a schedule and delivers the result to a channel or a file."
+		"agent runs (Cron Jobs). One 'action' parameter drives it. On each fire a "
+		"fresh agent runs the job's prompt and its REPLY is delivered automatically "
+		"to the 'deliver' target (a channel or a file) — the running agent never "
+		"posts; it only produces the content."
 	),
 	"when_to_use": (
 		"Call this when asked to do something on a schedule or repeatedly — "
@@ -39,13 +41,25 @@ _SKILL = {
 				"type": "string",
 				"enum": ["create", "list", "pause", "resume", "remove", "trigger"],
 			},
-			"prompt": {"type": "string", "description": "create: the instruction to run each fire."},
+			"prompt": {
+				"type": "string",
+				"description": (
+					"create: the GENERATIVE task each fire runs — what to PRODUCE, phrased so the "
+					"agent's reply IS the content to deliver. Delivery is automatic (the 'deliver' "
+					"target), so do NOT phrase it as 'post/send/message to the channel' — there is no "
+					'posting tool and the run will refuse. Good: "Output the single line: heartbeat OK". '
+					"Bad: \"Post 'heartbeat OK' in this channel\"."
+				),
+			},
 			"schedule_kind": {"type": "string", "enum": ["cron", "interval", "once"]},
 			"schedule_expression": {
 				"type": "string",
 				"description": "cron: '0 9 * * *'; interval: '30' (minutes); once: ISO datetime.",
 			},
-			"deliver": {"type": "string", "description": "Optional. 'local', 'raven:<channel>', or 'origin'."},
+			"deliver": {
+				"type": "string",
+				"description": "Optional. 'local', 'raven:<channel>', or 'origin'.",
+			},
 			"repeat_times": {"type": "integer", "description": "0 = forever, 1 = once, N = N times."},
 			"name": {"type": "string", "description": "Job name (required for pause/resume/remove/trigger)."},
 		},
@@ -58,9 +72,9 @@ _SKILL = {
 def provision(profile_name: str = "Friday") -> dict:
 	"""Provision the Skill row + role perms + profile wiring. Idempotent."""
 	if not frappe.db.exists("Role", CRON_MANAGER_ROLE):
-		frappe.get_doc(
-			{"doctype": "Role", "role_name": CRON_MANAGER_ROLE, "desk_access": 1}
-		).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Role", "role_name": CRON_MANAGER_ROLE, "desk_access": 1}).insert(
+			ignore_permissions=True
+		)
 
 	# Grant the role full management of Cron Job rows.
 	if frappe.db.exists("DocType", "Cron Job") and not frappe.db.exists(
@@ -81,7 +95,11 @@ def provision(profile_name: str = "Friday") -> dict:
 			}
 		).insert(ignore_permissions=True)
 
-	skill = frappe.get_doc("Skill", _SKILL_NAME) if frappe.db.exists("Skill", _SKILL_NAME) else frappe.new_doc("Skill")
+	skill = (
+		frappe.get_doc("Skill", _SKILL_NAME)
+		if frappe.db.exists("Skill", _SKILL_NAME)
+		else frappe.new_doc("Skill")
+	)
 	skill.skill_name = _SKILL_NAME
 	skill.description = _SKILL["description"]
 	skill.when_to_use = _SKILL["when_to_use"]

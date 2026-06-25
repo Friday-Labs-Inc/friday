@@ -89,9 +89,7 @@ def tick() -> None:
 		try:
 			_fire(row["name"], now)
 		except Exception:
-			frappe.logger("friday.cron").warning(
-				f"cron fire failed for {row['name']!r}", exc_info=True
-			)
+			frappe.logger("friday.cron").warning(f"cron fire failed for {row['name']!r}", exc_info=True)
 
 
 def _fire(job_name: str, now: datetime) -> None:
@@ -114,13 +112,34 @@ def _fire(job_name: str, now: datetime) -> None:
 		{
 			"doctype": "Task",
 			"title": f"[cron] {job.job_name}",
-			"description": job.prompt,
+			"description": _frame_cron_prompt(job.prompt),
 			"assigned_to_profile": job.agent_profile,
 			"workflow_state": "Assigned",
 			"execution_mode": "agentic",
 			"cron_job": job.name,
 		}
 	).insert(ignore_permissions=True)
+
+
+# Framing prepended to every cron run. Friday's cron contract is "agent GENERATES
+# → the Design-86 router DELIVERS" — but a scheduled agent has no live human to
+# read intent from, and a prompt phrased as "post X to the channel" makes it hunt
+# for a (non-existent) posting tool and refuse. This makes the contract explicit so
+# an instructional prompt produces content instead of a refusal; it's a no-op for
+# an already-generative prompt. The creation-side fix (manage-cron-jobs schema)
+# steers agents to write generative prompts in the first place; this is the safety
+# net for the ones that don't.
+_CRON_FRAMING = (
+	"You are a scheduled job. Produce the requested output as your reply text. It is "
+	"delivered automatically to the configured destination, so you do NOT have — and "
+	"do NOT need — any tool to post, send, or message a channel; never refuse for lack "
+	"of one. Just produce the content.\n\nTask: "
+)
+
+
+def _frame_cron_prompt(prompt: str) -> str:
+	"""Wrap a job prompt so the run produces content (delivery is automatic)."""
+	return f"{_CRON_FRAMING}{(prompt or '').strip()}"
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +183,7 @@ def on_task_terminal(task_doc, state: str) -> None:
 			job.last_delivery_error = None
 		except Exception as exc:
 			job.last_delivery_error = str(exc)
-			frappe.logger("friday.cron").warning(
-				f"cron delivery failed for {job.name!r}", exc_info=True
-			)
+			frappe.logger("friday.cron").warning(f"cron delivery failed for {job.name!r}", exc_info=True)
 
 	# Bookkeeping — record the run and apply the repeat limit.
 	job.last_run_at = now
@@ -186,5 +203,5 @@ def _result_summary(result: str | None) -> str:
 		return ""
 	try:
 		return (json.loads(result) or {}).get("summary", "") or ""
-	except (ValueError, TypeError):
+	except ValueError, TypeError:
 		return result

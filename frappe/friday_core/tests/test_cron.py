@@ -93,7 +93,29 @@ class TestTick(unittest.TestCase):
 		self.assertEqual(created["task"]["assigned_to_profile"], "Friday")
 		self.assertEqual(created["task"]["cron_job"], "CRON-1")
 		self.assertEqual(created["task"]["workflow_state"], "Assigned")
-		self.assertEqual(created["task"]["description"], "summarise yesterday")
+		# The run description carries the generative framing (delivery is automatic,
+		# no posting tool needed) wrapped around the job prompt — so an instructional
+		# prompt produces content instead of refusing for lack of a posting tool.
+		desc = created["task"]["description"]
+		self.assertIn("summarise yesterday", desc)
+		self.assertIn("delivered automatically", desc)
+		self.assertIn("never refuse", desc)
+
+
+class TestFramePrompt(unittest.TestCase):
+	def test_framing_wraps_prompt_and_is_idempotent_shape(self):
+		from frappe.friday_core.cron import scheduler
+
+		framed = scheduler._frame_cron_prompt("Post 'heartbeat OK' in this channel")
+		# The instructional prompt survives verbatim AFTER the framing that tells the
+		# agent it needs no posting tool — converting a refusal into produced content.
+		self.assertTrue(framed.endswith("Task: Post 'heartbeat OK' in this channel"))
+		self.assertIn("do NOT need", framed)
+
+	def test_framing_handles_blank(self):
+		from frappe.friday_core.cron import scheduler
+
+		self.assertTrue(scheduler._frame_cron_prompt("").endswith("Task: "))
 
 
 class TestCompletionDelivery(unittest.TestCase):
