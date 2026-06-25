@@ -369,8 +369,9 @@ class TestResolveJudgeProvider(unittest.TestCase):
 		from frappe.friday_core.llm import provider as prov
 
 		sentinel = object()
-		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch.object(
-			prov, "get_provider_by_name", return_value=sentinel
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch.object(prov, "get_provider_by_name", return_value=sentinel),
 		):
 			out = judge.resolve_judge_provider("Friday", judge_provider_name="Claude")
 		self.assertIs(out["provider"], sentinel)
@@ -382,9 +383,11 @@ class TestResolveJudgeProvider(unittest.TestCase):
 
 		sentinel = object()
 		rows = [{"name": "MiniMax"}, {"name": "Claude"}]
-		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch(
-			"frappe.get_all", return_value=rows
-		), mock.patch.object(prov, "get_provider_by_name", return_value=sentinel):
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch("frappe.get_all", return_value=rows),
+			mock.patch.object(prov, "get_provider_by_name", return_value=sentinel),
+		):
 			out = judge.resolve_judge_provider("Friday")
 		self.assertEqual(out["name"], "Claude")
 		self.assertIs(out["provider"], sentinel)
@@ -393,8 +396,9 @@ class TestResolveJudgeProvider(unittest.TestCase):
 		from frappe.friday_core.evals import judge
 		from frappe.friday_core.llm import provider as prov
 
-		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch(
-			"frappe.get_all", return_value=[{"name": "MiniMax"}]
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch("frappe.get_all", return_value=[{"name": "MiniMax"}]),
 		):
 			out = judge.resolve_judge_provider("Friday")
 		self.assertIsNone(out["provider"])
@@ -409,8 +413,12 @@ class TestRunnerQuality(unittest.TestCase):
 		return "hello there"
 
 	def test_quality_pass_gates_into_overall_pass(self):
-		def judge(reply, rubric):
-			return {"ok": True, "unmet": [], "criteria": [{"criterion": "must be nice", "met": True, "reason": "ok"}]}
+		def judge(reply, rubric, panel_size):
+			return {
+				"ok": True,
+				"unmet": [],
+				"criteria": [{"criterion": "must be nice", "met": True, "reason": "ok"}],
+			}
 
 		with mock.patch("frappe.get_all", return_value=[]):
 			agg = runner.run_scenario(
@@ -421,7 +429,7 @@ class TestRunnerQuality(unittest.TestCase):
 		self.assertFalse(agg["quality_unavailable"])
 
 	def test_quality_fail_fails_the_run(self):
-		def judge(reply, rubric):
+		def judge(reply, rubric, panel_size):
 			return {
 				"ok": False,
 				"unmet": ["must be nice"],
@@ -441,7 +449,9 @@ class TestRunnerQuality(unittest.TestCase):
 		# Rubric scenario, judge=None (no independent provider). Quality is skipped: it
 		# does NOT gate the pass, but the aggregate flags the axis as unavailable.
 		with mock.patch("frappe.get_all", return_value=[]):
-			agg = runner.run_scenario(self._rubric_scenario(), n=1, driver=self._driver, now=_clock([_T0, _T0]))
+			agg = runner.run_scenario(
+				self._rubric_scenario(), n=1, driver=self._driver, now=_clock([_T0, _T0])
+			)
 		self.assertTrue(agg["quality_unavailable"])
 		self.assertIsNone(agg["quality_ok_rate"])
 		self.assertEqual(agg["pass_rate"], 1.0)  # tool + outcome still pass
@@ -449,12 +459,14 @@ class TestRunnerQuality(unittest.TestCase):
 
 	def test_no_rubric_means_judge_is_not_applied(self):
 		# A scenario with no rubric must never invoke the judge, even if one is passed.
-		def exploding_judge(reply, rubric):
+		def exploding_judge(reply, rubric, panel_size):
 			raise AssertionError("judge must not run for a no-rubric scenario")
 
 		scn = Scenario(name="nr", profile="Friday", prompt="hi")
 		with mock.patch("frappe.get_all", return_value=[]):
-			agg = runner.run_scenario(scn, n=1, driver=self._driver, now=_clock([_T0, _T0]), judge=exploding_judge)
+			agg = runner.run_scenario(
+				scn, n=1, driver=self._driver, now=_clock([_T0, _T0]), judge=exploding_judge
+			)
 		self.assertFalse(agg["has_rubric"])
 		self.assertIsNone(agg["quality_ok_rate"])
 		self.assertIsNone(agg["runs"][0]["quality"])
@@ -517,6 +529,486 @@ class TestReportQuality(unittest.TestCase):
 		md = report.render_markdown([row])
 		self.assertIn("unmet rubric ['be concise']", md)
 		self.assertIn("too long", md)
+
+	def test_panel_vote_split_rendered(self):
+		row = self._row(
+			scenario="panel",
+			pass_rate=0.0,
+			quality_ok_rate=0.0,
+			runs=[
+				{
+					"i": 0,
+					"pass": False,
+					"error": None,
+					"tool": {"called": [], "missing": [], "forbidden_hit": []},
+					"outcome": {"missing": []},
+					"quality": {
+						"ok": False,
+						"unmet": ["beginner-friendly"],
+						"criteria": [
+							{
+								"criterion": "beginner-friendly",
+								"met": False,
+								"reason": "jargon",
+								"votes": "1/3",
+							}
+						],
+					},
+				}
+			],
+		)
+		md = report.render_markdown([row])
+		self.assertIn("[1/3]", md)  # the panel vote split appears in the failure breakdown
+
+	def test_probe_failure_shows_failed_checks(self):
+		row = {
+			"scenario": "force-kill-audit",
+			"tags": ["probe"],
+			"note": "",
+			"n": 1,
+			"is_probe": True,
+			"pass_rate": 0.0,
+			"tool_ok_rate": None,
+			"has_rubric": False,
+			"quality_ok_rate": None,
+			"quality_unavailable": False,
+			"latency_ms": {"median": 1, "min": 1, "max": 1, "mean": 1},
+			"tokens": {"median": 0, "min": 0, "max": 0, "mean": 0},
+			"cost_usd_mean": 0.0,
+			"errors": [],
+			"runs": [
+				{
+					"i": 0,
+					"pass": False,
+					"error": None,
+					"tool": None,
+					"outcome": None,
+					"quality": None,
+					"probe": {
+						"ok": False,
+						"checks": [{"name": "task → ForceKilled", "ok": False, "detail": "Executing"}],
+					},
+				}
+			],
+		}
+		md = report.render_markdown([row])
+		self.assertIn("check(s) failed", md)
+		self.assertIn("task → ForceKilled", md)
+		self.assertIn("Executing", md)
+		# A probe scenario has no tool axis → its Tool-sel cell is an em dash.
+		self.assertIn("| force-kill-audit | 0% | — |", md)
+
+
+# ---------------------------------------------------------------------------
+# Slice 3 — judge panel + non-chat probes
+# ---------------------------------------------------------------------------
+
+
+def _met(crit, reason="ok"):
+	return '{"criteria": [{"criterion": "%s", "met": true, "reason": "%s"}]}' % (crit, reason)
+
+
+def _unmet(crit, reason="no"):
+	return '{"criteria": [{"criterion": "%s", "met": false, "reason": "%s"}]}' % (crit, reason)
+
+
+class TestPanel(unittest.TestCase):
+	def _seat(self, content, lens=""):
+		return {"provider": _FakeProvider(content), "name": "P", "lens": lens}
+
+	def test_majority_met_passes(self):
+		from frappe.friday_core.evals import judge
+
+		seats = [self._seat(_met("c1")), self._seat(_met("c1")), self._seat(_unmet("c1"))]
+		v = judge.run_panel("reply", ("c1",), seats)
+		self.assertTrue(v["ok"])
+		self.assertEqual(v["criteria"][0]["votes"], "2/3")
+		self.assertEqual(v["panel_size"], 3)
+
+	def test_minority_met_fails(self):
+		from frappe.friday_core.evals import judge
+
+		seats = [self._seat(_met("c1")), self._seat(_unmet("c1")), self._seat(_unmet("c1"))]
+		v = judge.run_panel("reply", ("c1",), seats)
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["criteria"][0]["votes"], "1/3")
+		self.assertEqual(v["unmet"], ["c1"])
+
+	def test_omitted_verdict_counts_as_not_met(self):
+		from frappe.friday_core.evals import judge
+
+		# Two seats return unparseable output → no met vote → 1/3 → criterion fails.
+		seats = [self._seat(_met("c1")), self._seat("garbage"), self._seat("also garbage")]
+		v = judge.run_panel("reply", ("c1",), seats)
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["criteria"][0]["votes"], "1/3")
+
+	def test_single_seat_behaves_like_single_judge(self):
+		from frappe.friday_core.evals import judge
+
+		v = judge.run_panel("reply", ("c1",), [self._seat(_met("c1"))])
+		self.assertTrue(v["ok"])
+		self.assertEqual(v["criteria"][0]["votes"], "1/1")
+		self.assertEqual(v["panel_size"], 1)
+
+	def test_no_seats_is_an_error_not_a_crash(self):
+		from frappe.friday_core.evals import judge
+
+		v = judge.run_panel("reply", ("c1",), [])
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["panel_size"], 0)
+
+	def test_seats_summary_carries_lens(self):
+		from frappe.friday_core.evals import judge
+
+		seats = [self._seat(_met("c1"), lens="strict-literal")]
+		v = judge.run_panel("reply", ("c1",), seats)
+		self.assertEqual(v["seats"][0]["lens"], "strict-literal")
+
+
+class TestBuildPanelSeats(unittest.TestCase):
+	def test_cycles_names_and_assigns_distinct_lenses(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "get_provider_by_name", side_effect=lambda nm: f"prov-{nm}"):
+			seats = judge.build_panel_seats(["A", "B"], 3)
+		self.assertEqual([s["name"] for s in seats], ["A", "B", "A"])
+		# Lenses assigned by seat index from the deterministic order — all distinct here.
+		self.assertEqual([s["lens"] for s in seats], list(judge._LENS_ORDER))
+		self.assertEqual(seats[0]["provider"], "prov-A")
+
+	def test_single_seat_has_no_lens(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "get_provider_by_name", side_effect=lambda nm: f"prov-{nm}"):
+			seats = judge.build_panel_seats(["A"], 1)
+		self.assertEqual(len(seats), 1)
+		self.assertEqual(seats[0]["lens"], "")
+
+	def test_skips_unbuildable_provider(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		def gp(nm):
+			if nm == "B":
+				raise prov.LLMError("cannot build B")
+			return f"prov-{nm}"
+
+		with mock.patch.object(prov, "get_provider_by_name", side_effect=gp):
+			seats = judge.build_panel_seats(["A", "B"], 2)
+		self.assertEqual([s["name"] for s in seats], ["A"])
+
+	def test_empty_names_or_zero_size(self):
+		from frappe.friday_core.evals import judge
+
+		self.assertEqual(judge.build_panel_seats([], 3), [])
+		self.assertEqual(judge.build_panel_seats(["A"], 0), [])
+
+
+class TestJudgeRobustness(unittest.TestCase):
+	"""Hardening: scoring is anchored on the rubric, matched by text — not by position."""
+
+	def test_reordered_criteria_are_matched_by_text(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("first thing", "second thing")
+		# Judge returns them in the WRONG order — text-match must still score correctly.
+		content = (
+			'{"criteria": ['
+			'{"criterion": "second thing", "met": false, "reason": "no"},'
+			'{"criterion": "first thing", "met": true, "reason": "yes"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertEqual([c["criterion"] for c in v["criteria"]], ["first thing", "second thing"])
+		self.assertTrue(v["criteria"][0]["met"])  # "first thing" met
+		self.assertFalse(v["criteria"][1]["met"])  # "second thing" not
+		self.assertEqual(v["unmet"], ["second thing"])
+
+	def test_count_gaming_cannot_pass_an_unaddressed_criterion(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("alpha", "beta")
+		# Right COUNT (2) but both are "alpha" — "beta" was never judged → must be not-met.
+		content = (
+			'{"criteria": ['
+			'{"criterion": "alpha", "met": true, "reason": "ok"},'
+			'{"criterion": "alpha", "met": true, "reason": "dup"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["unmet"], ["beta"])
+
+	def test_punctuation_and_case_differences_still_match(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("Is concise",)
+		content = '{"criteria": [{"criterion": "is concise.", "met": true, "reason": "ok"}]}'
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])
+
+	def test_invented_extra_criterion_is_ignored(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("only this",)
+		content = (
+			'{"criteria": ['
+			'{"criterion": "only this", "met": true, "reason": "ok"},'
+			'{"criterion": "an invented criterion", "met": false, "reason": "noise"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])  # the invented not-met item is noise, not a rubric criterion
+		self.assertEqual(len(v["criteria"]), 1)
+
+	def test_model_is_passed_through_to_chat(self):
+		from frappe.friday_core.evals import judge
+
+		seen = {}
+
+		class _CapturingProvider:
+			def chat(self, messages, tools=None, model=None):
+				seen["model"] = model
+				return {"content": '{"criteria": [{"criterion": "c", "met": true, "reason": "ok"}]}'}
+
+		judge.judge_quality("r", ("c",), provider=_CapturingProvider(), model="judge-model-x")
+		self.assertEqual(seen["model"], "judge-model-x")
+
+
+class TestPanelRobustness(unittest.TestCase):
+	def _seat(self, content, lens=""):
+		return {"provider": _FakeProvider(content), "name": "P", "lens": lens}
+
+	def test_panel_matches_reordered_seat_verdicts(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("aa", "bb")
+		# Seat returns criteria reversed; the panel must still vote per the right criterion.
+		reordered = (
+			'{"criteria": ['
+			'{"criterion": "bb", "met": true, "reason": "b-ok"},'
+			'{"criterion": "aa", "met": false, "reason": "a-bad"}]}'
+		)
+		seats = [self._seat(reordered)]
+		v = judge.run_panel("r", rubric, seats)
+		by_crit = {c["criterion"]: c for c in v["criteria"]}
+		self.assertFalse(by_crit["aa"]["met"])
+		self.assertTrue(by_crit["bb"]["met"])
+
+	def test_failed_criterion_surfaces_a_dissenting_reason(self):
+		from frappe.friday_core.evals import judge
+
+		# 1 met (reason "good"), 2 not-met (reasons "jargon"): criterion fails 1/3 and the
+		# shown reason must be a not-met one, not the lone "good".
+		seats = [
+			self._seat('{"criteria": [{"criterion": "c", "met": true, "reason": "good"}]}'),
+			self._seat('{"criteria": [{"criterion": "c", "met": false, "reason": "jargon"}]}'),
+			self._seat('{"criteria": [{"criterion": "c", "met": false, "reason": "jargon"}]}'),
+		]
+		v = judge.run_panel("r", ("c",), seats)
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["criteria"][0]["reason"], "jargon")
+
+
+class TestResolveIndependentProviders(unittest.TestCase):
+	def test_explicit_same_as_agent_is_rejected(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}):
+			out = judge.resolve_independent_providers("Friday", judge_provider_name="MiniMax")
+		self.assertEqual(out["names"], [])
+		self.assertIn("not independent", out["reason"].lower())
+
+	def test_explicit_independent_is_the_only_candidate(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}):
+			out = judge.resolve_independent_providers("Friday", judge_provider_name="Claude")
+		self.assertEqual(out["names"], ["Claude"])
+
+	def test_autodiscovery_excludes_agent_provider(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		rows = [{"name": "MiniMax"}, {"name": "Claude"}, {"name": "GPT"}]
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch("frappe.get_all", return_value=rows),
+		):
+			out = judge.resolve_independent_providers("Friday")
+		self.assertEqual(out["names"], ["Claude", "GPT"])
+
+	def test_blocked_when_only_agent_provider(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch("frappe.get_all", return_value=[{"name": "MiniMax"}]),
+		):
+			out = judge.resolve_independent_providers("Friday")
+		self.assertEqual(out["names"], [])
+		self.assertIn("no independent judge", out["reason"].lower())
+
+
+class TestProbes(unittest.TestCase):
+	def test_force_kill_audit_happy_path(self):
+		import types
+
+		from frappe.friday_core.evals import probes
+
+		op = probes._FORCE_KILL_OPERATOR
+		m_task = mock.MagicMock()
+		m_task.name = "TASK-1"
+		m_task.insert.return_value = m_task
+		m_cm = mock.MagicMock()
+		m_cm.name = "CM-1"
+		m_cm.insert.return_value = m_cm
+
+		with (
+			mock.patch.object(probes, "frappe") as fr,
+			mock.patch(
+				"frappe.friday_core.gateway.interrupt.force_kill_session",
+				return_value={
+					"tasks_now_forcekilled": ["TASK-1"],
+					"jobs_cancelled": 0,
+					"jobs_already_done": 1,
+				},
+			),
+		):
+			fr.get_doc.side_effect = [m_task, m_cm]
+			fr.db.get_value.return_value = types.SimpleNamespace(
+				workflow_state="ForceKilled", force_killed_by=op, force_kill_reason="operator /stop force"
+			)
+			fr.get_all.return_value = [{"name": "EV-1"}]
+			v = probes.probe_force_kill_audit(None, "sess-1")
+
+		self.assertTrue(v["ok"], v)
+		self.assertTrue(all(c["ok"] for c in v["checks"]))
+
+	def test_force_kill_audit_flags_wrong_state(self):
+		import types
+
+		from frappe.friday_core.evals import probes
+
+		m_task = mock.MagicMock()
+		m_task.name = "TASK-1"
+		m_task.insert.return_value = m_task
+		m_cm = mock.MagicMock()
+		m_cm.name = "CM-1"
+		m_cm.insert.return_value = m_cm
+
+		with (
+			mock.patch.object(probes, "frappe") as fr,
+			mock.patch(
+				"frappe.friday_core.gateway.interrupt.force_kill_session",
+				return_value={"tasks_now_forcekilled": [], "jobs_cancelled": 0, "jobs_already_done": 0},
+			),
+		):
+			fr.get_doc.side_effect = [m_task, m_cm]
+			fr.db.get_value.return_value = types.SimpleNamespace(
+				workflow_state="Executing", force_killed_by=None, force_kill_reason=None
+			)
+			fr.get_all.return_value = []
+			v = probes.probe_force_kill_audit(None, "sess-1")
+
+		self.assertFalse(v["ok"])
+		states = {c["name"]: c["ok"] for c in v["checks"]}
+		self.assertFalse(states["task → ForceKilled"])
+
+	def test_pgvector_probe_skips_on_non_postgres(self):
+		from frappe.friday_core.evals import probes
+
+		with mock.patch.object(probes, "frappe") as fr:
+			fr.db.db_type = "mysql"
+			v = probes.probe_pgvector_no_poison(None, "sess-1")
+		self.assertTrue(v["ok"])
+		self.assertIn("postgres-only", v["checks"][0]["name"])
+
+	def test_pgvector_probe_postgres_happy_path(self):
+		from frappe.friday_core.evals import probes
+		from frappe.friday_core.llm import after_migrate
+
+		with (
+			mock.patch.object(probes, "frappe") as fr,
+			mock.patch.object(after_migrate, "ensure_memory_search_schema") as m1,
+			mock.patch.object(after_migrate, "ensure_memory_embedding_schema") as m2,
+			mock.patch.object(after_migrate, "ensure_chatmessage_search_schema") as m3,
+		):
+			# The probe labels each check by the function's __name__; MagicMocks lack one.
+			m1.__name__, m2.__name__, m3.__name__ = ("ensure_memory_search_schema", "emb", "fts")
+			fr.db.db_type = "postgres"
+			fr.db.sql.return_value = [(1,)]
+			v = probes.probe_pgvector_no_poison(None, "sess-1")
+		self.assertTrue(v["ok"], v)
+		# The savepoint-recovery check must be present (the core #132 invariant).
+		self.assertTrue(any("savepoint" in c["name"] for c in v["checks"]))
+
+
+class TestRunnerProbeAndPanel(unittest.TestCase):
+	def test_probe_scenario_passes_on_ok(self):
+		scn = Scenario(name="p", profile="Friday", prompt="x", probe="myprobe")
+
+		def lookup(name):
+			return lambda scenario, sid: {"ok": True, "checks": [{"name": "c", "ok": True}]}
+
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(scn, n=1, now=_clock([_T0, _T0]), probe_lookup=lookup)
+		self.assertTrue(agg["is_probe"])
+		self.assertEqual(agg["pass_rate"], 1.0)
+		self.assertIsNone(agg["tool_ok_rate"])
+		self.assertTrue(agg["runs"][0]["probe"]["ok"])
+
+	def test_unknown_probe_is_an_error(self):
+		scn = Scenario(name="p", profile="Friday", prompt="x", probe="missing")
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(scn, n=1, now=_clock([_T0, _T0]), probe_lookup=lambda name: None)
+		self.assertEqual(agg["pass_rate"], 0.0)
+		self.assertIn("no probe registered", agg["errors"][0])
+
+	def test_probe_exception_is_caught(self):
+		def boom(scenario, sid):
+			raise RuntimeError("kaboom")
+
+		scn = Scenario(name="p", profile="Friday", prompt="x", probe="boom")
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(scn, n=1, now=_clock([_T0, _T0]), probe_lookup=lambda name: boom)
+		self.assertEqual(agg["pass_rate"], 0.0)
+		self.assertTrue(agg["errors"][0].startswith("RuntimeError"))
+
+	def test_panel_size_is_threaded_to_the_judge(self):
+		captured = {}
+
+		def judge(reply, rubric, panel_size):
+			captured["panel_size"] = panel_size
+			return {"ok": True, "unmet": [], "criteria": [], "panel_size": panel_size}
+
+		scn = Scenario(name="q", profile="Friday", prompt="hi", rubric=("c",), judge_panel=3)
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(
+				scn, n=1, driver=lambda s, sid: "hi", now=_clock([_T0, _T0]), judge=judge
+			)
+		self.assertEqual(captured["panel_size"], 3)
+		self.assertEqual(agg["runs"][0]["quality"]["panel_size"], 3)
+
+
+class TestSlice3Seeds(unittest.TestCase):
+	def test_panel_and_probe_seeds_present(self):
+		from frappe.friday_core.evals.seeds import SEEDS
+
+		by_name = {s.name: s for s in SEEDS}
+		panel = by_name["explain-clearly-panel"]
+		self.assertEqual(panel.judge_panel, 3)
+		self.assertTrue(panel.rubric)
+		self.assertEqual(by_name["force-kill-audit"].probe, "force_kill_audit")
+		self.assertEqual(by_name["pgvector-no-poison"].probe, "pgvector_no_poison")
+		# Probe seeds must name a probe that actually exists in the registry.
+		from frappe.friday_core.evals.probes import PROBES
+
+		for name in ("force-kill-audit", "pgvector-no-poison"):
+			self.assertIn(by_name[name].probe, PROBES)
 
 
 if __name__ == "__main__":

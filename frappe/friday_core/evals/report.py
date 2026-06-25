@@ -33,6 +33,12 @@ def _quality_cell(r: dict) -> str:
 	return f"{rate:.0%}" if rate is not None else "SKIP"
 
 
+def _tool_cell(r: dict) -> str:
+	"""The Tool-sel column — '—' for a probe scenario (no tool axis)."""
+	rate = r.get("tool_ok_rate")
+	return "—" if rate is None else f"{rate:.0%}"
+
+
 def render_markdown(
 	results: list[dict],
 	*,
@@ -70,10 +76,10 @@ def render_markdown(
 	lines.append("|---|---|---|---|---|---|---|---|")
 	for r in results:
 		lines.append(
-			"| {s} | {p:.0%} | {t:.0%} | {q} | {lat:.0f} | {tok:.0f} | {cost:.4f} | {tags} |".format(
+			"| {s} | {p:.0%} | {t} | {q} | {lat:.0f} | {tok:.0f} | {cost:.4f} | {tags} |".format(
 				s=r["scenario"],
 				p=r["pass_rate"],
-				t=r["tool_ok_rate"],
+				t=_tool_cell(r),
 				q=_quality_cell(r),
 				lat=r["latency_ms"]["median"],
 				tok=r["tokens"]["median"],
@@ -92,6 +98,19 @@ def render_markdown(
 			for run in r["runs"]:
 				if run["pass"]:
 					continue
+				probe = run.get("probe")
+				if run.get("tool") is None and (probe is not None or run["error"]):
+					# Probe run: report the failed checks (the probe's own audit view).
+					why = []
+					if run["error"]:
+						why.append(f"errored ({run['error']})")
+					failed = [c for c in (probe or {}).get("checks", []) if not c.get("ok")]
+					if failed:
+						why.append(f"{len(failed)} check(s) failed")
+					lines.append(f"- **run {run['i']}**: " + "; ".join(why or ["unknown"]))
+					for c in failed:
+						lines.append(f"  - ✗ {c.get('name', '')} — {c.get('detail', '')}")
+					continue
 				why = []
 				if run["error"]:
 					why.append(f"errored ({run['error']})")
@@ -109,9 +128,11 @@ def render_markdown(
 				lines.append(f"- **run {run['i']}**: " + "; ".join(why or ["unknown"]))
 				lines.append(f"  - tools actually called: `{run['tool']['called'] or '[]'}`")
 				# Per-criterion judge reasons — the open-ended credit-assignment view.
+				# For a panel, show the vote split (e.g. "1/3") alongside the reason.
 				for crit in quality.get("criteria", []):
 					if not crit.get("met"):
-						lines.append(f"  - ✗ _{crit['criterion']}_ — {crit.get('reason', '')}")
+						votes = f" [{crit['votes']}]" if crit.get("votes") else ""
+						lines.append(f"  - ✗ _{crit['criterion']}_{votes} — {crit.get('reason', '')}")
 			lines.append("")
 	else:
 		lines += ["", "_No failures — every scenario passed every run._", ""]

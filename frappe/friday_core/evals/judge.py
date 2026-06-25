@@ -46,16 +46,42 @@ _JUDGE_SYSTEM = (
 )
 
 
-def build_judge_messages(reply: str, rubric: tuple[str, ...], rubric_note: str = "") -> list[dict]:
+# Perspective "lenses" for a judge PANEL (Slice 3). When a panel has more seats than
+# there are distinct independent providers, seats reuse a provider but each gets a
+# different lens — so the votes are genuinely diverse perspectives, not the same call
+# N times. Each lens is a one-sentence framing appended to the judge's instructions.
+_LENSES: dict[str, str] = {
+	"strict-literal": (
+		"Judge LITERALLY and strictly: a criterion is met only if the reply clearly and "
+		"unambiguously satisfies it; when in doubt, mark it not-met."
+	),
+	"charitable-intent": (
+		"Judge by the reply's evident INTENT: if it plainly tries to satisfy the criterion "
+		"and a reasonable reader would accept it, mark it met even if the wording is imperfect."
+	),
+	"fact-focused": (
+		"Focus on FACTUAL soundness: be lenient about style and length, but mark a criterion "
+		"not-met if the reply states anything false, fabricated, or unsupported."
+	),
+}
+# The deterministic seat → lens order (so a panel's seats are reproducible run to run).
+_LENS_ORDER: tuple[str, ...] = ("strict-literal", "charitable-intent", "fact-focused")
+
+
+def build_judge_messages(
+	reply: str, rubric: tuple[str, ...], rubric_note: str = "", lens: str = ""
+) -> list[dict]:
 	"""Assemble the (system, user) messages for one judge call.
 
 	Factored out so a test can assert the prompt carries the reply + every criterion
-	without invoking a model.
+	without invoking a model. `lens` (optional, Slice 3) appends a perspective framing
+	so panel seats sharing a provider still judge from distinct angles.
 	"""
 	numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(rubric))
 	note = f"\n\nGuidance for judging: {rubric_note}" if rubric_note else ""
+	lens_hint = f"\n\nYour judging lens for this pass: {_LENSES[lens]}" if lens in _LENSES else ""
 	user = (
-		f"CRITERIA (judge each independently):\n{numbered}{note}\n\n"
+		f"CRITERIA (judge each independently):\n{numbered}{note}{lens_hint}\n\n"
 		f"REPLY TO JUDGE (between the markers):\n"
 		f"<<<REPLY>>>\n{reply}\n<<<END REPLY>>>"
 	)
@@ -90,24 +116,34 @@ def _extract_json(text: str) -> dict | None:
 	return None
 
 
-def judge_quality(reply: str, rubric: tuple[str, ...], *, provider, model: str | None = None) -> dict:
+def judge_quality(
+	reply: str, rubric: tuple[str, ...], *, provider, model: str | None = None, lens: str = ""
+) -> dict:
 	"""Score `reply` against `rubric` with an independent model. Never raises.
 
 	Returns a verdict dict:
-	  criteria      [{criterion, met, reason}] — one per rubric item the judge returned
-	  unmet         the criteria the judge marked not-met (the credit-assignment view)
+	  criteria      [{criterion, met, reason}] — one per RUBRIC criterion (in rubric
+	                order), each matched to the judge's verdict by normalised text
+	  unmet         the rubric criteria not met (the credit-assignment view)
 	  met_count/total
 	  ok            True iff every rubric criterion is met (per-criterion checklist)
 	  error         set (and ok False) if the judge call failed or was unparseable
+
+	Scoring is anchored on the RUBRIC, not on whatever the judge echoed: a criterion the
+	judge reordered is still matched (by text); one it duplicated, skipped, or invented
+	can't shift the verdict — an unmatched rubric criterion is not-met. So a judge can't
+	pass the checklist by returning the right COUNT of wrong items.
+
+	`lens` (Slice 3) selects a perspective framing for a panel seat; "" = neutral.
 	"""
 	total = len(rubric)
 	if total == 0:
 		# No rubric → nothing to judge. Treated as "not applicable" by the runner.
 		return {"criteria": [], "unmet": [], "met_count": 0, "total": 0, "ok": True}
 
-	messages = build_judge_messages(reply, rubric, "")
+	messages = build_judge_messages(reply, rubric, "", lens)
 	try:
-		resp = provider.chat(messages)
+		resp = provider.chat(messages, model=model)
 		content = resp["content"] if isinstance(resp, dict) else getattr(resp, "content", "")
 	except Exception as exc:  # a judge transport failure is a quality fail, not a crash.
 		return _judge_error(rubric, f"judge call failed: {type(exc).__name__}")
@@ -116,29 +152,27 @@ def judge_quality(reply: str, rubric: tuple[str, ...], *, provider, model: str |
 	if not parsed or not isinstance(parsed.get("criteria"), list):
 		return _judge_error(rubric, "judge returned unparseable output")
 
+	raw = [item for item in parsed["criteria"] if isinstance(item, dict)]
+	# Anchor on the rubric: one output entry per rubric criterion, matched to the judge's
+	# verdict by text (fallback index). An unmatched criterion is not-met — so omission,
+	# duplication, or reordering by the judge can't game the checklist.
 	criteria = []
-	for item in parsed["criteria"]:
-		if not isinstance(item, dict):
-			continue
+	for crit in rubric:
+		item = _seat_item_for(raw, crit)
 		criteria.append(
 			{
-				"criterion": str(item.get("criterion", "")),
-				"met": bool(item.get("met", False)),
-				"reason": str(item.get("reason", "")),
+				"criterion": crit,
+				"met": bool(item.get("met", False)) if item else False,
+				"reason": str(item.get("reason", "")) if item else "",
 			}
 		)
 	unmet = [c["criterion"] for c in criteria if not c["met"]]
-	met_count = sum(1 for c in criteria if c["met"])
-	# A judge that returned fewer verdicts than criteria hasn't covered the checklist —
-	# treat the shortfall as not-met so a truncated judge reply can't pass by omission.
-	covered = len(criteria)
-	ok = covered >= total and not unmet
 	return {
 		"criteria": criteria,
 		"unmet": unmet,
-		"met_count": met_count,
+		"met_count": sum(1 for c in criteria if c["met"]),
 		"total": total,
-		"ok": ok,
+		"ok": not unmet,
 	}
 
 
@@ -151,6 +185,104 @@ def _judge_error(rubric: tuple[str, ...], reason: str) -> dict:
 		"total": len(rubric),
 		"ok": False,
 		"error": reason,
+	}
+
+
+def _norm(s: str) -> str:
+	"""Normalise a criterion string for matching: lowercase, punctuation → space, collapse.
+
+	So "Is concise." and "is concise" match, but two genuinely different criteria don't.
+	"""
+	return " ".join(re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower()).split())
+
+
+def _seat_item_for(items: list[dict], criterion: str) -> dict | None:
+	"""Find a judge's verdict for ONE rubric criterion, matched by normalised text.
+
+	Match is by text, NOT array position — so a judge that reorders criteria is still
+	scored correctly, and one that omits, duplicates, or invents criteria can't shift a
+	verdict by position. Returns None when this criterion was not addressed at all, which
+	the caller treats as not-met (a criterion can't be met without an explicit verdict).
+	No index fallback by design: falling back to position is exactly what lets a judge
+	pass a criterion it never actually judged (e.g. two copies of criterion A, no B → B
+	must be not-met, not silently matched to the second A).
+	"""
+	target = _norm(criterion)
+	for it in items:
+		if _norm(it.get("criterion", "")) == target:
+			return it
+	return None
+
+
+def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
+	"""Score `reply` with a PANEL of independent judges and vote per criterion.
+
+	`seats` is a list of `{"provider": <built>, "name": <str>, "lens": <str>}`. Each
+	seat judges the full rubric from its lens; a criterion is **met** iff a strict
+	majority of seats marked it met (a seat that errored or omitted a verdict counts
+	as not-met for that criterion — it cannot pass by omission). The scenario passes
+	the quality axis iff every criterion wins its vote.
+
+	Returns the same verdict shape as `judge_quality` (so the runner + report are
+	unchanged) plus panel detail: `panel_size`, per-criterion `votes` ("k/N"), and a
+	`seats` summary. A 1-seat panel is exactly the Slice 2 single-judge verdict.
+	"""
+	total = len(rubric)
+	n = len(seats)
+	if total == 0:
+		return {"criteria": [], "unmet": [], "met_count": 0, "total": 0, "ok": True, "panel_size": n}
+	if n == 0:
+		return {**_judge_error(rubric, "panel has no seats"), "panel_size": 0, "seats": []}
+
+	# Each seat's full verdict (judge_quality never raises).
+	seat_verdicts = [
+		judge_quality(reply, rubric, provider=s["provider"], lens=s.get("lens", "")) for s in seats
+	]
+
+	criteria = []
+	unmet = []
+	for crit in rubric:
+		votes_met = 0
+		met_reasons: list[str] = []
+		unmet_reasons: list[str] = []
+		for v in seat_verdicts:
+			# Match this seat's verdict to THIS rubric criterion by text; a seat that
+			# didn't address it (None) is a silent not-met vote.
+			item = _seat_item_for(v.get("criteria", []), crit)
+			if item is None:
+				continue
+			if item.get("met"):
+				votes_met += 1
+				if item.get("reason"):
+					met_reasons.append(item["reason"])
+			elif item.get("reason"):
+				unmet_reasons.append(item["reason"])
+		majority = votes_met * 2 > n
+		if not majority:
+			unmet.append(crit)
+		# Surface a reason that EXPLAINS the verdict: a dissent for a failed criterion,
+		# else a supporting reason — so the report's "why" line is actually informative.
+		reason = (unmet_reasons or met_reasons) if not majority else (met_reasons or unmet_reasons)
+		criteria.append(
+			{
+				"criterion": crit,
+				"met": majority,
+				"votes": f"{votes_met}/{n}",
+				"reason": reason[0] if reason else "",
+			}
+		)
+
+	return {
+		"ok": not unmet,
+		"panel_size": n,
+		"criteria": criteria,
+		"unmet": unmet,
+		"met_count": sum(1 for c in criteria if c["met"]),
+		"total": total,
+		"seats": [
+			{"name": s.get("name", ""), "lens": s.get("lens", ""), "ok": v.get("ok"), "error": v.get("error")}
+			for s, v in zip(seats, seat_verdicts, strict=True)
+		],
 	}
 
 
@@ -220,3 +352,74 @@ def resolve_judge_provider(agent_profile: str, judge_provider_name: str | None =
 			"the agent's own. Configure a second LLM Provider to enable quality scoring."
 		),
 	}
+
+
+def resolve_independent_providers(agent_profile: str, judge_provider_name: str | None = None) -> dict:
+	"""List the active LLM Provider names that may judge (none is the agent's own).
+
+	Returns `{"names": [<row name>, ...]}` (possibly empty) plus `"reason"` when empty.
+	When `judge_provider_name` is given it is the only candidate — still rejected if it
+	equals the agent's provider. This is the panel-aware sibling of
+	`resolve_judge_provider`: the panel builder cycles these names across its seats.
+	"""
+	import frappe
+	from frappe.friday_core.llm.provider import _resolve_provider_row
+
+	try:
+		agent_row = _resolve_provider_row(agent_profile)
+		agent_name = agent_row.get("name") if agent_row else None
+	except Exception:
+		agent_name = None
+
+	if judge_provider_name:
+		if judge_provider_name == agent_name:
+			return {
+				"names": [],
+				"reason": (
+					f"named judge provider {judge_provider_name!r} is the SAME as the agent's "
+					f"provider — not independent. Name a different one."
+				),
+			}
+		return {"names": [judge_provider_name]}
+
+	rows = frappe.get_all("LLM Provider", filters={"is_active": 1}, fields=["name"], order_by="creation asc")
+	names = [r["name"] for r in rows if r["name"] != agent_name]
+	if not names:
+		return {
+			"names": [],
+			"reason": (
+				"no independent judge provider available — the only active LLM Provider is the "
+				"agent's own. Configure a second LLM Provider to enable quality scoring."
+			),
+		}
+	return {"names": names}
+
+
+def build_panel_seats(names: list[str], panel_size: int) -> list[dict]:
+	"""Build `panel_size` judge seats by cycling the independent provider `names`.
+
+	Each seat is `{"provider": <built>, "name": <str>, "lens": <str>}`. Providers are
+	built once and reused across seats that share a name; lenses are assigned by seat
+	index from `_LENS_ORDER`, so two seats on the same provider still judge from
+	different angles. A name that fails to build is skipped (the panel shrinks rather
+	than crashing). Returns the seats actually built (may be fewer than `panel_size`).
+	"""
+	from frappe.friday_core.llm.provider import LLMError, get_provider_by_name
+
+	if not names or panel_size < 1:
+		return []
+	cache: dict[str, object] = {}
+	seats: list[dict] = []
+	for i in range(panel_size):
+		name = names[i % len(names)]
+		if name not in cache:
+			try:
+				cache[name] = get_provider_by_name(name)
+			except LLMError:
+				cache[name] = None
+		provider = cache[name]
+		if provider is None:
+			continue
+		lens = _LENS_ORDER[i % len(_LENS_ORDER)] if panel_size > 1 else ""
+		seats.append({"provider": provider, "name": name, "lens": lens})
+	return seats

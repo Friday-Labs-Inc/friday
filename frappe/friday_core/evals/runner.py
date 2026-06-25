@@ -39,62 +39,111 @@ def _ms(since, until) -> float:
 	return (until - since).total_seconds() * 1000.0
 
 
-def run_scenario(scenario: Scenario, n: int = 3, driver=None, now=None, judge=None) -> dict:
+def _default_probe_lookup(name: str):
+	"""Resolve a probe by name from the registry (lazy import keeps the harness light)."""
+	from . import probes
+
+	return probes.PROBES.get(name)
+
+
+def run_scenario(
+	scenario: Scenario, n: int = 3, driver=None, now=None, judge=None, probe_lookup=None
+) -> dict:
 	"""Run one scenario N times on the real path and return its aggregate verdict.
 
-	`driver(scenario, session_id) -> reply`, `now() -> datetime`, and
-	`judge(reply, rubric) -> verdict` are injectable for tests; their defaults are the
-	real turn + the real clock + (for `judge`) None.
+	`driver(scenario, session_id) -> reply`, `now() -> datetime`,
+	`judge(reply, rubric, panel_size) -> verdict`, and `probe_lookup(name) -> probe_fn`
+	are injectable for tests; their defaults are the real turn + clock + (judge) None +
+	the real probe registry.
 
-	The `judge` axis (Slice 2) only engages for scenarios that carry a `rubric`. When
-	a rubric scenario is run WITHOUT a judge (no independent provider available), its
-	quality is recorded as *skipped* — it does NOT gate the pass and is surfaced as a
-	visible gap in the report. A scenario with no rubric is unaffected.
+	Two scenario shapes:
+	  - **chat** (no `probe`): drive run_turn, score tool-selection + economics +
+	    outcome + (if a rubric) the judge/panel quality axis.
+	  - **probe** (`probe` set, Slice 3): drive a different real path (force-stop,
+	    migrate-gate) via the named probe, which returns its own `{ok, checks}`.
+
+	The `judge` axis (Slice 2/3) only engages for rubric scenarios. Run WITHOUT a judge
+	(no independent provider) → quality is *skipped*: it does NOT gate the pass and is
+	surfaced as a visible gap. A scenario with no rubric is unaffected.
 	"""
 	driver = driver or _drive_real
 	now = now or frappe.utils.now_datetime
+	probe_lookup = probe_lookup or _default_probe_lookup
 
-	runs = []
-	for i in range(n):
-		# A fresh session per run keeps economics (scoped by session_id) clean and
-		# gives each run an independent conversation — no cross-run memory bleed.
-		session_id = f"eval-{scenario.name}-{i}"
-		since = now()
-		error = None
-		reply = ""
-		try:
-			reply = driver(scenario, session_id)
-		except Exception as exc:  # a crash IS a failed run — record, don't propagate.
-			error = f"{type(exc).__name__}: {exc}"
-		until = now()
-
-		tool = metrics.tool_selection(
-			scenario.profile, since, until, scenario.expect_skills, scenario.forbid_skills
-		)
-		econ = metrics.economics(session_id, _ms(since, until))
-		out = metrics.outcome(reply, scenario.expect_contains)
-		quality = _score_quality(scenario, reply, judge, error)
-
-		# Quality gates the pass ONLY when it was actually judged. A skipped quality
-		# (rubric present, no judge) leaves the gate on tool + outcome alone.
-		quality_gate = True
-		if quality is not None and not quality.get("skipped"):
-			quality_gate = bool(quality["ok"])
-
-		runs.append(
-			{
-				"i": i,
-				"session_id": session_id,
-				"error": error,
-				"tool": tool,
-				"econ": econ,
-				"outcome": out,
-				"quality": quality,
-				"pass": error is None and tool["ok"] and out["ok"] and quality_gate,
-			}
-		)
-
+	runs = [_run_once(scenario, i, driver, now, judge, probe_lookup) for i in range(n)]
 	return aggregate(scenario, runs)
+
+
+def _run_once(scenario: Scenario, i: int, driver, now, judge, probe_lookup) -> dict:
+	"""Execute one run (chat or probe) and return its scored record."""
+	# A fresh session per run keeps economics (scoped by session_id) clean and gives
+	# each run an independent conversation / probe target — no cross-run bleed.
+	session_id = f"eval-{scenario.name}-{i}"
+	if scenario.probe:
+		return _run_probe(scenario, i, session_id, now, probe_lookup)
+
+	since = now()
+	error = None
+	reply = ""
+	try:
+		reply = driver(scenario, session_id)
+	except Exception as exc:  # a crash IS a failed run — record, don't propagate.
+		error = f"{type(exc).__name__}: {exc}"
+	until = now()
+
+	tool = metrics.tool_selection(
+		scenario.profile, since, until, scenario.expect_skills, scenario.forbid_skills
+	)
+	econ = metrics.economics(session_id, _ms(since, until))
+	out = metrics.outcome(reply, scenario.expect_contains)
+	quality = _score_quality(scenario, reply, judge, error)
+
+	# Quality gates the pass ONLY when it was actually judged. A skipped quality
+	# (rubric present, no judge) leaves the gate on tool + outcome alone.
+	quality_gate = True
+	if quality is not None and not quality.get("skipped"):
+		quality_gate = bool(quality["ok"])
+
+	return {
+		"i": i,
+		"session_id": session_id,
+		"error": error,
+		"tool": tool,
+		"econ": econ,
+		"outcome": out,
+		"quality": quality,
+		"probe": None,
+		"pass": error is None and tool["ok"] and out["ok"] and quality_gate,
+	}
+
+
+def _run_probe(scenario: Scenario, i: int, session_id: str, now, probe_lookup) -> dict:
+	"""Execute one probe run: drive a non-chat real path, score from its checks."""
+	since = now()
+	error = None
+	verdict = None
+	probe_fn = probe_lookup(scenario.probe)
+	if probe_fn is None:
+		error = f"LookupError: no probe registered as {scenario.probe!r}"
+	else:
+		try:
+			verdict = probe_fn(scenario, session_id)
+		except Exception as exc:
+			error = f"{type(exc).__name__}: {exc}"
+	until = now()
+	econ = metrics.economics(session_id, _ms(since, until))
+	passed = error is None and bool(verdict and verdict.get("ok"))
+	return {
+		"i": i,
+		"session_id": session_id,
+		"error": error,
+		"tool": None,
+		"econ": econ,
+		"outcome": None,
+		"quality": None,
+		"probe": verdict,
+		"pass": passed,
+	}
 
 
 def _score_quality(scenario: Scenario, reply: str, judge, error) -> dict | None:
@@ -116,14 +165,17 @@ def _score_quality(scenario: Scenario, reply: str, judge, error) -> dict | None:
 			"reason": "no independent judge provider available",
 			"unmet": [],
 		}
-	return judge(reply, scenario.rubric)
+	# Slice 3: the injected judge is panel-aware — it builds `judge_panel` seats.
+	return judge(reply, scenario.rubric, scenario.judge_panel)
 
 
 def aggregate(scenario: Scenario, runs: list[dict]) -> dict:
 	"""Collapse N runs into one verdict — rates + distributions, never a lone number."""
 	n = len(runs)
+	is_probe = bool(scenario.probe)
 	passes = sum(1 for r in runs if r["pass"])
-	tool_ok = sum(1 for r in runs if r["tool"]["ok"])
+	# tool-selection is a chat-only axis (probe runs carry tool=None).
+	tool_ok = sum(1 for r in runs if r.get("tool") and r["tool"]["ok"])
 	# Quality is rate-able only over runs that were actually judged (a rubric scenario
 	# with no judge contributes a *skipped* verdict, which we report but don't score).
 	judged = [r for r in runs if r.get("quality") and not r["quality"].get("skipped")]
@@ -134,8 +186,10 @@ def aggregate(scenario: Scenario, runs: list[dict]) -> dict:
 		"tags": list(scenario.tags),
 		"note": scenario.note,
 		"n": n,
+		"is_probe": is_probe,
 		"pass_rate": passes / n if n else 0,
-		"tool_ok_rate": tool_ok / n if n else 0,
+		# Meaningless for a probe scenario — None so the report shows "—".
+		"tool_ok_rate": None if is_probe else (tool_ok / n if n else 0),
 		"has_rubric": has_rubric,
 		"quality_ok_rate": (quality_ok / len(judged)) if judged else None,
 		# A rubric scenario that never got judged → the quality axis was blocked.
@@ -148,13 +202,18 @@ def aggregate(scenario: Scenario, runs: list[dict]) -> dict:
 	}
 
 
-def run_suite(scenarios: list[Scenario], n: int = 3, driver=None, now=None, judge=None) -> list[dict]:
+def run_suite(
+	scenarios: list[Scenario], n: int = 3, driver=None, now=None, judge=None, probe_lookup=None
+) -> list[dict]:
 	"""Run every scenario N× and return the list of aggregate verdicts.
 
-	`judge` is a bound `(reply, rubric) -> verdict` callable shared by every scenario
-	(resolved once by the caller from an independent provider), or None when no
-	independent judge is available — in which case rubric scenarios report a skipped
-	quality axis. Injecting it here keeps `run.py` (which does the DB-backed provider
-	resolution) separate from this pure orchestration.
+	`judge` is a bound `(reply, rubric, panel_size) -> verdict` callable shared by every
+	scenario (resolved once by the caller from independent providers), or None when no
+	independent judge is available — rubric scenarios then report a skipped quality
+	axis. `probe_lookup` defaults to the real registry. Injecting both here keeps
+	`run.py` (which does the DB-backed resolution) separate from this orchestration.
 	"""
-	return [run_scenario(s, n=n, driver=driver, now=now, judge=judge) for s in scenarios]
+	return [
+		run_scenario(s, n=n, driver=driver, now=now, judge=judge, probe_lookup=probe_lookup)
+		for s in scenarios
+	]
