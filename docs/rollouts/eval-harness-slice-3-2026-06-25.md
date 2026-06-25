@@ -73,6 +73,26 @@ end-to-end, and the `force_kill_audit` probe targets the **real** `Task.originat
 field that `collect_active_subtree` queries (so it will actually find its task live, not
 just in the mocked test).
 
+## Hardening (stability pass)
+
+A judge is an LLM, so the scoring must not trust the judge to behave. The aggregation
+is therefore **anchored on the rubric, not on what the judge echoed**, matched by
+normalised text (case + punctuation insensitive) — never by array position:
+
+- **Reordering** — a judge that returns criteria out of order is still scored against
+  the right criterion (text match), so a panel vote can't be misattributed.
+- **Count-gaming / duplication** — returning the right *number* of items can't pass a
+  criterion the judge never actually addressed (no index fallback: two copies of
+  criterion A and no B → B is **not-met**, never silently matched to the second A).
+- **Invented criteria** — items that match no rubric criterion are ignored as noise.
+- **Truncation / omission** — an unmatched rubric criterion is not-met (can't pass by
+  omission), in both the single judge and the panel.
+- **Panel reasons** — a failed criterion surfaces a *dissenting* (not-met) reason in
+  the report, not a stray supporting one, so the "why" line is actually informative.
+
+`judge_quality` now also passes its optional `model` through to the provider (was an
+unused parameter). Seven targeted tests pin each of these (65 total, all DB-free).
+
 ## How to run it
 
 ```bash

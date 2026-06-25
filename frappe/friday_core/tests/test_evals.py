@@ -707,6 +707,109 @@ class TestBuildPanelSeats(unittest.TestCase):
 		self.assertEqual(judge.build_panel_seats(["A"], 0), [])
 
 
+class TestJudgeRobustness(unittest.TestCase):
+	"""Hardening: scoring is anchored on the rubric, matched by text — not by position."""
+
+	def test_reordered_criteria_are_matched_by_text(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("first thing", "second thing")
+		# Judge returns them in the WRONG order — text-match must still score correctly.
+		content = (
+			'{"criteria": ['
+			'{"criterion": "second thing", "met": false, "reason": "no"},'
+			'{"criterion": "first thing", "met": true, "reason": "yes"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertEqual([c["criterion"] for c in v["criteria"]], ["first thing", "second thing"])
+		self.assertTrue(v["criteria"][0]["met"])  # "first thing" met
+		self.assertFalse(v["criteria"][1]["met"])  # "second thing" not
+		self.assertEqual(v["unmet"], ["second thing"])
+
+	def test_count_gaming_cannot_pass_an_unaddressed_criterion(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("alpha", "beta")
+		# Right COUNT (2) but both are "alpha" — "beta" was never judged → must be not-met.
+		content = (
+			'{"criteria": ['
+			'{"criterion": "alpha", "met": true, "reason": "ok"},'
+			'{"criterion": "alpha", "met": true, "reason": "dup"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["unmet"], ["beta"])
+
+	def test_punctuation_and_case_differences_still_match(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("Is concise",)
+		content = '{"criteria": [{"criterion": "is concise.", "met": true, "reason": "ok"}]}'
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])
+
+	def test_invented_extra_criterion_is_ignored(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("only this",)
+		content = (
+			'{"criteria": ['
+			'{"criterion": "only this", "met": true, "reason": "ok"},'
+			'{"criterion": "an invented criterion", "met": false, "reason": "noise"}]}'
+		)
+		v = judge.judge_quality("r", rubric, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])  # the invented not-met item is noise, not a rubric criterion
+		self.assertEqual(len(v["criteria"]), 1)
+
+	def test_model_is_passed_through_to_chat(self):
+		from frappe.friday_core.evals import judge
+
+		seen = {}
+
+		class _CapturingProvider:
+			def chat(self, messages, tools=None, model=None):
+				seen["model"] = model
+				return {"content": '{"criteria": [{"criterion": "c", "met": true, "reason": "ok"}]}'}
+
+		judge.judge_quality("r", ("c",), provider=_CapturingProvider(), model="judge-model-x")
+		self.assertEqual(seen["model"], "judge-model-x")
+
+
+class TestPanelRobustness(unittest.TestCase):
+	def _seat(self, content, lens=""):
+		return {"provider": _FakeProvider(content), "name": "P", "lens": lens}
+
+	def test_panel_matches_reordered_seat_verdicts(self):
+		from frappe.friday_core.evals import judge
+
+		rubric = ("aa", "bb")
+		# Seat returns criteria reversed; the panel must still vote per the right criterion.
+		reordered = (
+			'{"criteria": ['
+			'{"criterion": "bb", "met": true, "reason": "b-ok"},'
+			'{"criterion": "aa", "met": false, "reason": "a-bad"}]}'
+		)
+		seats = [self._seat(reordered)]
+		v = judge.run_panel("r", rubric, seats)
+		by_crit = {c["criterion"]: c for c in v["criteria"]}
+		self.assertFalse(by_crit["aa"]["met"])
+		self.assertTrue(by_crit["bb"]["met"])
+
+	def test_failed_criterion_surfaces_a_dissenting_reason(self):
+		from frappe.friday_core.evals import judge
+
+		# 1 met (reason "good"), 2 not-met (reasons "jargon"): criterion fails 1/3 and the
+		# shown reason must be a not-met one, not the lone "good".
+		seats = [
+			self._seat('{"criteria": [{"criterion": "c", "met": true, "reason": "good"}]}'),
+			self._seat('{"criteria": [{"criterion": "c", "met": false, "reason": "jargon"}]}'),
+			self._seat('{"criteria": [{"criterion": "c", "met": false, "reason": "jargon"}]}'),
+		]
+		v = judge.run_panel("r", ("c",), seats)
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["criteria"][0]["reason"], "jargon")
+
+
 class TestResolveIndependentProviders(unittest.TestCase):
 	def test_explicit_same_as_agent_is_rejected(self):
 		from frappe.friday_core.evals import judge

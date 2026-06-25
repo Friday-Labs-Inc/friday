@@ -122,11 +122,17 @@ def judge_quality(
 	"""Score `reply` against `rubric` with an independent model. Never raises.
 
 	Returns a verdict dict:
-	  criteria      [{criterion, met, reason}] — one per rubric item the judge returned
-	  unmet         the criteria the judge marked not-met (the credit-assignment view)
+	  criteria      [{criterion, met, reason}] — one per RUBRIC criterion (in rubric
+	                order), each matched to the judge's verdict by normalised text
+	  unmet         the rubric criteria not met (the credit-assignment view)
 	  met_count/total
 	  ok            True iff every rubric criterion is met (per-criterion checklist)
 	  error         set (and ok False) if the judge call failed or was unparseable
+
+	Scoring is anchored on the RUBRIC, not on whatever the judge echoed: a criterion the
+	judge reordered is still matched (by text); one it duplicated, skipped, or invented
+	can't shift the verdict — an unmatched rubric criterion is not-met. So a judge can't
+	pass the checklist by returning the right COUNT of wrong items.
 
 	`lens` (Slice 3) selects a perspective framing for a panel seat; "" = neutral.
 	"""
@@ -137,7 +143,7 @@ def judge_quality(
 
 	messages = build_judge_messages(reply, rubric, "", lens)
 	try:
-		resp = provider.chat(messages)
+		resp = provider.chat(messages, model=model)
 		content = resp["content"] if isinstance(resp, dict) else getattr(resp, "content", "")
 	except Exception as exc:  # a judge transport failure is a quality fail, not a crash.
 		return _judge_error(rubric, f"judge call failed: {type(exc).__name__}")
@@ -146,29 +152,27 @@ def judge_quality(
 	if not parsed or not isinstance(parsed.get("criteria"), list):
 		return _judge_error(rubric, "judge returned unparseable output")
 
+	raw = [item for item in parsed["criteria"] if isinstance(item, dict)]
+	# Anchor on the rubric: one output entry per rubric criterion, matched to the judge's
+	# verdict by text (fallback index). An unmatched criterion is not-met — so omission,
+	# duplication, or reordering by the judge can't game the checklist.
 	criteria = []
-	for item in parsed["criteria"]:
-		if not isinstance(item, dict):
-			continue
+	for crit in rubric:
+		item = _seat_item_for(raw, crit)
 		criteria.append(
 			{
-				"criterion": str(item.get("criterion", "")),
-				"met": bool(item.get("met", False)),
-				"reason": str(item.get("reason", "")),
+				"criterion": crit,
+				"met": bool(item.get("met", False)) if item else False,
+				"reason": str(item.get("reason", "")) if item else "",
 			}
 		)
 	unmet = [c["criterion"] for c in criteria if not c["met"]]
-	met_count = sum(1 for c in criteria if c["met"])
-	# A judge that returned fewer verdicts than criteria hasn't covered the checklist —
-	# treat the shortfall as not-met so a truncated judge reply can't pass by omission.
-	covered = len(criteria)
-	ok = covered >= total and not unmet
 	return {
 		"criteria": criteria,
 		"unmet": unmet,
-		"met_count": met_count,
+		"met_count": sum(1 for c in criteria if c["met"]),
 		"total": total,
-		"ok": ok,
+		"ok": not unmet,
 	}
 
 
@@ -182,6 +186,32 @@ def _judge_error(rubric: tuple[str, ...], reason: str) -> dict:
 		"ok": False,
 		"error": reason,
 	}
+
+
+def _norm(s: str) -> str:
+	"""Normalise a criterion string for matching: lowercase, punctuation → space, collapse.
+
+	So "Is concise." and "is concise" match, but two genuinely different criteria don't.
+	"""
+	return " ".join(re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower()).split())
+
+
+def _seat_item_for(items: list[dict], criterion: str) -> dict | None:
+	"""Find a judge's verdict for ONE rubric criterion, matched by normalised text.
+
+	Match is by text, NOT array position — so a judge that reorders criteria is still
+	scored correctly, and one that omits, duplicates, or invents criteria can't shift a
+	verdict by position. Returns None when this criterion was not addressed at all, which
+	the caller treats as not-met (a criterion can't be met without an explicit verdict).
+	No index fallback by design: falling back to position is exactly what lets a judge
+	pass a criterion it never actually judged (e.g. two copies of criterion A, no B → B
+	must be not-met, not silently matched to the second A).
+	"""
+	target = _norm(criterion)
+	for it in items:
+		if _norm(it.get("criterion", "")) == target:
+			return it
+	return None
 
 
 def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
@@ -211,28 +241,34 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 
 	criteria = []
 	unmet = []
-	for i, crit in enumerate(rubric):
+	for crit in rubric:
 		votes_met = 0
-		reasons = []
+		met_reasons: list[str] = []
+		unmet_reasons: list[str] = []
 		for v in seat_verdicts:
-			items = v.get("criteria", [])
-			# Index-aligned: judges are told to return criteria verbatim, in order. A
-			# missing i-th verdict (short/errored reply) is a not-met vote.
-			if i < len(items) and items[i].get("met"):
+			# Match this seat's verdict to THIS rubric criterion by text; a seat that
+			# didn't address it (None) is a silent not-met vote.
+			item = _seat_item_for(v.get("criteria", []), crit)
+			if item is None:
+				continue
+			if item.get("met"):
 				votes_met += 1
-				if items[i].get("reason"):
-					reasons.append(items[i]["reason"])
-			elif i < len(items) and items[i].get("reason"):
-				reasons.append(items[i]["reason"])
+				if item.get("reason"):
+					met_reasons.append(item["reason"])
+			elif item.get("reason"):
+				unmet_reasons.append(item["reason"])
 		majority = votes_met * 2 > n
 		if not majority:
 			unmet.append(crit)
+		# Surface a reason that EXPLAINS the verdict: a dissent for a failed criterion,
+		# else a supporting reason — so the report's "why" line is actually informative.
+		reason = (unmet_reasons or met_reasons) if not majority else (met_reasons or unmet_reasons)
 		criteria.append(
 			{
 				"criterion": crit,
 				"met": majority,
 				"votes": f"{votes_met}/{n}",
-				"reason": reasons[0] if reasons else "",
+				"reason": reason[0] if reason else "",
 			}
 		)
 
