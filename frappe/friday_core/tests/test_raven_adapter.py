@@ -100,7 +100,11 @@ class TestInbound(unittest.TestCase):
 	@patch(f"{_A}._friday_bot_user", return_value="friday-bot")
 	@patch(f"{_A}.frappe")
 	def test_channel_with_bot_mention_writes_inbound_row(self, mock_frappe, _bot, _prof):
-		mock_frappe.db.get_value.return_value = _channel(is_dm=0)
+		# The channel path now does two get_value lookups: the channel, then the
+		# bot's display label (for the mention strip). Distinguish by doctype.
+		mock_frappe.db.get_value.side_effect = lambda dt, *a, **k: (
+			_channel(is_dm=0) if dt == "Raven Channel" else "Friday"
+		)
 		mention = MagicMock()
 		mention.user = "friday-bot"
 		raven_adapter.handle_raven_message(_raven_msg(mentions=[mention]))
@@ -190,6 +194,62 @@ class TestCommands(unittest.TestCase):
 		self.assertEqual(rows[1]["direction"], "outbound")
 		self.assertEqual(rows[1]["content"], result.reply)
 		self.assertEqual(rows[1]["sender_id"], "system")
+
+	@patch(f"{_A}._handle_command")
+	@patch(f"{_A}._friday_bot_user", return_value="friday-bot")
+	@patch(f"{_A}.frappe")
+	def test_channel_command_strips_mention_and_dispatches(self, mock_frappe, _bot, mock_handle):
+		"""Regression: a channel "@Friday /status" must dispatch exactly like a DM
+		"/status". Before the mention strip, is_command("@Friday /status") was False,
+		so every operator command was unreachable from a channel (Design 82 break)."""
+		mock_frappe.db.get_value.side_effect = lambda dt, *a, **k: (
+			_channel(is_dm=0) if dt == "Raven Channel" else "Friday"
+		)
+		mention = MagicMock()
+		mention.user = "friday-bot"
+		raven_adapter.handle_raven_message(_raven_msg(content="@Friday /status", mentions=[mention]))
+		# Dispatched with the mention stripped — identical to the DM path.
+		mock_handle.assert_called_once_with("CH-001", "human@example.com", "/status")
+		mock_frappe.get_doc.assert_not_called()
+
+	@patch(f"{_A}._handle_command")
+	@patch(f"{_A}._resolve_profile", return_value="Friday")
+	@patch(f"{_A}._friday_bot_user", return_value="friday-bot")
+	@patch(f"{_A}.frappe")
+	def test_channel_mention_without_command_stays_conversational(
+		self, mock_frappe, _bot, _prof, mock_handle
+	):
+		"""A plain "@Friday hello" must NOT be treated as a command — the strip
+		feeds command detection only, and the remainder isn't a slash command."""
+		mock_frappe.db.get_value.side_effect = lambda dt, *a, **k: (
+			_channel(is_dm=0) if dt == "Raven Channel" else "Friday"
+		)
+		mention = MagicMock()
+		mention.user = "friday-bot"
+		raven_adapter.handle_raven_message(_raven_msg(content="@Friday hello", mentions=[mention]))
+		mock_handle.assert_not_called()
+		# Falls through to the conversational inbound row (original content kept).
+		self.assertEqual(mock_frappe.get_doc.call_args[0][0]["content"], "@Friday hello")
+
+
+class TestStripLeadingMention(unittest.TestCase):
+	"""Pure (no-DB) coverage of the channel mention strip."""
+
+	def test_strips_exact_label_then_command_survives(self):
+		self.assertEqual(raven_adapter._strip_leading_mention("@Friday /help", "Friday"), "/help")
+
+	def test_label_match_is_case_insensitive(self):
+		self.assertEqual(raven_adapter._strip_leading_mention("@friday /stop", "Friday"), "/stop")
+
+	def test_falls_back_to_generic_token_when_label_unknown(self):
+		self.assertEqual(raven_adapter._strip_leading_mention("@Friday /deny", ""), "/deny")
+
+	def test_non_command_mention_is_stripped_but_not_a_command(self):
+		# Strip happens, but the remainder isn't a slash command → conversational.
+		self.assertEqual(raven_adapter._strip_leading_mention("@Friday hello there", "Friday"), "hello there")
+
+	def test_bare_command_is_unchanged(self):
+		self.assertEqual(raven_adapter._strip_leading_mention("/help", "Friday"), "/help")
 
 
 if __name__ == "__main__":

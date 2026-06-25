@@ -32,6 +32,8 @@ This module never imports `agent_runner` (design 47 §9 — the one rule).
 
 from __future__ import annotations
 
+import re
+
 import frappe
 
 RAVEN_PLATFORM = "raven"
@@ -88,10 +90,25 @@ def handle_raven_message(doc, method=None) -> None:
 	# Design 82 — slash commands are caught at the edge, BEFORE a conversational
 	# row is written. A command never reaches run_turn; it is dispatched here and
 	# its reply posted straight back into the channel.
+	#
+	# In a CHANNEL the bot must be @mentioned (above), so Raven stores the content
+	# as e.g. "@Friday /help" — which does NOT start with "/", so is_command() would
+	# miss it and every operator command (/approve, /deny, /stop, /steer) would be
+	# unreachable from a channel. Strip the leading bot mention before the command
+	# check so commands work identically in channels and DMs (DM content is already
+	# bare "/help", so the strip is a no-op there). The strip feeds command
+	# detection only; the conversational path keeps the original content.
 	from frappe.friday_core.gateway.commands import is_command
 
-	if is_command(content):
-		_handle_command(doc.channel_id, doc.owner, content)
+	# DMs need no strip (content is already bare "/help"); only channels carry the
+	# required leading mention, so only they pay for the lookup + strip.
+	command_content = content
+	if not channel.is_direct_message:
+		bot_label = frappe.db.get_value("Raven User", bot_user, "full_name") or ""
+		command_content = _strip_leading_mention(content, bot_label)
+
+	if is_command(command_content):
+		_handle_command(doc.channel_id, doc.owner, command_content)
 		return
 
 	profile = _resolve_profile(doc.channel_id)
@@ -168,17 +185,13 @@ def _handle_command(channel_id: str, owner: str, content: str) -> None:
 	"""
 	from frappe.friday_core.gateway.commands import dispatch_command
 
-	result = dispatch_command(
-		platform=RAVEN_PLATFORM, session_id=channel_id, user=owner, raw=content
-	)
+	result = dispatch_command(platform=RAVEN_PLATFORM, session_id=channel_id, user=owner, raw=content)
 
 	# Audit the command itself (inbound, already handled).
 	_insert_command_row(channel_id, sender_id=owner, content=content, direction="inbound")
 	# The reply (outbound) — its insert fires handle_outbound_to_raven, which
 	# posts it into the channel.
-	_insert_command_row(
-		channel_id, sender_id="system", content=result.reply, direction="outbound"
-	)
+	_insert_command_row(channel_id, sender_id="system", content=result.reply, direction="outbound")
 
 
 def _insert_command_row(channel_id: str, sender_id: str, content: str, direction: str) -> None:
@@ -201,6 +214,25 @@ def _insert_command_row(channel_id: str, sender_id: str, content: str, direction
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _strip_leading_mention(content: str, label: str | None) -> str:
+	"""Drop a leading "@<bot>" mention so a channel "/command" is detected.
+
+	Pure (no DB) and used only for command detection. Tries the bot's exact
+	display `label` first (case-insensitive), then falls back to a generic leading
+	"@token" — so it still works if the label is unknown or renamed. A message with
+	no leading mention (every DM) is returned unchanged.
+
+	    "@Friday /help"  → "/help"
+	    "@Friday hello"  → "hello"   (is_command() is then False → conversational)
+	    "/help"          → "/help"   (no-op)
+	"""
+	if label:
+		stripped = re.sub(rf"^\s*@{re.escape(label)}\s+", "", content, count=1, flags=re.IGNORECASE)
+		if stripped != content:
+			return stripped
+	return re.sub(r"^\s*@\S+\s+", "", content, count=1)
 
 
 def _friday_bot_user() -> str | None:
