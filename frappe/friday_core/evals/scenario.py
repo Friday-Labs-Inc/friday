@@ -15,8 +15,14 @@ Fields
   prompt          the inbound user message that seeds the turn.
   expect_skills   skills the agent SHOULD call this turn (tool-selection ✓).
   forbid_skills   skills the agent must NOT call (guards over-eager / wrong-tool).
-  expect_contains substrings the final reply should contain (a cheap outcome check;
-                  Slice 2 adds an LLM-judge for open-ended quality).
+  expect_contains substrings the final reply should contain (a cheap outcome check
+                  for closed answers; too weak for open-ended prose — that's `rubric`).
+  rubric          criteria an LLM-judge scores the reply against (Slice 2). Each is a
+                  plain sentence; the judge marks every one met / not-met with a
+                  reason, and the scenario passes the quality axis only if ALL are met
+                  (per-criterion checklist). Empty → no quality scoring for this case.
+  rubric_note     optional guidance handed to the judge alongside the rubric (e.g.
+                  "be lenient on phrasing, strict on factual claims").
   tags            which axes / regressions this exercises (free-form labels).
   note            a human sentence on what the scenario is really pinning.
 """
@@ -34,5 +40,13 @@ class Scenario:
 	expect_skills: tuple[str, ...] = ()
 	forbid_skills: tuple[str, ...] = ()
 	expect_contains: tuple[str, ...] = ()
+	rubric: tuple[str, ...] = ()
+	rubric_note: str = ""
 	tags: tuple[str, ...] = ()
 	note: str = ""
+
+	def __post_init__(self) -> None:
+		# Frozen dataclasses still run __post_init__; we only read here (no mutation),
+		# so a plain assertion is enough to catch a malformed seed at import time.
+		if self.rubric and not isinstance(self.rubric, tuple):
+			raise TypeError(f"Scenario {self.name!r}: rubric must be a tuple of strings")

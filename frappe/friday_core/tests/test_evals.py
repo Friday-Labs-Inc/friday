@@ -249,6 +249,275 @@ class TestSeeds(unittest.TestCase):
 		proj = next(s for s in SEEDS if s.name == "project-status-by-name")
 		self.assertIn(EVAL_PROJECT, proj.prompt)
 
+	def test_open_ended_seed_carries_a_rubric(self):
+		from frappe.friday_core.evals.seeds import SEEDS
+
+		q = next(s for s in SEEDS if s.name == "self-intro-quality")
+		self.assertTrue(q.rubric, "the open-ended seed must define a rubric")
+		self.assertEqual(len(q.rubric), 3)
+		# It is a quality seed, not a tool-selection one.
+		self.assertEqual(q.expect_skills, ())
+
+
+# ---------------------------------------------------------------------------
+# Slice 2 — the LLM-judge (quality axis)
+# ---------------------------------------------------------------------------
+
+
+class _FakeProvider:
+	"""A provider stub: `.chat(messages)` returns a fixed `{"content": ...}` (or raises)."""
+
+	def __init__(self, content=None, raises=None):
+		self._content = content
+		self._raises = raises
+
+	def chat(self, messages, tools=None, model=None):
+		if self._raises is not None:
+			raise self._raises
+		return {"content": self._content}
+
+
+_RUBRIC = ("is on-topic", "is concise")
+
+
+class TestJudge(unittest.TestCase):
+	def test_build_messages_carries_reply_and_criteria(self):
+		from frappe.friday_core.evals import judge
+
+		msgs = judge.build_judge_messages("the reply text", _RUBRIC, "be lenient")
+		user = msgs[-1]["content"]
+		self.assertIn("the reply text", user)
+		for crit in _RUBRIC:
+			self.assertIn(crit, user)
+		self.assertIn("be lenient", user)
+
+	def test_all_criteria_met(self):
+		from frappe.friday_core.evals import judge
+
+		content = (
+			'{"criteria": ['
+			'{"criterion": "is on-topic", "met": true, "reason": "yes"},'
+			'{"criterion": "is concise", "met": true, "reason": "short"}]}'
+		)
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])
+		self.assertEqual(v["unmet"], [])
+		self.assertEqual(v["met_count"], 2)
+
+	def test_one_criterion_unmet(self):
+		from frappe.friday_core.evals import judge
+
+		content = (
+			'{"criteria": ['
+			'{"criterion": "is on-topic", "met": true, "reason": "yes"},'
+			'{"criterion": "is concise", "met": false, "reason": "too long"}]}'
+		)
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider(content))
+		self.assertFalse(v["ok"])
+		self.assertEqual(v["unmet"], ["is concise"])
+
+	def test_strips_code_fences(self):
+		from frappe.friday_core.evals import judge
+
+		content = '```json\n{"criteria": [{"criterion": "is on-topic", "met": true, "reason": "ok"}, {"criterion": "is concise", "met": true, "reason": "ok"}]}\n```'
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider(content))
+		self.assertTrue(v["ok"])
+
+	def test_unparseable_output_is_a_fail_not_a_crash(self):
+		from frappe.friday_core.evals import judge
+
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider("I think it's fine, honestly"))
+		self.assertFalse(v["ok"])
+		self.assertIn("unparseable", v["error"])
+		self.assertEqual(v["unmet"], list(_RUBRIC))
+
+	def test_provider_error_is_a_fail_not_a_crash(self):
+		from frappe.friday_core.evals import judge
+
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider(raises=RuntimeError("boom")))
+		self.assertFalse(v["ok"])
+		self.assertIn("judge call failed", v["error"])
+
+	def test_truncated_judgement_fails_by_omission(self):
+		from frappe.friday_core.evals import judge
+
+		# Judge returned only 1 of 2 criteria — the missing one cannot pass silently.
+		content = '{"criteria": [{"criterion": "is on-topic", "met": true, "reason": "ok"}]}'
+		v = judge.judge_quality("hi", _RUBRIC, provider=_FakeProvider(content))
+		self.assertFalse(v["ok"])
+
+	def test_empty_rubric_is_not_applicable(self):
+		from frappe.friday_core.evals import judge
+
+		v = judge.judge_quality("hi", (), provider=_FakeProvider("anything"))
+		self.assertTrue(v["ok"])
+		self.assertEqual(v["total"], 0)
+
+
+class TestResolveJudgeProvider(unittest.TestCase):
+	def test_rejects_provider_equal_to_agents(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}):
+			out = judge.resolve_judge_provider("Friday", judge_provider_name="MiniMax")
+		self.assertIsNone(out["provider"])
+		self.assertIn("not independent", out["reason"].lower())
+
+	def test_explicit_independent_provider(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		sentinel = object()
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch.object(
+			prov, "get_provider_by_name", return_value=sentinel
+		):
+			out = judge.resolve_judge_provider("Friday", judge_provider_name="Claude")
+		self.assertIs(out["provider"], sentinel)
+		self.assertEqual(out["name"], "Claude")
+
+	def test_autodiscovers_first_different_active_provider(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		sentinel = object()
+		rows = [{"name": "MiniMax"}, {"name": "Claude"}]
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch(
+			"frappe.get_all", return_value=rows
+		), mock.patch.object(prov, "get_provider_by_name", return_value=sentinel):
+			out = judge.resolve_judge_provider("Friday")
+		self.assertEqual(out["name"], "Claude")
+		self.assertIs(out["provider"], sentinel)
+
+	def test_blocked_when_only_agent_provider_is_active(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		with mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}), mock.patch(
+			"frappe.get_all", return_value=[{"name": "MiniMax"}]
+		):
+			out = judge.resolve_judge_provider("Friday")
+		self.assertIsNone(out["provider"])
+		self.assertIn("no independent judge", out["reason"].lower())
+
+
+class TestRunnerQuality(unittest.TestCase):
+	def _rubric_scenario(self):
+		return Scenario(name="q", profile="Friday", prompt="hi", rubric=("must be nice",))
+
+	def _driver(self, scn, sid):
+		return "hello there"
+
+	def test_quality_pass_gates_into_overall_pass(self):
+		def judge(reply, rubric):
+			return {"ok": True, "unmet": [], "criteria": [{"criterion": "must be nice", "met": True, "reason": "ok"}]}
+
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(
+				self._rubric_scenario(), n=1, driver=self._driver, now=_clock([_T0, _T0]), judge=judge
+			)
+		self.assertEqual(agg["pass_rate"], 1.0)
+		self.assertEqual(agg["quality_ok_rate"], 1.0)
+		self.assertFalse(agg["quality_unavailable"])
+
+	def test_quality_fail_fails_the_run(self):
+		def judge(reply, rubric):
+			return {
+				"ok": False,
+				"unmet": ["must be nice"],
+				"criteria": [{"criterion": "must be nice", "met": False, "reason": "rude"}],
+			}
+
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(
+				self._rubric_scenario(), n=1, driver=self._driver, now=_clock([_T0, _T0]), judge=judge
+			)
+		self.assertEqual(agg["pass_rate"], 0.0)
+		self.assertEqual(agg["quality_ok_rate"], 0.0)
+		self.assertFalse(agg["runs"][0]["pass"])
+		self.assertEqual(agg["runs"][0]["quality"]["unmet"], ["must be nice"])
+
+	def test_no_judge_skips_quality_without_failing(self):
+		# Rubric scenario, judge=None (no independent provider). Quality is skipped: it
+		# does NOT gate the pass, but the aggregate flags the axis as unavailable.
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(self._rubric_scenario(), n=1, driver=self._driver, now=_clock([_T0, _T0]))
+		self.assertTrue(agg["quality_unavailable"])
+		self.assertIsNone(agg["quality_ok_rate"])
+		self.assertEqual(agg["pass_rate"], 1.0)  # tool + outcome still pass
+		self.assertTrue(agg["runs"][0]["quality"]["skipped"])
+
+	def test_no_rubric_means_judge_is_not_applied(self):
+		# A scenario with no rubric must never invoke the judge, even if one is passed.
+		def exploding_judge(reply, rubric):
+			raise AssertionError("judge must not run for a no-rubric scenario")
+
+		scn = Scenario(name="nr", profile="Friday", prompt="hi")
+		with mock.patch("frappe.get_all", return_value=[]):
+			agg = runner.run_scenario(scn, n=1, driver=self._driver, now=_clock([_T0, _T0]), judge=exploding_judge)
+		self.assertFalse(agg["has_rubric"])
+		self.assertIsNone(agg["quality_ok_rate"])
+		self.assertIsNone(agg["runs"][0]["quality"])
+		self.assertEqual(agg["pass_rate"], 1.0)
+
+
+class TestReportQuality(unittest.TestCase):
+	def _row(self, **over):
+		base = {
+			"scenario": "q",
+			"tags": ["quality"],
+			"note": "",
+			"n": 1,
+			"pass_rate": 1.0,
+			"tool_ok_rate": 1.0,
+			"has_rubric": True,
+			"quality_ok_rate": 1.0,
+			"quality_unavailable": False,
+			"latency_ms": {"median": 1, "min": 1, "max": 1, "mean": 1},
+			"tokens": {"median": 1, "min": 1, "max": 1, "mean": 1},
+			"cost_usd_mean": 0.0,
+			"errors": [],
+			"runs": [],
+		}
+		base.update(over)
+		return base
+
+	def test_quality_column_and_blocked_banner(self):
+		results = [
+			self._row(scenario="judged"),
+			self._row(scenario="blocked", quality_ok_rate=None, quality_unavailable=True),
+		]
+		md = report.render_markdown(results, site="sandbox.localhost", judge_name="Claude")
+		self.assertIn("| Quality |", md)
+		self.assertIn("Quality axis blocked", md)
+		self.assertIn("SKIP", md)
+		# The judge provider is named in the header so a reader knows it was independent.
+		self.assertIn("`Claude`", md)
+
+	def test_quality_failure_shows_criterion_reason(self):
+		row = self._row(
+			scenario="q",
+			pass_rate=0.0,
+			quality_ok_rate=0.0,
+			runs=[
+				{
+					"i": 0,
+					"pass": False,
+					"error": None,
+					"tool": {"called": [], "missing": [], "forbidden_hit": []},
+					"outcome": {"missing": []},
+					"quality": {
+						"ok": False,
+						"unmet": ["be concise"],
+						"criteria": [{"criterion": "be concise", "met": False, "reason": "too long"}],
+					},
+				}
+			],
+		)
+		md = report.render_markdown([row])
+		self.assertIn("unmet rubric ['be concise']", md)
+		self.assertIn("too long", md)
+
 
 if __name__ == "__main__":
 	unittest.main()
