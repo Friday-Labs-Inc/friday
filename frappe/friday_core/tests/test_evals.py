@@ -210,5 +210,45 @@ class TestReport(unittest.TestCase):
 		self.assertIn("called forbidden ['list-records']", md)
 
 
+class TestFixtures(unittest.TestCase):
+	def test_creates_project_when_missing(self):
+		from frappe.friday_core.evals import fixtures
+
+		with mock.patch.object(fixtures, "frappe") as fr:
+			fr.db.exists.return_value = False
+			out = fixtures.ensure_eval_fixtures()
+		fr.get_doc.assert_called_once()
+		payload = fr.get_doc.call_args[0][0]
+		self.assertEqual(payload["doctype"], "Project")
+		self.assertEqual(payload["project_name"], fixtures.EVAL_PROJECT)
+		self.assertEqual(out["created"], [fixtures.EVAL_PROJECT])
+
+	def test_idempotent_when_present(self):
+		from frappe.friday_core.evals import fixtures
+
+		with mock.patch.object(fixtures, "frappe") as fr:
+			fr.db.exists.return_value = True
+			out = fixtures.ensure_eval_fixtures()
+		fr.get_doc.assert_not_called()
+		self.assertEqual(out["created"], [])
+
+
+class TestSeeds(unittest.TestCase):
+	def test_seeds_are_well_formed(self):
+		from frappe.friday_core.evals.seeds import SEEDS
+
+		names = [s.name for s in SEEDS]
+		self.assertEqual(len(names), len(set(names)), "scenario names must be unique")
+		# The anti-overcorrection seed is forbid-only (no required tool) by design.
+		contrast = next(s for s in SEEDS if s.name == "listing-not-session-search")
+		self.assertEqual(contrast.expect_skills, ())
+		self.assertIn("session_search", contrast.forbid_skills)
+		# The project scenario references the fixture project by its exact name.
+		from frappe.friday_core.evals.fixtures import EVAL_PROJECT
+
+		proj = next(s for s in SEEDS if s.name == "project-status-by-name")
+		self.assertIn(EVAL_PROJECT, proj.prompt)
+
+
 if __name__ == "__main__":
 	unittest.main()

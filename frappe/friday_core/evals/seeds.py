@@ -47,13 +47,19 @@ SEEDS: list[Scenario] = [
 		),
 	),
 	Scenario(
-		name="list-records-contrast",
+		name="listing-not-session-search",
 		profile="Friday",
-		prompt="Show me the list of Skill records in the system.",
-		expect_skills=("list-records",),
+		prompt="Show me a list of the Task records in the system.",
 		forbid_skills=("session_search",),
 		tags=("tool-selection", "anti-overcorrection"),
-		note="A real record listing must use list-records, not session_search.",
+		note=(
+			"A plain record-listing must NOT be routed to session_search — the #145 "
+			"cue sharpening must not over-correct. Forbid-only by design: ANY "
+			"non-session_search handling passes (list-records, a dedicated skill, or a "
+			"direct answer); the point is the transcript tool isn't grabbed for a "
+			"non-transcript request. (The first live run showed an over-strict "
+			"require-list-records here failed when the agent answered conversationally.)"
+		),
 	),
 	Scenario(
 		name="list-projects-tool",
@@ -66,10 +72,16 @@ SEEDS: list[Scenario] = [
 	Scenario(
 		name="project-status-by-name",
 		profile="Friday",
-		prompt="What's the current status of the Northwind project?",
+		prompt="What's the current status of the 'Eval Sample Project' project?",
 		expect_skills=("project-status",),
 		tags=("tool-selection",),
-		note="A named-project status request should reach project-status.",
+		note=(
+			"A named-project status request should reach project-status. Requires the "
+			"eval fixture project (fixtures.ensure_eval_fixtures) to exist — the first "
+			"live run referenced a project that wasn't on the site, so the agent "
+			"correctly list-projects'd to find it instead. With a real target it goes "
+			"straight to project-status (a list-projects-then-status path also passes)."
+		),
 	),
 	Scenario(
 		name="smalltalk-no-tool",
