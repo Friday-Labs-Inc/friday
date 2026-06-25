@@ -145,8 +145,8 @@ def judge_quality(
 	try:
 		resp = provider.chat(messages, model=model)
 		content = resp["content"] if isinstance(resp, dict) else getattr(resp, "content", "")
-	except Exception as exc:  # a judge transport failure is a quality fail, not a crash.
-		return _judge_error(rubric, f"judge call failed: {type(exc).__name__}")
+	except Exception as exc:  # a judge transport/auth failure: the seat could not run.
+		return _judge_error(rubric, f"judge call failed: {type(exc).__name__}", unavailable=True)
 
 	parsed = _extract_json(content or "")
 	if not parsed or not isinstance(parsed.get("criteria"), list):
@@ -176,8 +176,15 @@ def judge_quality(
 	}
 
 
-def _judge_error(rubric: tuple[str, ...], reason: str) -> dict:
-	"""A failed/unparseable judge call → a quality FAIL carrying the reason."""
+def _judge_error(rubric: tuple[str, ...], reason: str, unavailable: bool = False) -> dict:
+	"""A failed/unparseable judge call → a quality FAIL carrying the reason.
+
+	`unavailable=True` marks a seat that COULD NOT RUN (auth/transport failure) vs one
+	that ran but returned junk. A panel excludes unavailable seats from the vote (and
+	SKIPs if all seats are unavailable) — a misconfigured judge must not be scored as the
+	agent failing the rubric. Unparseable output is NOT unavailable: the judge ran, so it
+	counts as a not-met vote (a working-but-junk judge can't pass a reply by omission).
+	"""
 	return {
 		"criteria": [],
 		"unmet": list(rubric),
@@ -185,6 +192,7 @@ def _judge_error(rubric: tuple[str, ...], reason: str) -> dict:
 		"total": len(rubric),
 		"ok": False,
 		"error": reason,
+		"unavailable": unavailable,
 	}
 
 
@@ -219,12 +227,14 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 
 	`seats` is a list of `{"provider": <built>, "name": <str>, "lens": <str>}`. Each
 	seat judges the full rubric from its lens; a criterion is **met** iff a strict
-	majority of seats marked it met (a seat that errored or omitted a verdict counts
-	as not-met for that criterion — it cannot pass by omission). The scenario passes
-	the quality axis iff every criterion wins its vote.
+	majority of the VOTABLE seats marked it met. A seat that could not run (auth/
+	transport failure) is excluded from the vote, not counted against the reply; a seat
+	that ran but omitted/garbled a criterion is a not-met vote (no passing by omission).
+	If every seat is unavailable, the verdict is **skipped** (`ok=None, skipped=True`) —
+	a misconfigured judge is never scored as the agent failing.
 
-	Returns the same verdict shape as `judge_quality` (so the runner + report are
-	unchanged) plus panel detail: `panel_size`, per-criterion `votes` ("k/N"), and a
+	Returns the `judge_quality` verdict shape (so the runner + report are unchanged) plus
+	panel detail: `panel_size`, per-criterion `votes` ("k/N" over votable seats), and a
 	`seats` summary. A 1-seat panel is exactly the Slice 2 single-judge verdict.
 	"""
 	total = len(rubric)
@@ -232,22 +242,62 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 	if total == 0:
 		return {"criteria": [], "unmet": [], "met_count": 0, "total": 0, "ok": True, "panel_size": n}
 	if n == 0:
-		return {**_judge_error(rubric, "panel has no seats"), "panel_size": 0, "seats": []}
+		# No seat could be built (every independent provider failed to construct) → the
+		# quality axis is unavailable, which is a SKIP, not the agent failing the rubric.
+		return {
+			"ok": None,
+			"skipped": True,
+			"reason": "panel has no seats — no independent judge provider could be built",
+			"criteria": [],
+			"unmet": [],
+			"met_count": 0,
+			"total": total,
+			"panel_size": 0,
+			"seats": [],
+		}
 
 	# Each seat's full verdict (judge_quality never raises).
 	seat_verdicts = [
 		judge_quality(reply, rubric, provider=s["provider"], lens=s.get("lens", "")) for s in seats
 	]
+	seats_summary = [
+		{"name": s.get("name", ""), "lens": s.get("lens", ""), "ok": v.get("ok"), "error": v.get("error")}
+		for s, v in zip(seats, seat_verdicts, strict=True)
+	]
 
+	# A seat that COULD NOT RUN (auth/transport failure) is EXCLUDED from the vote — an
+	# absent verdict, not a not-met one. If EVERY seat is unavailable, the panel can't
+	# judge at all → SKIP (never score the agent down for a misconfigured judge; a live
+	# run caught 3 keyless judge rows → LLMAuthError on every seat). A seat that ran but
+	# returned junk (unparseable) STAYS in the vote as not-met — a working-but-broken
+	# judge can't pass a reply by omission.
+	votable = [v for v in seat_verdicts if not v.get("unavailable")]
+	unavailable_errors = [v["error"] for v in seat_verdicts if v.get("unavailable")]
+	if not votable:
+		reason = unavailable_errors[0] if unavailable_errors else "no judge produced a verdict"
+		return {
+			"ok": None,
+			"skipped": True,
+			"reason": f"all {n} judge seat(s) unavailable — {reason}",
+			"criteria": [],
+			"unmet": [],
+			"met_count": 0,
+			"total": total,
+			"panel_size": n,
+			"seats": seats_summary,
+		}
+
+	nv = len(votable)
 	criteria = []
 	unmet = []
 	for crit in rubric:
 		votes_met = 0
 		met_reasons: list[str] = []
 		unmet_reasons: list[str] = []
-		for v in seat_verdicts:
-			# Match this seat's verdict to THIS rubric criterion by text; a seat that
-			# didn't address it (None) is a silent not-met vote.
+		for v in votable:
+			# Match this votable seat's verdict to THIS criterion by text; one that didn't
+			# address it (None / unparseable) is a not-met vote — it stays in the
+			# denominator, so a criterion can't be met by omission.
 			item = _seat_item_for(v.get("criteria", []), crit)
 			if item is None:
 				continue
@@ -257,7 +307,7 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 					met_reasons.append(item["reason"])
 			elif item.get("reason"):
 				unmet_reasons.append(item["reason"])
-		majority = votes_met * 2 > n
+		majority = votes_met * 2 > nv
 		if not majority:
 			unmet.append(crit)
 		# Surface a reason that EXPLAINS the verdict: a dissent for a failed criterion,
@@ -267,7 +317,7 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 			{
 				"criterion": crit,
 				"met": majority,
-				"votes": f"{votes_met}/{n}",
+				"votes": f"{votes_met}/{nv}",
 				"reason": reason[0] if reason else "",
 			}
 		)
@@ -279,10 +329,7 @@ def run_panel(reply: str, rubric: tuple[str, ...], seats: list[dict]) -> dict:
 		"unmet": unmet,
 		"met_count": sum(1 for c in criteria if c["met"]),
 		"total": total,
-		"seats": [
-			{"name": s.get("name", ""), "lens": s.get("lens", ""), "ok": v.get("ok"), "error": v.get("error")}
-			for s, v in zip(seats, seat_verdicts, strict=True)
-		],
+		"seats": seats_summary,
 	}
 
 
@@ -299,7 +346,6 @@ def resolve_judge_provider(agent_profile: str, judge_provider_name: str | None =
 	"""
 	import frappe
 	from frappe.friday_core.llm.provider import (
-		LLMError,
 		_resolve_provider_row,
 		get_provider_by_name,
 	)
@@ -325,8 +371,10 @@ def resolve_judge_provider(agent_profile: str, judge_provider_name: str | None =
 			}
 		try:
 			provider = get_provider_by_name(judge_provider_name)
-		except LLMError as exc:
-			return {"provider": None, "name": None, "reason": str(exc)}
+		except Exception as exc:
+			# ANY build failure (LLMError, or frappe.ValidationError for a row with no
+			# stored api_key) → blocked, not a crash.
+			return {"provider": None, "name": None, "reason": f"{type(exc).__name__}: {exc}"}
 		return {"provider": provider, "name": judge_provider_name}
 
 	# Auto-discover: first active provider whose name differs from the agent's.
@@ -340,7 +388,8 @@ def resolve_judge_provider(agent_profile: str, judge_provider_name: str | None =
 		if row["name"] != agent_name:
 			try:
 				provider = get_provider_by_name(row["name"])
-			except LLMError:
+			except Exception:
+				# Skip a row that won't build (e.g. no stored api_key) — try the next.
 				continue
 			return {"provider": provider, "name": row["name"]}
 
@@ -403,8 +452,15 @@ def build_panel_seats(names: list[str], panel_size: int) -> list[dict]:
 	index from `_LENS_ORDER`, so two seats on the same provider still judge from
 	different angles. A name that fails to build is skipped (the panel shrinks rather
 	than crashing). Returns the seats actually built (may be fewer than `panel_size`).
+
+	A build can fail for MANY reasons, not just `LLMError`: a sandbox often has stale
+	`LLM Provider` rows with no stored `api_key`, and `get_provider_by_name` then raises
+	`frappe.ValidationError` ("Password not found") — NOT an `LLMError`. So we skip on
+	ANY exception; one junk provider row must never crash the whole eval. (A real live
+	run on friday.localhost caught exactly this — a leftover `*-test-provider` with no
+	key — which the old `except LLMError` let through to a crash.)
 	"""
-	from frappe.friday_core.llm.provider import LLMError, get_provider_by_name
+	from frappe.friday_core.llm.provider import get_provider_by_name
 
 	if not names or panel_size < 1:
 		return []
@@ -415,7 +471,7 @@ def build_panel_seats(names: list[str], panel_size: int) -> list[dict]:
 		if name not in cache:
 			try:
 				cache[name] = get_provider_by_name(name)
-			except LLMError:
+			except Exception:
 				cache[name] = None
 		provider = cache[name]
 		if provider is None:

@@ -392,6 +392,44 @@ class TestResolveJudgeProvider(unittest.TestCase):
 		self.assertEqual(out["name"], "Claude")
 		self.assertIs(out["provider"], sentinel)
 
+	def test_explicit_provider_build_failure_is_blocked_not_crash(self):
+		# A named provider that can't build (e.g. no stored api_key → ValidationError,
+		# NOT LLMError) must return a reason, never propagate. (Live-run lesson.)
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		def boom(_):
+			raise RuntimeError("Password not found for LLM Provider Claude api_key")
+
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch.object(prov, "get_provider_by_name", side_effect=boom),
+		):
+			out = judge.resolve_judge_provider("Friday", judge_provider_name="Claude")
+		self.assertIsNone(out["provider"])
+		self.assertIn("Password not found", out["reason"])
+
+	def test_autodiscovery_skips_unbuildable_then_takes_next(self):
+		from frappe.friday_core.evals import judge
+		from frappe.friday_core.llm import provider as prov
+
+		sentinel = object()
+
+		def gp(name):
+			if name == "Broken":
+				raise RuntimeError("Password not found")
+			return sentinel
+
+		rows = [{"name": "MiniMax"}, {"name": "Broken"}, {"name": "Good"}]
+		with (
+			mock.patch.object(prov, "_resolve_provider_row", return_value={"name": "MiniMax"}),
+			mock.patch("frappe.get_all", return_value=rows),
+			mock.patch.object(prov, "get_provider_by_name", side_effect=gp),
+		):
+			out = judge.resolve_judge_provider("Friday")
+		self.assertEqual(out["name"], "Good")
+		self.assertIs(out["provider"], sentinel)
+
 	def test_blocked_when_only_agent_provider_is_active(self):
 		from frappe.friday_core.evals import judge
 		from frappe.friday_core.llm import provider as prov
@@ -651,11 +689,14 @@ class TestPanel(unittest.TestCase):
 		self.assertEqual(v["criteria"][0]["votes"], "1/1")
 		self.assertEqual(v["panel_size"], 1)
 
-	def test_no_seats_is_an_error_not_a_crash(self):
+	def test_no_seats_is_skipped_not_a_fail(self):
+		# No buildable seats → the quality axis is unavailable → SKIP, never a 0% that
+		# scores the agent down for a judge-config problem.
 		from frappe.friday_core.evals import judge
 
 		v = judge.run_panel("reply", ("c1",), [])
-		self.assertFalse(v["ok"])
+		self.assertTrue(v["skipped"])
+		self.assertIsNone(v["ok"])
 		self.assertEqual(v["panel_size"], 0)
 
 	def test_seats_summary_carries_lens(self):
@@ -691,9 +732,14 @@ class TestBuildPanelSeats(unittest.TestCase):
 		from frappe.friday_core.evals import judge
 		from frappe.friday_core.llm import provider as prov
 
+		# IMPORTANT: a real build failure is NOT always an LLMError — a provider row with
+		# no stored api_key raises frappe.ValidationError ("Password not found"). A live
+		# run on friday.localhost hit exactly this and crashed the whole eval, because the
+		# code (and this test) had only caught LLMError. Simulate a non-LLMError here so a
+		# narrow `except LLMError` regression is caught by the suite next time.
 		def gp(nm):
 			if nm == "B":
-				raise prov.LLMError("cannot build B")
+				raise RuntimeError("Password not found for LLM Provider B api_key")
 			return f"prov-{nm}"
 
 		with mock.patch.object(prov, "get_provider_by_name", side_effect=gp):
@@ -809,6 +855,35 @@ class TestPanelRobustness(unittest.TestCase):
 		self.assertFalse(v["ok"])
 		self.assertEqual(v["criteria"][0]["reason"], "jargon")
 
+	def test_all_seats_unavailable_skips_with_reason(self):
+		# Every seat's provider raises (e.g. keyless rows → LLMAuthError). The panel can't
+		# judge → SKIP with the error surfaced, NOT a 0% that blames the agent. (Live-run
+		# finding on friday.localhost: 3 keyless judge rows.)
+		from frappe.friday_core.evals import judge
+
+		seats = [
+			{"provider": _FakeProvider(raises=RuntimeError("bad key")), "name": "P1", "lens": ""},
+			{"provider": _FakeProvider(raises=RuntimeError("bad key")), "name": "P2", "lens": ""},
+		]
+		v = judge.run_panel("r", ("c",), seats)
+		self.assertTrue(v["skipped"])
+		self.assertIsNone(v["ok"])
+		self.assertIn("unavailable", v["reason"])
+
+	def test_one_unavailable_seat_excluded_others_still_vote(self):
+		# 1 seat errors (excluded), 2 valid seats both say met → 2/2 → met. The dead seat
+		# must not drag the vote down (it's absent, not a not-met vote).
+		from frappe.friday_core.evals import judge
+
+		seats = [
+			{"provider": _FakeProvider(raises=RuntimeError("dead")), "name": "P0", "lens": ""},
+			self._seat(_met("c")),
+			self._seat(_met("c")),
+		]
+		v = judge.run_panel("r", ("c",), seats)
+		self.assertTrue(v["ok"])
+		self.assertEqual(v["criteria"][0]["votes"], "2/2")  # denominator = votable seats only
+
 
 class TestResolveIndependentProviders(unittest.TestCase):
 	def test_explicit_same_as_agent_is_rejected(self):
@@ -863,9 +938,6 @@ class TestProbes(unittest.TestCase):
 		m_task = mock.MagicMock()
 		m_task.name = "TASK-1"
 		m_task.insert.return_value = m_task
-		m_cm = mock.MagicMock()
-		m_cm.name = "CM-1"
-		m_cm.insert.return_value = m_cm
 
 		with (
 			mock.patch.object(probes, "frappe") as fr,
@@ -878,7 +950,9 @@ class TestProbes(unittest.TestCase):
 				},
 			),
 		):
-			fr.get_doc.side_effect = [m_task, m_cm]
+			# The probe inserts ONLY a Task now (no Chat Message — that would trigger the
+			# real inbound gateway). One get_doc call.
+			fr.get_doc.return_value = m_task
 			fr.db.get_value.return_value = types.SimpleNamespace(
 				workflow_state="ForceKilled", force_killed_by=op, force_kill_reason="operator /stop force"
 			)
@@ -887,6 +961,8 @@ class TestProbes(unittest.TestCase):
 
 		self.assertTrue(v["ok"], v)
 		self.assertTrue(all(c["ok"] for c in v["checks"]))
+		# The Chat Message branch is gone — exactly one doc (the Task) is created.
+		self.assertEqual(fr.get_doc.call_count, 1)
 
 	def test_force_kill_audit_flags_wrong_state(self):
 		import types
@@ -896,9 +972,6 @@ class TestProbes(unittest.TestCase):
 		m_task = mock.MagicMock()
 		m_task.name = "TASK-1"
 		m_task.insert.return_value = m_task
-		m_cm = mock.MagicMock()
-		m_cm.name = "CM-1"
-		m_cm.insert.return_value = m_cm
 
 		with (
 			mock.patch.object(probes, "frappe") as fr,
@@ -907,7 +980,7 @@ class TestProbes(unittest.TestCase):
 				return_value={"tasks_now_forcekilled": [], "jobs_cancelled": 0, "jobs_already_done": 0},
 			),
 		):
-			fr.get_doc.side_effect = [m_task, m_cm]
+			fr.get_doc.return_value = m_task
 			fr.db.get_value.return_value = types.SimpleNamespace(
 				workflow_state="Executing", force_killed_by=None, force_kill_reason=None
 			)
@@ -917,6 +990,40 @@ class TestProbes(unittest.TestCase):
 		self.assertFalse(v["ok"])
 		states = {c["name"]: c["ok"] for c in v["checks"]}
 		self.assertFalse(states["task → ForceKilled"])
+
+	def test_audit_event_check_is_soft_and_does_not_gate(self):
+		# Hard audit checks pass but the best-effort Dispatcher Event is absent: the probe
+		# must still PASS (a missing observability row isn't a force-kill failure).
+		import types
+
+		from frappe.friday_core.evals import probes
+
+		op = probes._FORCE_KILL_OPERATOR
+		m_task = mock.MagicMock()
+		m_task.name = "TASK-1"
+		m_task.insert.return_value = m_task
+
+		with (
+			mock.patch.object(probes, "frappe") as fr,
+			mock.patch(
+				"frappe.friday_core.gateway.interrupt.force_kill_session",
+				return_value={
+					"tasks_now_forcekilled": ["TASK-1"],
+					"jobs_cancelled": 0,
+					"jobs_already_done": 1,
+				},
+			),
+		):
+			fr.get_doc.return_value = m_task
+			fr.db.get_value.return_value = types.SimpleNamespace(
+				workflow_state="ForceKilled", force_killed_by=op, force_kill_reason="operator /stop force"
+			)
+			fr.get_all.return_value = []  # no audit event row
+			v = probes.probe_force_kill_audit(None, "sess-1")
+
+		self.assertTrue(v["ok"])  # soft check absence does not gate
+		soft = [c for c in v["checks"] if c.get("soft")]
+		self.assertTrue(soft and not soft[0]["ok"])
 
 	def test_pgvector_probe_skips_on_non_postgres(self):
 		from frappe.friday_core.evals import probes
