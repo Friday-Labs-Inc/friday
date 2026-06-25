@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Friday — End-to-End Testing Guide</title>
+<style>
+  @page { size: A4; margin: 22mm 18mm; @bottom-center { content: "Friday E2E Testing Guide · v0.x · " counter(page) " / " counter(pages); font-size: 8pt; color: #888; } }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 24pt; margin: 0 0 2pt; letter-spacing: -0.5px; }
+  h1 + .sub { color: #666; font-size: 11pt; margin: 0 0 18pt; }
+  h2 { font-size: 14pt; margin: 22pt 0 6pt; padding-bottom: 3pt; border-bottom: 2px solid #111; }
+  h3 { font-size: 11.5pt; margin: 14pt 0 4pt; color: #111; }
+  p { margin: 5pt 0; }
+  code { background: #f3f3f3; padding: 1px 5px; border-radius: 3px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; }
+  pre { background: #f6f6f6; border-left: 3px solid #bbb; padding: 8pt 10pt; border-radius: 4px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9.3pt; }
+  th, td { text-align: left; vertical-align: top; padding: 5pt 7pt; border-bottom: 1px solid #e2e2e2; }
+  th { background: #f0f0f0; border-bottom: 1.5px solid #bbb; }
+  .pill { display: inline-block; background: #111; color: #fff; font-size: 7.5pt; padding: 1px 7px; border-radius: 10px; vertical-align: middle; letter-spacing: 0.4px; }
+  .new { background: #0a7d33; }
+  .note { background: #fffbe6; border: 1px solid #f0e3a0; padding: 7pt 10pt; border-radius: 5px; margin: 8pt 0; font-size: 9.5pt; }
+  .step { margin: 3pt 0; }
+  .chk { color: #0a7d33; font-weight: bold; }
+  ul { margin: 4pt 0; padding-left: 18pt; }
+  li { margin: 2pt 0; }
+  .lead { font-size: 11pt; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 16pt 0; }
+</style>
+</head>
+<body>
+
+<h1>Friday — End-to-End Testing Guide</h1>
+<p class="sub">How to configure and verify every delivered feature · live target: <code>ai.randompack.com</code></p>
+
+<p class="lead">Friday is an enterprise agentic-orchestration framework: AI agents are first-class actors that run governed, audited, durable work. This guide is for <strong>testing</strong> what's been delivered — each feature has <strong>What it is</strong>, <strong>How to test</strong>, and <strong>Expected result</strong>. You work in two places:</p>
+<ul>
+  <li><strong>Desk</strong> (<code>/app</code>, log in as Administrator) — configure agents, providers, cron jobs, roles, Slack.</li>
+  <li><strong>Raven</strong> (<code>/raven</code>) — chat with and control agents. The primary "talk to your agents like coworkers" surface.</li>
+</ul>
+
+<h2>0 · Prerequisites (one-time)</h2>
+<p>On the live AWS box these are already set; check them in Desk if anything misbehaves.</p>
+<table>
+  <tr><th>Prereq</th><th>Where (Desk)</th><th>Why</th></tr>
+  <tr><td>LLM provider + key</td><td><code>LLM Provider</code> → one <strong>Active</strong> row (MiniMax)</td><td>No agent thinks without it</td></tr>
+  <tr><td>An active agent</td><td><code>Agent Profile</code> → ≥1 Active Orchestrator</td><td>The thing you talk to</td></tr>
+  <tr><td>Raven provisioned</td><td><code>Raven Bot</code> "Friday" + a War Room channel</td><td>The chat surface</td></tr>
+  <tr><td>Your roles</td><td><code>User</code> → you → Roles</td><td><strong>Friday Operator</strong> (commands) + <strong>Friday Cron Manager</strong> (cron)</td></tr>
+</table>
+<div class="note"><strong>Migrate after deploy:</strong> stop the stack, run <code>bench --site &lt;site&gt; migrate</code> clean, restart. The migrate seeds new roles but leaves them <em>unassigned</em> — grant <strong>Friday Operator</strong> + <strong>Friday Cron Manager</strong> to your account or commands/cron are refused.</div>
+
+<h2>1 · Talk to an agent <span class="pill">core</span></h2>
+<p><strong>What:</strong> message the Friday bot in Raven; it answers as a real governed agent (thinks, uses tools, replies).</p>
+<p class="step"><strong>Test:</strong> open a DM with <strong>Friday</strong> → "What can you help me with?"</p>
+<p class="step"><strong>Expect:</strong> a real reply authored by the agent. This is the foundation everything rides on.</p>
+
+<h2>2 · Run real project work</h2>
+<p><strong>What:</strong> agents create Projects + Tasks, run a durable pipeline (dispatch → run → auto-heal), and produce downloadable deliverables (Markdown + PDF).</p>
+<p class="step"><strong>Test:</strong> ask an Orchestrator "Draft a one-page brief on X and save it." Watch Desk: <code>Task</code> list + the <strong>Task Pipeline Kanban</strong>.</p>
+<p class="step"><strong>Expect:</strong> Tasks move Pending → Assigned → Executing → Completed; a finished task attaches real deliverable files.</p>
+
+<h2>3 · The human-approval gate — from chat <span class="pill">governance</span></h2>
+<p><strong>What:</strong> a risky action pauses and waits for a human; you approve/deny from Raven.</p>
+<p class="step"><strong>Test:</strong> when an agent hits a gated action it posts that it needs approval (a <code>Workflow Request</code> goes Pending). Type <code>/approve</code> (or <code>/approve &lt;id&gt;</code>), or <code>/deny too risky</code>.</p>
+<p class="step"><strong>Expect:</strong> <code>/approve</code> flips the request to Approved <strong>and resumes the paused work</strong>; <code>/deny</code> rejects + records the reason. <span class="chk">(AWS-verified.)</span></p>
+
+<h2>4 · Control a running agent — slash commands</h2>
+<p><code>/status</code> and <code>/help</code> are open to anyone; the rest need <strong>Friday Operator</strong>.</p>
+<table>
+  <tr><th>Command</th><th>Does</th><th>Expect</th></tr>
+  <tr><td><code>/help</code></td><td>List commands</td><td>Bot posts the list</td></tr>
+  <tr><td><code>/status</code></td><td>This channel's state</td><td>"N pending approval(s)"</td></tr>
+  <tr><td><code>/approve</code> · <code>/deny</code></td><td>The gate (§3)</td><td>Resumes / rejects</td></tr>
+  <tr><td><code>/stop</code></td><td>Interrupt the turn + its delegated work</td><td>"🛑 Stopping this turn and N delegated task(s)"</td></tr>
+  <tr><td><code>/stop force</code></td><td><strong>Hard-kill</strong> a wedged turn now</td><td>"💀 Force-killed: N job(s) cancelled"; tasks → <code>ForceKilled</code></td></tr>
+  <tr><td><code>/steer &lt;text&gt;</code></td><td>Nudge a running turn without stopping it</td><td>Agent adapts on its next step</td></tr>
+</table>
+<div class="note"><strong>Not a bug:</strong> <code>/stop</code> and <code>/steer</code> take effect at the agent's <em>next thinking step</em> (after its current model call), not mid-sentence. Use <code>/stop force</code> only when a turn is wedged inside one long operation. A plain message sent while busy <em>queues</em> — only the commands interrupt.</div>
+
+<h2>5 · Scheduled agent runs — Cron Jobs <span class="pill">⏰</span></h2>
+<p><strong>What:</strong> "run agent X with prompt P on schedule S, deliver result to T." A scheduled run is a normal durable Task underneath.</p>
+<p class="step"><strong>Test (Desk):</strong> new <strong>Cron Job</strong> → an Agent Profile, prompt "Summarise today's completed tasks", <code>Schedule Kind=interval</code>, <code>Schedule Expression=1</code> (every minute), <code>Deliver To=local</code>.</p>
+<p class="step"><strong>Expect:</strong> within a minute a Task spawns + runs; the result is saved as a private File (open via the job's <code>Last Task</code>). Switch <code>Deliver To</code> to <code>raven:&lt;channel-id&gt;</code> → it posts into that channel. <code>Repeat Times=1</code> → auto-disables after one run.</p>
+<div class="note"><strong>Heads-up:</strong> results aren't visible until ≥1 scheduler minute passes — don't read too early.</div>
+
+<h3>5b · Agents schedule their own work <span class="pill new">NEW</span></h3>
+<p class="step"><strong>Test (Raven):</strong> ask an agent "schedule a job to post a status summary into this channel every 2 minutes." Then "list my scheduled jobs" and "pause/remove that job."</p>
+<p class="step"><strong>Expect:</strong> the agent uses the <code>manage-cron-jobs</code> skill → a Cron Job appears owned by that agent, delivering to the channel; within the interval the summary posts. An agent can only manage its <em>own</em> jobs.</p>
+
+<h2>6 · Search past conversations — session_search <span class="pill new">NEW</span></h2>
+<p><strong>What:</strong> a long-lived agent can search its own past <code>Chat Message</code> history by full text — "what did we decide about X last week?"</p>
+<p class="step"><strong>Test (Raven):</strong> after some conversation, ask the agent "search our past messages for &lt;a keyword you used earlier&gt;."</p>
+<p class="step"><strong>Expect:</strong> the agent calls <code>session_search</code> and returns ranked past messages (content + session + time). Scoped to that agent's own messages only.</p>
+
+<h2>7 · Second chat surface — Slack <span class="pill new">NEW</span></h2>
+<p><strong>What:</strong> Friday on Slack too — a thin adapter writing the same <code>Chat Message</code> rows as Raven. Proves the gateway is multi-surface.</p>
+<p class="step"><strong>Setup (one-time, external):</strong></p>
+<ul>
+  <li>Create a Slack app; add a <strong>bot token</strong> (<code>xoxb-…</code>) + the <strong>signing secret</strong> to <strong>Slack Config</strong> in Desk; set <code>bot_user_id</code> + <code>default_agent_profile</code>; enable.</li>
+  <li>Point the app's Event Subscriptions request URL at:<br>
+  <pre>https://ai.randompack.com/api/method/frappe.friday_core.surfaces.slack_adapter.receive_event</pre>
+  Subscribe to <code>message.im</code> and <code>app_mention</code>.</li>
+</ul>
+<p class="step"><strong>Test:</strong> DM the Slack bot, or <code>@mention</code> it in a channel; try <code>/help</code> and <code>/approve</code> there too.</p>
+<p class="step"><strong>Expect:</strong> the bot replies in Slack exactly like Raven; slash commands work; the request signature is verified (a forged request is rejected).</p>
+
+<hr>
+
+<h2>Quick-start E2E checklist</h2>
+<p>Run in order on <code>ai.randompack.com</code> (as Administrator, with the two Friday roles granted):</p>
+<table>
+  <tr><th>#</th><th>Step</th><th>Pass?</th></tr>
+  <tr><td>1</td><td>DM <strong>Friday</strong> in Raven → get a reply (§1)</td><td>☐</td></tr>
+  <tr><td>2</td><td><code>/help</code> in a channel → bot lists commands (§4)</td><td>☐</td></tr>
+  <tr><td>3</td><td>Ask for a multi-step job → Tasks complete + a deliverable attaches (§2)</td><td>☐</td></tr>
+  <tr><td>4</td><td>Trigger an approval gate → <code>/approve</code> → paused work resumes (§3)</td><td>☐</td></tr>
+  <tr><td>5</td><td>During a long run: <code>/steer use the staging data</code> → adapts; <code>/stop</code> → ends (§4)</td><td>☐</td></tr>
+  <tr><td>6</td><td>Long wedged run: <code>/stop force</code> → "N job(s) cancelled", tasks → ForceKilled (§4)</td><td>☐</td></tr>
+  <tr><td>7</td><td>Create a Cron Job (interval 1, deliver local) → a result File appears within a minute (§5)</td><td>☐</td></tr>
+  <tr><td>8</td><td>Ask an agent to schedule a recurring job → it posts on schedule (§5b)</td><td>☐</td></tr>
+  <tr><td>9</td><td>Ask an agent to search past messages → ranked hits (§6)</td><td>☐</td></tr>
+  <tr><td>10</td><td>(If Slack configured) DM/@mention the Slack bot → replies + commands work (§7)</td><td>☐</td></tr>
+</table>
+
+<h2>What's NOT in scope yet (set expectations)</h2>
+<ul>
+  <li><strong>A2A</strong> (agent-to-agent protocol) — deferred.</li>
+  <li><strong>External memory providers</strong> (Mem0) — deferred; first-party pgvector covers semantic recall.</li>
+  <li><strong>Lifecycle-hook plugins</strong> — deliberately not built (Friday already emits lifecycle events internally).</li>
+  <li><strong>Polish:</strong> live token streaming, per-surface display tiers, out-of-turn transcript mirroring.</li>
+</ul>
+<p style="margin-top:14pt; color:#666; font-size:9pt;">The Hermes → Friday port is complete: every functional capability is shipped and on <code>main</code>. The items above are justified deferrals or polish, not gaps.</p>
+
+</body>
+</html>
