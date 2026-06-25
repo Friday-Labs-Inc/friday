@@ -3,9 +3,18 @@
 
 """
 Provisioning for the `session_search` skill (Design 89). Idempotent; runs on
-every migrate. Creates the Skill row (read-only, low risk, no role gate — an
-agent searching its OWN transcripts needs no special privilege) and grants the
-agent's existing skill set Chat Message READ, then wires it onto a profile.
+every migrate. Creates the Skill row (read-only, low risk, no role gate, and
+**no `required_doctypes`**) and wires it onto a profile.
+
+WHY NO `Chat Message: read` DOCTYPE GATE (the fix for the organic-load bug):
+A `required_doctypes=[Chat Message: read]` gate would drop the skill from every
+agent's menu unless a role grants `Chat Message: read` — and that grant is
+DOCTYPE-level, so it would ALSO unlock the generic `read-record`/`list-records`
+skills on Chat Message, letting an agent read OTHER agents' messages. The
+session_search handler instead hard-scopes to the caller's own `agent_profile`
+(read from dispatch context, not an LLM parameter — unspoofable), so it needs no
+broad doctype grant. Dropping the gate is both the fix AND the more secure choice,
+and matches D89's "no special privilege" intent.
 """
 
 from __future__ import annotations
@@ -35,7 +44,10 @@ _SKILL = {
 		},
 		"required": ["query"],
 	},
-	"docs": [{"target_doctype": "Chat Message", "operation": "read"}],
+	# No required_doctypes — see the module docstring. The handler's own-profile
+	# scoping is the boundary; a Chat Message read gate would both break the menu
+	# and leak cross-agent reads via generic read skills.
+	"docs": [],
 }
 
 

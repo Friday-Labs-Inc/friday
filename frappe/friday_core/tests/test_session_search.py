@@ -96,5 +96,18 @@ class TestChatSearchSchema(unittest.TestCase):
 		fr.db.sql_ddl.assert_not_called()
 
 
+class TestSkillIsLoadable(unittest.TestCase):
+	def test_no_doctype_gate(self):
+		# REGRESSION GUARD (AWS-found): a `required_doctypes=[Chat Message: read]`
+		# gate drops session_search from every agent's menu unless a role grants
+		# Chat Message read — and that grant is doctype-level, so it would ALSO
+		# leak cross-agent reads via generic read-record/list-records. The handler
+		# hard-scopes to the caller's own agent_profile, so NO doctype gate is
+		# needed. Keep this empty.
+		from frappe.friday_core.skills import bootstrap_session_search as b
+
+		self.assertEqual(b._SKILL["docs"], [])
+
+
 if __name__ == "__main__":
 	unittest.main()
