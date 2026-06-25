@@ -3,43 +3,78 @@
 
 """Render aggregated eval verdicts to Markdown.
 
-Two sections:
-  1. A summary table — one row per scenario with pass-rate, tool-selection rate, and
-     the economics *distributions* (median latency / tokens, mean $/run). Rates, not
-     single pass/fail, because the whole point is to show variance.
-  2. A "where + why" failures section — for any scenario that didn't fully pass,
-     every failing run is broken down into *why* (errored / never called the
-     expected tool / called a forbidden tool / reply missing a phrase) and *what it
-     actually called*. This is the credit-assignment view (Design 91 §hard-problem 2):
-     it localizes the failure instead of just saying "fail".
+Sections:
+  1. A summary table — one row per scenario with pass-rate, tool-selection rate, an
+     open-ended QUALITY rate (Slice 2: the share of judged runs that met every rubric
+     criterion, or `SKIP` when no independent judge was available, or `—` for a
+     scenario with no rubric), and the economics *distributions* (median latency /
+     tokens, mean $/run). Rates, not single pass/fail, because the point is variance.
+  2. A "where + why" failures section — for any scenario that didn't fully pass, every
+     failing run is broken down into *why* (errored / wrong tool / missing phrase /
+     unmet rubric criterion + the judge's reason) and *what it actually called*. This
+     is the credit-assignment view (Design 91 §hard-problem 2): it localizes the
+     failure instead of just saying "fail".
+
+When any rubric scenario could not be judged, a loud banner names the gap and how to
+fix it — the quality axis is *blocked*, never silently passed (Slice 2's locked
+"require a separate independent judge provider" decision).
 """
 
 from __future__ import annotations
 
 
+def _quality_cell(r: dict) -> str:
+	"""The Quality column for one scenario row."""
+	if not r.get("has_rubric"):
+		return "—"
+	if r.get("quality_unavailable"):
+		return "SKIP"
+	rate = r.get("quality_ok_rate")
+	return f"{rate:.0%}" if rate is not None else "SKIP"
+
+
 def render_markdown(
-	results: list[dict], *, title: str = "Friday Agentic Eval — Slice 1", site: str = ""
+	results: list[dict],
+	*,
+	title: str = "Friday Agentic Eval — Slice 2",
+	site: str = "",
+	judge_name: str | None = None,
 ) -> str:
 	n = results[0]["n"] if results else 0
 	total = len(results)
 	fully_passing = sum(1 for r in results if r["pass_rate"] == 1.0)
+	blocked = [r for r in results if r.get("quality_unavailable")]
 
 	lines = [f"# {title}", ""]
 	if site:
 		lines.append(
 			f"_Site: `{site}` · {n} run(s) per scenario · real path (loader → matrix → run_turn → dispatch)._"
 		)
+		if judge_name:
+			lines.append(f"_Quality judge: `{judge_name}` (independent provider — not the agent's)._")
 		lines.append("")
 	lines.append(f"**{fully_passing}/{total} scenarios fully passing.**")
 	lines.append("")
-	lines.append("| Scenario | Pass | Tool-sel | Latency p50 (ms) | Tokens p50 | $/run | Tags |")
-	lines.append("|---|---|---|---|---|---|---|")
+
+	if blocked:
+		names = ", ".join(f"`{r['scenario']}`" for r in blocked)
+		lines += [
+			f"> ⚠️ **Quality axis blocked for {len(blocked)} scenario(s)** ({names}): no "
+			"independent judge provider was available, so their rubric was not scored. "
+			"Configure a second active `LLM Provider` (different from the agent's) to "
+			"enable open-ended quality scoring.",
+			"",
+		]
+
+	lines.append("| Scenario | Pass | Tool-sel | Quality | Latency p50 (ms) | Tokens p50 | $/run | Tags |")
+	lines.append("|---|---|---|---|---|---|---|---|")
 	for r in results:
 		lines.append(
-			"| {s} | {p:.0%} | {t:.0%} | {lat:.0f} | {tok:.0f} | {cost:.4f} | {tags} |".format(
+			"| {s} | {p:.0%} | {t:.0%} | {q} | {lat:.0f} | {tok:.0f} | {cost:.4f} | {tags} |".format(
 				s=r["scenario"],
 				p=r["pass_rate"],
 				t=r["tool_ok_rate"],
+				q=_quality_cell(r),
 				lat=r["latency_ms"]["median"],
 				tok=r["tokens"]["median"],
 				cost=r["cost_usd_mean"],
@@ -66,8 +101,17 @@ def render_markdown(
 					why.append(f"called forbidden {run['tool']['forbidden_hit']}")
 				if run["outcome"]["missing"]:
 					why.append(f"reply missing {run['outcome']['missing']}")
+				quality = run.get("quality") or {}
+				if quality.get("error"):
+					why.append(f"judge error ({quality['error']})")
+				elif quality.get("unmet") and not quality.get("skipped"):
+					why.append(f"unmet rubric {quality['unmet']}")
 				lines.append(f"- **run {run['i']}**: " + "; ".join(why or ["unknown"]))
 				lines.append(f"  - tools actually called: `{run['tool']['called'] or '[]'}`")
+				# Per-criterion judge reasons — the open-ended credit-assignment view.
+				for crit in quality.get("criteria", []):
+					if not crit.get("met"):
+						lines.append(f"  - ✗ _{crit['criterion']}_ — {crit.get('reason', '')}")
 			lines.append("")
 	else:
 		lines += ["", "_No failures — every scenario passed every run._", ""]

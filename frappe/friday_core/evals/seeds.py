@@ -18,6 +18,10 @@ These five seeds are deliberately small and adversarial:
     the new `list-projects` skill (and it must have loaded at all).
   * `project-status-by-name`  — a named-project status must reach `project-status`.
   * `smalltalk-no-tool`       — a bare greeting must call NO tool (over-eager guard).
+  * `self-intro-quality`      — Slice 2's open-ended seed: a short self-description is
+    graded by an INDEPENDENT LLM-judge against a 3-point rubric (on-topic / concise /
+    no fabricated specifics). Substring checks can't grade prose; the judge can. It
+    also dogfoods the judge path on every real run.
 
 NOT YET COVERED HERE (honest scope): the other two of the four motivating bugs —
 the pgvector migrate txn-poison (#132) and `/stop force` job-id (#138) — are NOT
@@ -25,8 +29,9 @@ run_turn tool-selection cases. pgvector is a migrate-gate concern; `/stop force`
 a robustness/interrupt case → Slice 3. Stated plainly so the suite isn't mistaken
 for "covers all four".
 
-Outcome (`expect_contains`) is intentionally light here — Slice 1 scores mainly
-tool-selection + economics; Slice 2 adds an LLM-judge for open-ended quality.
+Outcome (`expect_contains`) is intentionally light here — the tool-selection seeds
+score mainly tool-selection + economics. Open-ended quality is scored by the Slice 2
+LLM-judge (the `rubric` field), which `self-intro-quality` exercises.
 """
 
 from __future__ import annotations
@@ -90,5 +95,22 @@ SEEDS: list[Scenario] = [
 		forbid_skills=("list-records", "session_search", "list-projects", "project-status"),
 		tags=("tool-selection", "no-op"),
 		note="A bare greeting must trigger NO tool call (over-eager-tool guard).",
+	),
+	Scenario(
+		name="self-intro-quality",
+		profile="Friday",
+		prompt="In 2-3 sentences, introduce yourself: what you are and what you help with. No bullet points.",
+		rubric=(
+			"The reply describes an AI assistant/agent and what it helps with — it is on-topic and not a refusal.",
+			"The reply is concise: roughly one to three sentences, not a long multi-paragraph essay.",
+			"The reply invents no concrete specifics (no made-up project names, client names, dates, or numbers).",
+		),
+		rubric_note="Judge phrasing leniently but be strict about fabricated specifics.",
+		tags=("quality", "open-ended", "llm-judge"),
+		note=(
+			"The open-ended seed. A self-intro can't be graded by substring — an "
+			"independent LLM-judge scores it against the rubric. Exercises the Slice 2 "
+			"judge path on every real run (and reports SKIP if no second provider exists)."
+		),
 	),
 ]
