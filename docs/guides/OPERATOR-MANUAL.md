@@ -154,6 +154,48 @@ private **File** (open it from the job's `Last Task`). Switch `Deliver To` to
 
 ---
 
+## 8. Production: Raven realtime behind nginx ⚠️
+
+Friday's chat surface needs **live event push** — replies, task progress, and gate
+prompts should appear without a refresh. Behind a **hand-written nginx reverse
+proxy** this silently breaks unless one header is set.
+
+**Symptom.** The bot replies correctly (the audit trail is fine) but the reply only
+shows after a manual refresh, with a red toast: *"Realtime events are not working.
+Please try refreshing the page."* The browser console shows `Socket connection
+failed`; the network panel shows socket.io **polling requests returning 400** and
+never a `transport=websocket` request.
+
+**Cause.** socket.io polling is a same-origin XHR, so modern browsers **omit the
+`Origin` header**. Frappe's socketio auth compares `Host` vs `Origin`; with `Origin`
+undefined the check fails → the connection is rejected → no events flow. A `curl`
+probe will *not* reveal this (it sends no browser-style same-origin request), so it
+must be caught with a real browser.
+
+**Fix.** Add one line to the `/socket.io/` location block of the site's nginx
+config (e.g. `/etc/nginx/sites-enabled/<site>`):
+
+```nginx
+location /socket.io/ {
+    proxy_set_header Origin $scheme://$host;   # ← realtime breaks WITHOUT this line
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_pass http://127.0.0.1:9000;          # the site's socketio_port
+}
+```
+
+Then `nginx -t && nginx -s reload`. Re-check in a **real browser**: the reply
+pushes live, no toast, and the network panel shows a clean polling sequence.
+
+**Re-apply after a regen.** `bench setup nginx` regenerates the config from a
+template and will drop a hand-added line — re-add it (or bake it into the template)
+after any nginx regeneration. This is generic to **any** production reverse proxy
+for Frappe socketio, not specific to one site.
+
+---
+
 ## Quick-start test checklist
 
 Run these in order on `ai.randompack.com` (as Administrator, with **Friday
