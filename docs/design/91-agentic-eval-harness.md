@@ -1,7 +1,10 @@
-# Design 91 — Agentic Eval Harness (proposal)
+# Design 91 — Agentic Eval Harness
 
-> **Status:** PROPOSAL — awaiting decision. A first draft to react to, with the
-> design forks pre-decided (recommendations, all reversible). Triggered by a
+> **Status:** SLICE 1 SHIPPED (2026-06-25) — the pre-decided forks were confirmed
+> ("build slice 1") and the real-path wedge landed in `friday_core/evals/` (runner +
+> audit-trail scorer + Markdown report + 5 seed scenarios incl. the #144/#145/#147
+> regressions). See `docs/rollouts/eval-harness-slice-1-2026-06-25.md`. Slices 2–5
+> (LLM-judge / robustness / memory / CI gate) remain proposed below. Triggered by a
 > recurring, costly pattern: **green unit tests that hide real agent failures.**
 
 ## Why — the pattern that justifies this
