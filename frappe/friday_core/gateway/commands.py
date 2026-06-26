@@ -168,15 +168,11 @@ def _cmd_approve(session_id: str, user: str, args: list[str]) -> CommandResult:
 	explicit_id = args[0] if args else None
 	request_name = _resolve_pending_request(session_id, explicit_id)
 	if not request_name:
-		return CommandResult(
-			handled=True, ok=False, reply="No pending approval in this channel."
-		)
+		return CommandResult(handled=True, ok=False, reply="No pending approval in this channel.")
 	try:
 		approve(request_name, approved_by=user)
 	except Exception as exc:
-		return CommandResult(
-			handled=True, ok=False, reply=f"Could not approve {request_name}: {exc}"
-		)
+		return CommandResult(handled=True, ok=False, reply=f"Could not approve {request_name}: {exc}")
 	return CommandResult(handled=True, ok=True, reply=f"✅ Approved {request_name}.")
 
 
@@ -243,15 +239,11 @@ def _cmd_deny(session_id: str, user: str, args: list[str]) -> CommandResult:
 	reason = " ".join(args).strip()
 	request_name = _resolve_pending_request(session_id, None)
 	if not request_name:
-		return CommandResult(
-			handled=True, ok=False, reply="No pending approval in this channel."
-		)
+		return CommandResult(handled=True, ok=False, reply="No pending approval in this channel.")
 	try:
 		reject(request_name, approved_by=user, reason=reason)
 	except Exception as exc:
-		return CommandResult(
-			handled=True, ok=False, reply=f"Could not deny {request_name}: {exc}"
-		)
+		return CommandResult(handled=True, ok=False, reply=f"Could not deny {request_name}: {exc}")
 	tail = f" ({reason})" if reason else ""
 	return CommandResult(handled=True, ok=True, reply=f"🚫 Denied {request_name}.{tail}")
 
@@ -264,12 +256,18 @@ def _cmd_deny(session_id: str, user: str, args: list[str]) -> CommandResult:
 def _resolve_pending_request(session_id: str, explicit_id: str | None) -> str | None:
 	"""Pick the Workflow Request a command should act on (Design 82, Q5).
 
-	An explicit id wins outright. Otherwise return the OLDEST Pending request in
-	this channel (creation ascending, limit 1) — "approve the thing you just
-	asked me about". Returns None when nothing is pending.
+	An explicit id is honored ONLY if that request belongs to THIS channel and is still
+	Pending — otherwise an operator in channel A could `/approve <id>` a pending action
+	from channel B (a different agent / project / trust domain) just by knowing or
+	guessing the sequential request name. Otherwise return the OLDEST Pending request in
+	this channel (creation ascending, limit 1) — "approve the thing you just asked me
+	about". Returns None when nothing matches.
 	"""
 	if explicit_id:
-		return explicit_id
+		row = frappe.db.get_value("Workflow Request", explicit_id, ["session_id", "status"], as_dict=True)
+		if row and row.session_id == session_id and row.status == "Pending":
+			return explicit_id
+		return None
 	rows = frappe.get_all(
 		"Workflow Request",
 		filters={"session_id": session_id, "status": "Pending"},

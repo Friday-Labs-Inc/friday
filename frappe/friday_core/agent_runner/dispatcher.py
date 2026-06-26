@@ -276,12 +276,27 @@ def dispatch(
 			session_id=session_id,
 			tool_call_id=tool_call_id,
 		)
+		# Audit the GATE TRIGGER itself in the immutable Execution Log. The Workflow
+		# Request alone is not enough: it is mutable/deletable by a System Manager, so a
+		# regulator would have no tamper-evident record that an agent attempted a
+		# high-risk action. This row is the immutable proof; the later approval writes its
+		# own `success` row for the actual execution.
+		log_name = _write_execution_log(
+			agent_profile=agent_profile,
+			skill=skill_name,
+			session_id=session_id,
+			status="pending_approval",
+			parameters=parameters,
+			result={"workflow_request": request_name},
+			tokens_used=tokens_used,
+		)
 		return DispatchResult(
 			success=False,
 			content=(
 				f"This action needs human approval before it can run (Workflow Request {request_name})."
 			),
 			pending_approval=True,
+			execution_log_name=log_name,
 			tool_call_name=skill_name,
 			tool_call_id=tool_call_id,
 		)
@@ -562,8 +577,10 @@ def _write_execution_log(
 	# trail, not a user-driven write.
 	doc.insert(ignore_permissions=True)
 
-	# Submit on success/rejected (immutable). Leave error rows in draft.
-	if status in ("success", "rejected"):
+	# Submit on success/rejected/pending_approval (immutable audit). Leave error rows in
+	# draft. `pending_approval` records the IMMUTABLE FACT that an agent reached a gated
+	# action — a compliance record that survives even if the Workflow Request is deleted.
+	if status in ("success", "rejected", "pending_approval"):
 		doc.submit()
 
 	return doc.name

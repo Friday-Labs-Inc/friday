@@ -80,6 +80,35 @@ def create_request(
 	return doc.name
 
 
+def _claim_decision(request_name: str, new_status: str, approver: str, reason: str) -> None:
+	"""Atomically transition a Workflow Request from Pending → `new_status`.
+
+	The decision (Approve/Reject) is a SINGLE-WINNER claim: a conditional UPDATE that
+	only matches a still-Pending row, then a check of the affected row count. Without
+	this, two concurrent `/approve` calls both pass a plain `status == "Pending"` read
+	and both re-dispatch the gated skill — the high-risk action runs TWICE. Postgres
+	row-locking serializes the two UPDATEs, so exactly one sees rowcount 1.
+
+	Raises `frappe.ValidationError` (without mutating) if the row is missing or already
+	decided. Mirrors the task dispatcher's `_claim_task` conditional-UPDATE pattern.
+	"""
+	frappe.db.sql(
+		"""
+		UPDATE `tabWorkflow Request`
+		SET status = %(status)s, approved_by = %(by)s, decision_reason = %(reason)s,
+		    modified = NOW(), modified_by = %(by)s
+		WHERE name = %(name)s AND status = 'Pending'
+		""",
+		{"status": new_status, "by": approver, "reason": reason, "name": request_name},
+	)
+	if (frappe.db._cursor.rowcount or 0) != 1:
+		current = frappe.db.get_value("Workflow Request", request_name, "status")
+		raise frappe.ValidationError(
+			f"Workflow Request {request_name} is {current or 'missing'}, not Pending "
+			f"(already decided, or a concurrent decision won)."
+		)
+
+
 def approve(request_name: str, *, approved_by: str | None = None, reason: str = ""):
 	"""Approve a Pending request and run the deferred skill (the 'resume').
 
@@ -87,15 +116,29 @@ def approve(request_name: str, *, approved_by: str | None = None, reason: str = 
 	through the permission check + sandbox + audit log. Links the resulting
 	Execution Log to the request. Returns the dispatch `DispatchResult`.
 
-	Raises `frappe.ValidationError` if the request isn't Pending (no double-spend).
+	Raises `frappe.ValidationError` if the request isn't Pending (no double-spend) —
+	the Pending→Approved transition is claimed ATOMICALLY before dispatch, so a
+	concurrent approver cannot also reach `dispatch()`.
 	"""
 	# Lazy import: the dispatcher imports this module for the gate, so importing
 	# it at top-level here would be a cycle.
 	from frappe.friday_core.agent_runner.dispatcher import dispatch
 
-	req = frappe.get_doc("Workflow Request", request_name)
-	if req.status != "Pending":
-		raise frappe.ValidationError(f"Workflow Request {request_name} is {req.status}, not Pending.")
+	approver = approved_by or frappe.session.user
+	# Read what we need to replay the skill BEFORE the claim (the claim re-checks
+	# Pending atomically; reading first is harmless).
+	req = frappe.db.get_value(
+		"Workflow Request",
+		request_name,
+		["skill", "parameters", "session_id", "tool_call_id", "agent_profile"],
+		as_dict=True,
+	)
+	if not req:
+		raise frappe.ValidationError(f"Workflow Request {request_name} not found.")
+
+	# ATOMIC CLAIM — only the winner proceeds to dispatch. Done BEFORE dispatch so that
+	# even if dispatch() commits internally, a loser can never also execute the skill.
+	_claim_decision(request_name, "Approved", approver, reason)
 
 	parameters = frappe.parse_json(req.parameters) if req.parameters else {}
 	tool_call = {
@@ -110,20 +153,16 @@ def approve(request_name: str, *, approved_by: str | None = None, reason: str = 
 		skip_approval=True,
 	)
 
-	req.status = "Approved"
-	req.approved_by = approved_by or frappe.session.user
-	req.decision_reason = reason
-	req.execution_log = result.execution_log_name
-	req.save(ignore_permissions=True)
+	frappe.db.set_value(
+		"Workflow Request", request_name, "execution_log", result.execution_log_name, update_modified=False
+	)
 	return result
 
 
 def reject(request_name: str, *, approved_by: str | None = None, reason: str = "") -> None:
-	"""Reject a Pending request. Nothing executes."""
-	req = frappe.get_doc("Workflow Request", request_name)
-	if req.status != "Pending":
-		raise frappe.ValidationError(f"Workflow Request {request_name} is {req.status}, not Pending.")
-	req.status = "Rejected"
-	req.approved_by = approved_by or frappe.session.user
-	req.decision_reason = reason
-	req.save(ignore_permissions=True)
+	"""Reject a Pending request. Nothing executes.
+
+	The Pending→Rejected transition is claimed atomically too, so a `/deny` racing a
+	concurrent `/approve` can't both win — exactly one decision takes effect.
+	"""
+	_claim_decision(request_name, "Rejected", approved_by or frappe.session.user, reason)

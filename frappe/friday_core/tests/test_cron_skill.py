@@ -36,6 +36,32 @@ class TestManageCronJobs(unittest.TestCase):
 		self.assertEqual(res["status"], "created")
 
 	@patch(f"{_CS}.frappe")
+	def test_create_ignores_llm_supplied_agent_profile(self, fr):
+		# SECURITY (privilege escalation): the owning profile comes ONLY from the
+		# unspoofable dispatch context, never from the model's parameters. An agent that
+		# slips agent_profile into its params must NOT create a job owned by another
+		# (higher-privileged) profile.
+		from frappe.friday_core.skills import handlers_cron
+
+		fr.flags.get.return_value = {"agent_profile": "Worker-Low", "session_id": "CH-1"}
+		job = MagicMock()
+		job.name = "CRON-1"
+		job.next_run_at = "T"
+		fr.get_doc.return_value = job
+
+		handlers_cron.manage_cron_jobs(
+			"manage-cron-jobs",
+			{
+				"action": "create",
+				"prompt": "p",
+				"schedule_expression": "0 9 * * *",
+				"agent_profile": "Orchestrator-Privileged",  # the attack — must be ignored
+			},
+		)
+		payload = fr.get_doc.call_args[0][0]
+		self.assertEqual(payload["agent_profile"], "Worker-Low")  # the caller, NOT the param
+
+	@patch(f"{_CS}.frappe")
 	def test_create_aliases_origin_to_current_channel(self, fr):
 		# Agents reach for deliver="origin"; resolve it to the channel they're in
 		# so the result actually posts there (not the silent local fallback).

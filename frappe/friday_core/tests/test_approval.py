@@ -73,60 +73,83 @@ class TestCreateRequest(unittest.TestCase):
 		doc.insert.assert_called_once()
 
 
+def _approve_req(**over):
+	"""A SimpleNamespace mimicking the as_dict row approve() reads via db.get_value."""
+	import types
+
+	base = dict(
+		skill="danger-skill", parameters='{"x": 1}', session_id="S", tool_call_id="c1", agent_profile="P"
+	)
+	base.update(over)
+	return types.SimpleNamespace(**base)
+
+
 class TestApprove(unittest.TestCase):
 	@patch(f"{_D}.dispatch")
 	@patch(f"{_W}.frappe")
-	def test_approve_resumes_execution(self, mock_frappe, mock_dispatch):
+	def test_approve_claims_then_resumes_execution(self, mock_frappe, mock_dispatch):
 		mock_frappe.ValidationError = _ValErr
 		mock_frappe.as_json = lambda x: json.dumps(x)
 		mock_frappe.parse_json = lambda x: json.loads(x) if isinstance(x, str) else x
-		req = MagicMock(
-			status="Pending",
-			parameters='{"x": 1}',
-			skill="danger-skill",
-			tool_call_id="c1",
-			agent_profile="P",
-			session_id="S",
-		)
-		mock_frappe.get_doc.return_value = req
+		mock_frappe.session.user = "admin@x.com"
+		mock_frappe.db.get_value.return_value = _approve_req()
+		mock_frappe.db._cursor.rowcount = 1  # we won the atomic claim
 		mock_dispatch.return_value = MagicMock(execution_log_name="EL-1")
 
 		result = approve("WR-1", approved_by="admin@x.com", reason="looks fine")
 
-		# Re-dispatched, bypassing the gate so it doesn't re-pause.
+		# The Pending → Approved claim ran as a guarded conditional UPDATE.
+		self.assertTrue(mock_frappe.db.sql.called)
+		self.assertIn("status = 'Pending'", mock_frappe.db.sql.call_args[0][0])
+		self.assertEqual(mock_frappe.db.sql.call_args[0][1]["status"], "Approved")
+		# Re-dispatched once, bypassing the gate so it doesn't re-pause.
 		mock_dispatch.assert_called_once()
 		self.assertTrue(mock_dispatch.call_args.kwargs["skip_approval"])
 		self.assertEqual(mock_dispatch.call_args.kwargs["tool_call"]["name"], "danger-skill")
-		# Request closed out + linked to the execution.
-		self.assertEqual(req.status, "Approved")
-		self.assertEqual(req.approved_by, "admin@x.com")
-		self.assertEqual(req.execution_log, "EL-1")
-		req.save.assert_called_once()
+		# Execution Log linked back to the request.
+		mock_frappe.db.set_value.assert_called_once()
+		self.assertEqual(mock_frappe.db.set_value.call_args[0][3], "EL-1")
 		self.assertIs(result, mock_dispatch.return_value)
 
+	@patch(f"{_D}.dispatch")
 	@patch(f"{_W}.frappe")
-	def test_approve_non_pending_raises(self, mock_frappe):
+	def test_lost_claim_does_not_double_dispatch(self, mock_frappe, mock_dispatch):
+		# A concurrent approver already decided the row → our claim matches 0 rows → we
+		# MUST raise WITHOUT dispatching. This is the no-double-execute guarantee.
 		mock_frappe.ValidationError = _ValErr
-		mock_frappe.get_doc.return_value = MagicMock(status="Approved")
+		mock_frappe.session.user = "admin@x.com"
+		mock_frappe.db.get_value.return_value = _approve_req()
+		mock_frappe.db._cursor.rowcount = 0  # lost the claim
 		with self.assertRaises(_ValErr):
 			approve("WR-1", approved_by="admin@x.com")
+		mock_dispatch.assert_not_called()
+
+	@patch(f"{_D}.dispatch")
+	@patch(f"{_W}.frappe")
+	def test_approve_missing_request_raises(self, mock_frappe, mock_dispatch):
+		mock_frappe.ValidationError = _ValErr
+		mock_frappe.session.user = "admin@x.com"
+		mock_frappe.db.get_value.return_value = None
+		with self.assertRaises(_ValErr):
+			approve("WR-1")
+		mock_dispatch.assert_not_called()
 
 
 class TestReject(unittest.TestCase):
 	@patch(f"{_W}.frappe")
-	def test_reject_marks_rejected_without_executing(self, mock_frappe):
+	def test_reject_claims_rejected_without_executing(self, mock_frappe):
 		mock_frappe.ValidationError = _ValErr
-		req = MagicMock(status="Pending")
-		mock_frappe.get_doc.return_value = req
+		mock_frappe.session.user = "admin@x.com"
+		mock_frappe.db._cursor.rowcount = 1
 		reject("WR-1", approved_by="admin@x.com", reason="too risky")
-		self.assertEqual(req.status, "Rejected")
-		self.assertEqual(req.decision_reason, "too risky")
-		req.save.assert_called_once()
+		params = mock_frappe.db.sql.call_args[0][1]
+		self.assertEqual(params["status"], "Rejected")
+		self.assertEqual(params["reason"], "too risky")
 
 	@patch(f"{_W}.frappe")
 	def test_reject_non_pending_raises(self, mock_frappe):
 		mock_frappe.ValidationError = _ValErr
-		mock_frappe.get_doc.return_value = MagicMock(status="Rejected")
+		mock_frappe.db._cursor.rowcount = 0  # not Pending → claim matches nothing
 		with self.assertRaises(_ValErr):
 			reject("WR-1", approved_by="admin@x.com")
 
@@ -151,8 +174,11 @@ class TestDispatcherApprovalGate(unittest.TestCase):
 		self.assertFalse(result.success)
 		self.assertIn("WR-9", result.content)
 		mock_create.assert_called_once()
-		# Paused BEFORE execution: no Execution Log row was written.
-		mock_log.assert_not_called()
+		# The skill did NOT execute — but the GATE TRIGGER is audited (G2): an immutable
+		# `pending_approval` Execution Log records that the agent reached a gated action.
+		mock_log.assert_called_once()
+		self.assertEqual(mock_log.call_args.kwargs["status"], "pending_approval")
+		self.assertEqual(mock_log.call_args.kwargs["result"]["workflow_request"], "WR-9")
 
 	@patch(f"{_D}._write_execution_log", return_value="EL-err")
 	@patch(f"{_D}.create_request")
