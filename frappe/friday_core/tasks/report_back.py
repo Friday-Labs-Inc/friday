@@ -29,6 +29,13 @@ TERMINAL_STATES = frozenset({"Completed", "Review", "Blocked", "Cancelled"})
 
 _logger = frappe.logger("friday.tasks.report_back")
 
+# report_back runs INSIDE the caller's task-save transaction (it is invoked from
+# the Task terminal-state handler). On Postgres a failed Chat Message insert aborts
+# that whole tx — so swallowing the Python error is not enough: the task's own save
+# would then fail with InFailedSqlTransaction. This savepoint scopes the failure so
+# we can roll back JUST the insert and hand the caller a clean tx.
+_SAVEPOINT = "friday_report_back"
+
 
 def report_back(task, state: str) -> None:
 	"""Write one outbound Chat Message to the task's originating session.
@@ -42,6 +49,7 @@ def report_back(task, state: str) -> None:
 	if not session_id:
 		return  # not born from a conversation — War Room post is the only signal
 
+	frappe.db.savepoint(_SAVEPOINT)
 	try:
 		platform = (task.get("originating_platform") or "").strip() or "cli"
 		profile = (task.get("assigned_to_profile") or "").strip() or "Friday"
@@ -71,6 +79,9 @@ def report_back(task, state: str) -> None:
 			after_commit=True,
 		)
 	except Exception:
+		# Roll back to the savepoint FIRST — this un-aborts the caller's tx so its
+		# own task.save() (and the log_error below) still commit. Then record it.
+		frappe.db.rollback(save_point=_SAVEPOINT)
 		_logger.exception("report_back failed for task %s", getattr(task, "name", "?"))
 		frappe.log_error(title=f"friday.report_back failed: {getattr(task, 'name', '?')}")
 
