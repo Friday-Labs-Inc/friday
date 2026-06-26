@@ -451,6 +451,10 @@ after_migrate = [
 	# Friday (design 90): ensure the 'slack' Chat Platform row + Slack Config
 	# single so the 2nd chat surface is ready for the operator to configure.
 	"frappe.friday_core.surfaces.bootstrap_slack.provision",
+	# Friday (RandomPack chat surface): ensure the 'randompack-intake' Chat Platform
+	# row so the streaming intake surface's transcript writes pass the platform Link
+	# validation (without it, chat turns left no transcript / no usage audit).
+	"frappe.friday_core.surfaces.randompack_chat.ensure_intake_platform",
 	# Friday (design 60 / list-projects): provision the project command-loop
 	# skills (plan/status/list/update/pause) so they reliably reach every site
 	# instead of relying on a manual bench-execute. Guarded for fresh sites.

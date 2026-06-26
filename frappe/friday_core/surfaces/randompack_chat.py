@@ -48,6 +48,10 @@ from frappe.friday_core.llm.usage import record_usage
 CONNECTOR_NAME = "randompack-system"
 INTAKE_PROFILE = "Customer Intake"
 PLATFORM = "randompack-intake"
+# Chat Message.platform is a Link to Chat Platform — this surface's row must exist or
+# every transcript insert fails LinkValidationError. Registered like every other surface.
+_ADAPTER_MODULE = "frappe.friday_core.surfaces.randompack_chat"
+_PERSIST_SAVEPOINT = "friday_intake_persist"
 _SESSION_LOCK = "friday:session_lock:{}"
 _LOCK_TTL = 300
 _LOCK_WAIT = 30
@@ -291,6 +295,7 @@ def _record_turn(session_id: str, message: str, reply: str, provider, conv_usage
 	extraction pass — are cost-audited. Guarded + logged: a persistence failure must never
 	corrupt the reply already streamed, but it is no longer SILENT.
 	"""
+	frappe.db.savepoint(_PERSIST_SAVEPOINT)
 	try:
 		_persist(session_id, message, reply)
 		model = _default_model(provider)
@@ -309,11 +314,25 @@ def _record_turn(session_id: str, message: str, reply: str, provider, conv_usage
 				model=model,
 				usage=extraction_usage,
 			)
+	except Exception:
+		# Undo the partial/poisoned writes so the tx is usable again, then record the
+		# failure in the Error Log — a plain logger.warning here went to a 0-byte void on
+		# the box, so the failure stayed SILENT (exactly the bug we're closing). log_error
+		# lands a durable, operator-visible row.
+		frappe.db.rollback(save_point=_PERSIST_SAVEPOINT)
+		try:
+			frappe.log_error(
+				title=f"friday.intake persist failed: {session_id}",
+				message=frappe.get_traceback(),
+			)
+		except Exception:
+			pass
+	# The SSE generator runs PAST the request's auto-commit, so commit explicitly or BOTH
+	# the turn's writes AND any error-log row are silently discarded.
+	try:
 		frappe.db.commit()
 	except Exception:
-		frappe.logger("friday.randompack_chat").warning(
-			f"intake turn persistence failed for session {session_id!r}", exc_info=True
-		)
+		pass
 
 
 def _transcript(history: list[dict], *, extra_user: str = "", extra_assistant: str = "") -> str:
@@ -483,19 +502,51 @@ def _stream(session_id: str, message: str):
 
 
 # ---------------------------------------------------------------------------
-# Provisioning (idempotent config — the Customer Intake Agent Profile)
+# Provisioning (idempotent config — the Chat Platform row + Customer Intake profile)
 # ---------------------------------------------------------------------------
 
 
+def ensure_intake_platform() -> dict:
+	"""Idempotently register the `randompack-intake` Chat Platform row. after_migrate-safe.
+
+	`Chat Message.platform` is a Link to Chat Platform, so the transcript writes in
+	`_persist` raise LinkValidationError unless this row exists — which on the box left
+	every chat turn with NO transcript and NO usage audit (caught on the live loopback).
+	Every other surface (cli/raven/slack) registers its platform the same way.
+
+	`enabled=0`: this surface handles `chat_send`/`chat_finalize` directly over HMAC, NOT
+	via the gateway's adapter dispatch — the row exists to satisfy the Link + register the
+	platform, not for worker pickup (intake rows are written `processed=1`).
+	"""
+	if frappe.db.exists("Chat Platform", PLATFORM):
+		return {"platform": PLATFORM, "platform_created": False}
+	frappe.get_doc(
+		{
+			"doctype": "Chat Platform",
+			"platform_name": PLATFORM,
+			"adapter_module": _ADAPTER_MODULE,
+			"enabled": 0,
+			"dispatch_mode": "sync",
+		}
+	).insert(ignore_permissions=True)
+	return {"platform": PLATFORM, "platform_created": True}
+
+
 def provision_intake_profile() -> dict:
-	"""Create the `Customer Intake` Agent Profile if absent. Idempotent; safe in after_migrate.
+	"""Ensure the `randompack-intake` Chat Platform row + the `Customer Intake` Agent
+	Profile. Idempotent; safe in after_migrate.
 
 	A near-toolless conversational profile (intake takes no gated actions). The field
 	vocabulary lives in THIS module (injected into the extraction pass), not the profile;
 	the profile carries the conversational system prompt + the model.
 	"""
+	# Always ensure the platform first — the profile may already exist (early return below)
+	# while the platform row is still missing, which is exactly the box state that broke
+	# persistence.
+	platform = ensure_intake_platform()
+
 	if frappe.db.exists("Agent Profile", INTAKE_PROFILE):
-		return {"profile": INTAKE_PROFILE, "created": False}
+		return {"profile": INTAKE_PROFILE, "created": False, **platform}
 	frappe.get_doc(
 		{
 			"doctype": "Agent Profile",
@@ -505,7 +556,7 @@ def provision_intake_profile() -> dict:
 			"status": "Active",
 		}
 	).insert(ignore_permissions=True)
-	return {"profile": INTAKE_PROFILE, "created": True}
+	return {"profile": INTAKE_PROFILE, "created": True, **platform}
 
 
 def run_demo(
