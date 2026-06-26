@@ -143,5 +143,19 @@ class TestProtocolErrors(unittest.TestCase):
 		self.assertEqual(resp["error"]["code"], -32600)
 
 
+class TestEndpointIsRoutable(unittest.TestCase):
+	"""The bug this guards (caught on a real-path probe, not by the core tests): `handle()`
+	shipped WITHOUT `@frappe.whitelist`, so the HTTP endpoint was unreachable (403
+	not-whitelisted) even when enabled — invisible to tests that call `handle_jsonrpc`
+	directly. Assert the Frappe ROUTING registration, not just the protocol core."""
+
+	def test_handle_is_whitelisted_guest_post(self):
+		import frappe
+
+		self.assertIn(server.handle, frappe.whitelisted)
+		self.assertIn(server.handle, frappe.guest_methods)
+		self.assertIn("POST", frappe.allowed_http_methods_for_whitelisted_func[server.handle])
+
+
 if __name__ == "__main__":
 	unittest.main()
