@@ -44,6 +44,8 @@ from __future__ import annotations
 
 import json
 
+import frappe
+
 SERVER_NAME = "friday"
 SERVER_VERSION = "0.1.0"
 # The MCP protocol revision we implement against (matches the client's handshake).
@@ -207,6 +209,7 @@ def _tools_call(req_id, params: dict, profile: str, dispatch_fn) -> dict:
 # ---------------------------------------------------------------------------
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def handle():
 	"""POST /api/method/frappe.friday_core.mcp.server.handle — the MCP server endpoint.
 
@@ -216,8 +219,6 @@ def handle():
 	JSON-RPC message).
 	"""
 	from werkzeug.wrappers import Response
-
-	import frappe
 
 	config = _load_config()
 	if not config.get("enabled"):
@@ -232,7 +233,7 @@ def handle():
 	raw = frappe.request.get_data() if frappe.request else b"{}"
 	try:
 		body = json.loads(raw or b"{}")
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		return _raw(_error(None, _PARSE_ERROR, "Parse error."), status=400)
 
 	response = handle_jsonrpc(body, profile=config["profile"])
@@ -251,8 +252,6 @@ def _raw(payload: dict, *, status: int):
 
 def _load_config() -> dict:
 	"""Read the MCP Server Settings single: enabled, bearer token, exposed profile."""
-	import frappe
-
 	doc = frappe.get_cached_doc("MCP Server Settings")
 	return {
 		"enabled": bool(doc.enabled),
