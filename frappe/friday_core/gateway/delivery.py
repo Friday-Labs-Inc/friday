@@ -149,11 +149,31 @@ class DeliveryRouter:
 		for target in targets:
 			key = target.to_string()
 			try:
-				if target.platform == LOCAL or not self._platform_known(target.platform):
-					result = self._deliver_local(content, job_id, job_name, metadata)
+				if target.platform == LOCAL:
+					results[key] = {
+						"success": True,
+						"result": self._deliver_local(content, job_id, job_name, metadata),
+					}
+				elif not self._platform_known(target.platform):
+					# The target names a platform we can't deliver to right now. Save the
+					# content locally so it is NEVER lost — but mark the misroute VISIBLY.
+					# A silent success-as-if-delivered is the bug this fixes: a configured
+					# `raven:<channel>` target was falling back to a local file with the
+					# delivery still reported as a plain success (last_status="ok"), so the
+					# operator never knew the output didn't reach the channel.
+					reason = f"platform {target.platform!r} is not a configured/reachable Chat Platform"
+					frappe.logger("friday.delivery").warning(
+						f"delivery downgraded to local: {key} — {reason}"
+					)
+					results[key] = {
+						"success": True,
+						"downgraded": True,
+						"intended": key,
+						"reason": reason,
+						"result": self._deliver_local(content, job_id, job_name, metadata),
+					}
 				else:
-					result = self._deliver_to_session(target, content)
-				results[key] = {"success": True, "result": result}
+					results[key] = {"success": True, "result": self._deliver_to_session(target, content)}
 			except Exception as exc:
 				results[key] = {"success": False, "error": str(exc)}
 		return results
@@ -172,10 +192,7 @@ class DeliveryRouter:
 		body = content
 		if len(body) > MAX_PLATFORM_OUTPUT:
 			saved = self._save_full_output(content, target.chat_id)
-			body = (
-				content[:TRUNCATED_VISIBLE]
-				+ f"\n\n... [truncated, full output saved to {saved}]"
-			)
+			body = content[:TRUNCATED_VISIBLE] + f"\n\n... [truncated, full output saved to {saved}]"
 
 		doc = frappe.get_doc(
 			{

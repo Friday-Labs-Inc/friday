@@ -174,13 +174,16 @@ def on_task_terminal(task_doc, state: str) -> None:
 	summary = _result_summary(task_doc.result)
 	if summary.strip() != SILENT_MARKER:
 		try:
-			DeliveryRouter().deliver(
+			result = DeliveryRouter().deliver(
 				summary,
 				[DeliveryTarget.parse(job.deliver or "local")],
 				job_id=job.name,
 				job_name=job.job_name,
 			)
-			job.last_delivery_error = None
+			# A per-target failure OR a silent downgrade-to-local (e.g. an unconfigured
+			# platform) does NOT raise — surface it on the row so the operator SEES that
+			# the output didn't reach the intended channel, instead of a silent "ok".
+			job.last_delivery_error = _delivery_issue(result)
 		except Exception as exc:
 			job.last_delivery_error = str(exc)
 			frappe.logger("friday.cron").warning(f"cron delivery failed for {job.name!r}", exc_info=True)
@@ -195,6 +198,22 @@ def on_task_terminal(task_doc, state: str) -> None:
 		job.enabled = 0
 		job.state = "Completed"
 	job.save(ignore_permissions=True)
+
+
+def _delivery_issue(result: dict) -> str | None:
+	"""A human note if any delivery target FAILED or was silently DOWNGRADED to local
+	(e.g. an unconfigured/unreachable platform) — else None.
+
+	Stored on `Cron Job.last_delivery_error` so a misroute is visible to the operator,
+	not buried under a green `last_status="ok"`.
+	"""
+	notes = []
+	for key, r in (result or {}).items():
+		if not r.get("success"):
+			notes.append(f"{key}: {r.get('error', 'delivery failed')}")
+		elif r.get("downgraded"):
+			notes.append(f"{key} → saved locally ({r.get('reason', 'downgraded')})")
+	return "; ".join(notes) or None
 
 
 def _result_summary(result: str | None) -> str:

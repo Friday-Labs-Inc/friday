@@ -199,5 +199,32 @@ class TestCompletionDelivery(unittest.TestCase):
 		Router.return_value.deliver.assert_not_called()
 
 
+class TestDeliveryIssue(unittest.TestCase):
+	"""`_delivery_issue` surfaces a misroute so a downgrade/failure isn't buried under a
+	green last_status="ok" — the silent raven→local delivery bug."""
+
+	def test_clean_delivery_is_no_issue(self):
+		from frappe.friday_core.cron import scheduler
+
+		self.assertIsNone(scheduler._delivery_issue({"raven:CH": {"success": True}}))
+
+	def test_silent_downgrade_is_surfaced(self):
+		from frappe.friday_core.cron import scheduler
+
+		result = {
+			"raven:CH": {"success": True, "downgraded": True, "reason": "platform 'raven' not configured"}
+		}
+		note = scheduler._delivery_issue(result)
+		self.assertIsNotNone(note)
+		self.assertIn("raven:CH", note)
+		self.assertIn("locally", note)
+
+	def test_failed_target_is_surfaced(self):
+		from frappe.friday_core.cron import scheduler
+
+		note = scheduler._delivery_issue({"raven:CH": {"success": False, "error": "boom"}})
+		self.assertIn("boom", note)
+
+
 if __name__ == "__main__":
 	unittest.main()

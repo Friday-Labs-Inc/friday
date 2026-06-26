@@ -97,9 +97,7 @@ class TestDeliverPlatform(unittest.TestCase):
 		seen = []
 		fr.get_doc.side_effect = _make_get_doc(seen)
 
-		res = delivery.DeliveryRouter().deliver(
-			"hello", [delivery.DeliveryTarget.parse("raven:CH-1")]
-		)
+		res = delivery.DeliveryRouter().deliver("hello", [delivery.DeliveryTarget.parse("raven:CH-1")])
 
 		row = [p for p in seen if p["doctype"] == "Chat Message"][0]
 		self.assertEqual(row["direction"], "outbound")
@@ -109,20 +107,37 @@ class TestDeliverPlatform(unittest.TestCase):
 		self.assertTrue(res["raven:CH-1"]["success"])
 
 	@patch(f"{_D}.frappe")
-	def test_unknown_platform_falls_back_to_local(self, fr):
+	def test_unknown_platform_downgrades_to_local_VISIBLY(self, fr):
+		# The fix: an explicit platform target we can't deliver to is saved locally so
+		# content isn't lost, but the misroute is marked VISIBLY (downgraded + reason) —
+		# never a silent plain success (the bug: a raven channel fell back to a file with
+		# the delivery reported as ok, so the operator never knew it didn't reach the channel).
 		from frappe.friday_core.gateway import delivery
 
 		fr.db.exists.return_value = False  # 'wat' is not a Chat Platform
 		seen = []
 		fr.get_doc.side_effect = _make_get_doc(seen)
 
-		res = delivery.DeliveryRouter().deliver(
-			"hello", [delivery.DeliveryTarget.parse("wat:x")]
-		)
+		res = delivery.DeliveryRouter().deliver("hello", [delivery.DeliveryTarget.parse("wat:x")])
 
+		# Content saved locally (never lost) — and NO channel row.
 		self.assertTrue(any(p["doctype"] == "File" for p in seen))
 		self.assertFalse(any(p["doctype"] == "Chat Message" for p in seen))
+		# ...but the downgrade is now SURFACED, not silent.
 		self.assertTrue(res["wat:x"]["success"])
+		self.assertTrue(res["wat:x"]["downgraded"])
+		self.assertIn("wat", res["wat:x"]["reason"])
+
+	@patch(f"{_D}.frappe")
+	def test_known_platform_is_not_marked_downgraded(self, fr):
+		# Regression guard: a real channel delivery must NOT carry the downgraded flag.
+		from frappe.friday_core.gateway import delivery
+
+		fr.db.exists.return_value = True
+		fr.get_doc.side_effect = _make_get_doc([])
+		res = delivery.DeliveryRouter().deliver("hi", [delivery.DeliveryTarget.parse("raven:CH-1")])
+		self.assertTrue(res["raven:CH-1"]["success"])
+		self.assertNotIn("downgraded", res["raven:CH-1"])
 
 	@patch(f"{_D}.frappe")
 	def test_per_target_isolation(self, fr):
