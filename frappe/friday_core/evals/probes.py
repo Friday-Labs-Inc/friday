@@ -59,22 +59,13 @@ def probe_force_kill_audit(scenario, session_id: str) -> dict:
 		).insert(ignore_permissions=True)
 		created.append(("Task", task.name))
 
-		# A realistic in-flight chat job so the chat-turn branch (and the #138 job-id
-		# transform) actually executes. No worker exists, so it tallies as already-done
-		# — but the transform code runs on a real-format id without throwing.
-		cm = frappe.get_doc(
-			{
-				"doctype": "Chat Message",
-				"session_id": session_id,
-				"direction": "inbound",
-				"timestamp": frappe.utils.now_datetime(),
-				"processed": 0,
-				"job_id": f"friday-gw::EVAL-{task.name}::lock0",
-				"content": "eval force-kill probe",
-			}
-		).insert(ignore_permissions=True)
-		created.append(("Chat Message", cm.name))
-
+		# We deliberately do NOT insert an inbound Chat Message to fake an in-flight chat
+		# job. Inserting one fires the gateway `after_insert` (gateway.service.handle_inbound),
+		# which immediately CONSUMES the row (so force-kill's own `_latest_running_job`
+		# lookup can't find it) AND would enqueue a REAL agent turn — a side effect a probe
+		# must never cause. A live run caught exactly this (cancelled=0/already_done=0). The
+		# chat-job SIGTERM + #138 job-id transform stay pinned by the mocked unit test
+		# (test_stop_force.py); this probe's job is the LIVE AUDIT OUTCOME on a real Task.
 		result = force_kill_session(session_id, _FORCE_KILL_OPERATOR)
 
 		state = frappe.db.get_value(
@@ -111,20 +102,15 @@ def probe_force_kill_audit(scenario, session_id: str) -> dict:
 				"detail": str(result),
 			}
 		)
-		checks.append(
-			{
-				"name": "chat-job branch ran (transform didn't throw)",
-				"ok": (result.get("jobs_cancelled", 0) + result.get("jobs_already_done", 0)) >= 1,
-				"detail": f"cancelled={result.get('jobs_cancelled')} already_done={result.get('jobs_already_done')}",
-			}
-		)
-		# Soft check: the audit event landed (best-effort emit, so don't hard-gate alone).
+		# Soft check: the audit event landed (best-effort emit) — reported, but it does
+		# NOT gate the probe (a missing observability row isn't a force-kill failure).
 		ev = frappe.get_all("Dispatcher Event", filters={"event_type": "gateway.force_kill"}, limit=1)
 		checks.append(
 			{
 				"name": "gateway.force_kill audit event",
 				"ok": bool(ev),
 				"detail": "present" if ev else "absent",
+				"soft": True,
 			}
 		)
 	finally:
@@ -134,7 +120,10 @@ def probe_force_kill_audit(scenario, session_id: str) -> dict:
 			except Exception:
 				pass
 
-	return {"ok": all(c["ok"] for c in checks), "checks": checks, "detail": f"force_kill on {session_id}"}
+	# Gate the probe on the HARD checks (the live audit outcome); soft checks (the
+	# best-effort audit event) are reported but don't fail the probe.
+	hard = [c for c in checks if not c.get("soft")]
+	return {"ok": all(c["ok"] for c in hard), "checks": checks, "detail": f"force_kill on {session_id}"}
 
 
 def probe_pgvector_no_poison(scenario, session_id: str) -> dict:
@@ -183,6 +172,10 @@ def probe_pgvector_no_poison(scenario, session_id: str) -> dict:
 	#    leave the surrounding transaction usable. WITHOUT the rollback this SELECT 1
 	#    would raise InFailedSqlTransaction — which is exactly the bug.
 	sp = "eval_pgvector_probe"
+	# Heads-up: the next statement is MEANT to fail, so Postgres/frappe will log a scary
+	# "Error in query" + traceback to stderr. That is the probe working (proving the
+	# savepoint rolls it back), NOT a crash — the run continues and the report is clean.
+	print("[pgvector probe] the next 'Error in query' on stderr is INTENTIONAL (proving savepoint recovery).")
 	try:
 		frappe.db.savepoint(sp)
 		try:
