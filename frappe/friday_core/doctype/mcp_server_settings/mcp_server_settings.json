@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "creation": "2026-06-26 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "agent_profile",
+  "intro",
+  "secrets_section",
+  "bearer_token"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "When unchecked, the MCP server endpoint returns 404 — external clients cannot reach Friday's tools.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "External MCP clients see exactly the skills THIS Agent Profile is allowed to use (role + permission-matrix scoped), and every tools/call runs as this profile through the governed dispatcher (matrix + audit + approval gate).",
+   "fieldname": "agent_profile",
+   "fieldtype": "Link",
+   "label": "Exposed Agent Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "fieldname": "intro",
+   "fieldtype": "HTML",
+   "options": "<p>Endpoint: <code>POST /api/method/frappe.friday_core.mcp.server.handle</code>. Authenticate with <code>Authorization: Bearer &lt;token&gt;</code>. Speaks MCP streamable-HTTP JSON-RPC (initialize / tools/list / tools/call).</p>"
+  },
+  {
+   "fieldname": "secrets_section",
+   "fieldtype": "Section Break",
+   "label": "Secrets (encrypted)"
+  },
+  {
+   "description": "Static bearer token an MCP client must present. Stored encrypted. Generate a long random value and treat it as a credential.",
+   "fieldname": "bearer_token",
+   "fieldtype": "Password",
+   "label": "Bearer Token"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "module": "Friday Core",
+ "name": "MCP Server Settings",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
