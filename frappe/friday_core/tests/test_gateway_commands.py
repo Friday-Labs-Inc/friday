@@ -145,7 +145,9 @@ class TestApproveTargeting(unittest.TestCase):
 		self.assertEqual(mock_approve.call_args.args[0], "WR-OLDEST")
 		self.assertTrue(result.ok)
 
-	def test_explicit_id_overrides_resolution(self):
+	def test_explicit_id_in_this_channel_is_honored(self):
+		import types
+
 		from frappe.friday_core.gateway import commands
 
 		with (
@@ -153,13 +155,34 @@ class TestApproveTargeting(unittest.TestCase):
 			patch(f"{_C}.approve") as mock_approve,
 		):
 			fr.get_roles.return_value = ["Friday Operator"]
+			# Explicit id is honored only after confirming it belongs to THIS channel.
+			fr.db.get_value.return_value = types.SimpleNamespace(session_id="S-1", status="Pending")
 			result = commands.dispatch_command(
 				platform="raven", session_id="S-1", user="op@x.com", raw="/approve WR-NAMED"
 			)
-		# Explicit id: no need to query for the oldest.
 		mock_approve.assert_called_once()
 		self.assertEqual(mock_approve.call_args.args[0], "WR-NAMED")
 		self.assertTrue(result.ok)
+
+	def test_explicit_id_from_another_channel_is_refused(self):
+		# G8 (cross-session approval): /approve <id> must NOT approve a request that
+		# belongs to a different channel, even with a valid (guessed) request name.
+		import types
+
+		from frappe.friday_core.gateway import commands
+
+		with (
+			patch(f"{_C}.frappe") as fr,
+			patch(f"{_C}.approve") as mock_approve,
+		):
+			fr.get_roles.return_value = ["Friday Operator"]
+			fr.db.get_value.return_value = types.SimpleNamespace(session_id="OTHER-CHANNEL", status="Pending")
+			result = commands.dispatch_command(
+				platform="raven", session_id="S-1", user="op@x.com", raw="/approve WR-FROM-B"
+			)
+		mock_approve.assert_not_called()
+		self.assertFalse(result.ok)
+		self.assertIn("pending", result.reply.lower())
 
 	def test_approve_with_no_pending_reports_nothing_to_do(self):
 		from frappe.friday_core.gateway import commands
@@ -211,9 +234,7 @@ class TestStop(unittest.TestCase):
 		from frappe.friday_core.gateway import commands
 
 		fr.get_roles.return_value = ["Friday Operator"]
-		result = commands.dispatch_command(
-			platform="raven", session_id="S-1", user="op@x.com", raw="/stop"
-		)
+		result = commands.dispatch_command(platform="raven", session_id="S-1", user="op@x.com", raw="/stop")
 		mock_request.assert_called_once_with("S-1")
 		self.assertTrue(result.ok)
 		self.assertIn("stop", result.reply.lower())
@@ -252,9 +273,7 @@ class TestSteer(unittest.TestCase):
 		from frappe.friday_core.gateway import commands
 
 		fr.get_roles.return_value = ["Friday Operator"]
-		result = commands.dispatch_command(
-			platform="raven", session_id="S-1", user="op@x.com", raw="/steer"
-		)
+		result = commands.dispatch_command(platform="raven", session_id="S-1", user="op@x.com", raw="/steer")
 		mock_push.assert_not_called()
 		self.assertFalse(result.ok)
 		self.assertIn("usage", result.reply.lower())

@@ -79,7 +79,13 @@ def _create(agent_profile: str, session_id: str, p: dict) -> dict:
 		{
 			"doctype": "Cron Job",
 			"job_name": (p.get("name") or prompt[:60]).strip(),
-			"agent_profile": (p.get("agent_profile") or agent_profile),
+			# OWNER IS NEVER LLM-CONTROLLED. The owning profile comes ONLY from the
+			# unspoofable dispatch context — never from the model's parameters. Honoring
+			# `p.get("agent_profile")` would let a prompt-injected/buggy agent create a
+			# Cron Job owned by (and running with the authority of) any other profile —
+			# a privilege escalation, and a direct violation of this skill's own
+			# "Own jobs only" boundary.
+			"agent_profile": agent_profile,
 			"prompt": prompt,
 			"schedule_kind": (p.get("schedule_kind") or "cron").strip().lower(),
 			"schedule_expr": expr,
