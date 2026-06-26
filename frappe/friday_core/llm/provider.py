@@ -206,7 +206,7 @@ class LLMProvider(ABC):
 		v = self.request_timeout_seconds
 		try:
 			vf = float(v) if v is not None else 0.0
-		except (TypeError, ValueError):
+		except TypeError, ValueError:
 			return self.DEFAULT_REQUEST_TIMEOUT_SECONDS
 		if vf <= 0:
 			return self.DEFAULT_REQUEST_TIMEOUT_SECONDS
@@ -217,7 +217,7 @@ class LLMProvider(ABC):
 		v = self.request_stale_seconds
 		try:
 			vf = float(v) if v is not None else 0.0
-		except (TypeError, ValueError):
+		except TypeError, ValueError:
 			return self.DEFAULT_REQUEST_STALE_SECONDS
 		if vf <= 0:
 			return self.DEFAULT_REQUEST_STALE_SECONDS
@@ -229,6 +229,7 @@ class LLMProvider(ABC):
 		messages: list[dict],  # [{"role": "system"|"user"|"assistant", "content": str}]
 		tools: list[dict] | None = None,
 		model: str | None = None,
+		on_token=None,
 	) -> LLMResponse:
 		"""
 		Send a chat completion request and return the response.
@@ -237,6 +238,11 @@ class LLMProvider(ABC):
 		  - `messages` — the full prompt (system + history + current message).
 		  - `tools` — OpenAI-format tool definitions, or None for chat-only.
 		  - `model` — override the provider's default model, or None to use it.
+		  - `on_token` — optional `on_token(delta_text)` callback for live token
+		    streaming. Honored by the OpenAI-compatible streaming providers; the
+		    blocking providers (Anthropic, Codex) accept it for interface parity but
+		    do not stream token-by-token. The full response is always returned either
+		    way, so passing it is purely additive.
 
 		Returns `LLMResponse`.
 		Raises `LLMAuthError` on 401, `LLMError` on other failures.
@@ -414,8 +420,16 @@ class _OpenAICompatibleProvider(LLMProvider):
 		messages: list[dict],
 		tools: list[dict] | None = None,
 		model: str | None = None,
+		on_token=None,
 	) -> LLMResponse:
 		"""Goal-mode-safe chat completion via the OpenAI SDK with streaming.
+
+		`on_token` (optional, design: streaming front-door): a callback invoked with each
+		text chunk as it streams in — `on_token(delta_text: str)`. The full response is
+		still assembled and returned exactly as before, so existing callers are
+		unaffected; a real-time surface passes `on_token` to relay partial output to a
+		live client. A callback that raises is swallowed (a UI hiccup must not break the
+		generation).
 
 		Ported from Hermes (``agent/chat_completion_helpers.py`` ::
 		``interruptible_streaming_api_call`` → ``_call_chat_completions``).
@@ -459,7 +473,7 @@ class _OpenAICompatibleProvider(LLMProvider):
 		if self.default_temperature is not None:
 			stream_kwargs["temperature"] = self.default_temperature
 
-		data = self._stream_with_recovery(stream_kwargs=stream_kwargs, model=model)
+		data = self._stream_with_recovery(stream_kwargs=stream_kwargs, model=model, on_token=on_token)
 		return self._parse_response(data)
 
 	# -------------------------------------------------------------------------
@@ -498,9 +512,7 @@ class _OpenAICompatibleProvider(LLMProvider):
 		total = self._effective_request_timeout()
 		stale = self._effective_stale_seconds()
 		connect_cap = min(total, 60.0)
-		timeout = httpx.Timeout(
-			connect=connect_cap, read=stale, write=total, pool=connect_cap
-		)
+		timeout = httpx.Timeout(connect=connect_cap, read=stale, write=total, pool=connect_cap)
 
 		full_url = f"{self.base_url}{self.CHAT_PATH}"
 		suffix = "/chat/completions"
@@ -516,11 +528,12 @@ class _OpenAICompatibleProvider(LLMProvider):
 			max_retries=0,  # we own retries below; SDK retries would double-count
 		)
 
-	def _stream_with_recovery(self, *, stream_kwargs: dict, model: str) -> dict:
+	def _stream_with_recovery(self, *, stream_kwargs: dict, model: str, on_token=None) -> dict:
 		"""Execute one streaming chat completion, retrying on classified transients.
 
 		Returns a dict in the shape of the non-streaming Chat Completions
-		response so ``_parse_response`` works unchanged.
+		response so ``_parse_response`` works unchanged. `on_token` (optional) is
+		forwarded to ``_consume_stream`` to relay partial text to a live caller.
 		"""
 		import time
 
@@ -534,7 +547,7 @@ class _OpenAICompatibleProvider(LLMProvider):
 			try:
 				client = self._build_openai_client()
 				stream = client.chat.completions.create(**stream_kwargs)
-				return self._consume_stream(stream, model=model)
+				return self._consume_stream(stream, model=model, on_token=on_token)
 			except APIStatusError as exc:
 				# Non-2xx with a response body — disambiguate via the classifier.
 				body = ""
@@ -595,7 +608,7 @@ class _OpenAICompatibleProvider(LLMProvider):
 			classified,
 		)
 
-	def _consume_stream(self, stream, *, model: str) -> dict:
+	def _consume_stream(self, stream, *, model: str, on_token=None) -> dict:
 		"""Iterate the OpenAI SDK stream and assemble a non-streaming response dict.
 
 		Mirrors the assembly Hermes does in ``_call_chat_completions``:
@@ -604,6 +617,11 @@ class _OpenAICompatibleProvider(LLMProvider):
 		(set on the client) is the stale watchdog — if no chunk arrives within
 		``request_stale_seconds`` it raises ``APITimeoutError`` and the retry
 		loop above catches it.
+
+		`on_token` (optional): called with each text delta as it arrives, so a live
+		surface can relay partial output. It NEVER affects assembly — the full content
+		is still accumulated and returned — and a raising callback is swallowed (a UI
+		relay hiccup must not abort a healthy generation).
 		"""
 		content_parts: list[str] = []
 		tool_calls_acc: dict[int, dict[str, Any]] = {}
@@ -625,6 +643,11 @@ class _OpenAICompatibleProvider(LLMProvider):
 				content = getattr(delta, "content", None)
 				if content:
 					content_parts.append(content)
+					if on_token is not None:
+						try:
+							on_token(content)
+						except Exception:
+							pass  # a UI relay hiccup must not abort a healthy generation
 
 				# Tool-call deltas: per-index accumulation. Name is assigned
 				# (atomic in the OpenAI spec; some providers resend it every
@@ -850,6 +873,7 @@ class AnthropicProvider(LLMProvider):
 		messages: list[dict],
 		tools: list[dict] | None = None,
 		model: str | None = None,
+		on_token=None,  # accepted for interface parity; this provider does not stream tokens
 	) -> LLMResponse:
 		model = model or self.default_model
 		url = f"{self.base_url}{self.MESSAGES_PATH}"
@@ -1173,6 +1197,7 @@ class CodexProvider(LLMProvider):
 		messages: list[dict],
 		tools: list[dict] | None = None,
 		model: str | None = None,
+		on_token=None,  # accepted for interface parity; this provider does not stream tokens
 	) -> LLMResponse:
 		model = model or self.default_model
 		url = f"{self.base_url}{self.RESPONSES_PATH}"
