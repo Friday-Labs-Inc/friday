@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import types
 import unittest
+from unittest import mock
 
 from frappe.friday_core.mcp import server
 
@@ -155,6 +156,34 @@ class TestEndpointIsRoutable(unittest.TestCase):
 		self.assertIn(server.handle, frappe.whitelisted)
 		self.assertIn(server.handle, frappe.guest_methods)
 		self.assertIn("POST", frappe.allowed_http_methods_for_whitelisted_func[server.handle])
+
+
+class TestAuth(unittest.TestCase):
+	"""The token rides the `X-MCP-Token` header, NOT `Authorization: Bearer` — Frappe's
+	auth middleware 401s any non-OAuth Bearer before the endpoint runs (caught live on
+	ai.randompack.com). These pin the header name + the constant-time compare."""
+
+	def test_reads_the_x_mcp_token_header(self):
+		with mock.patch.object(server, "frappe") as fr:
+			fr.get_request_header.return_value = "s3cr3t"
+			self.assertTrue(server._authorized({"token": "s3cr3t"}))
+		fr.get_request_header.assert_called_once_with("X-MCP-Token")  # NOT "Authorization"
+
+	def test_wrong_token_rejected(self):
+		with mock.patch.object(server, "frappe") as fr:
+			fr.get_request_header.return_value = "nope"
+			self.assertFalse(server._authorized({"token": "s3cr3t"}))
+
+	def test_missing_header_rejected(self):
+		with mock.patch.object(server, "frappe") as fr:
+			fr.get_request_header.return_value = None
+			self.assertFalse(server._authorized({"token": "s3cr3t"}))
+
+	def test_unconfigured_token_rejects_everything(self):
+		# No configured token → unreachable even if a header is sent (fail closed).
+		with mock.patch.object(server, "frappe") as fr:
+			fr.get_request_header.return_value = "anything"
+			self.assertFalse(server._authorized({"token": ""}))
 
 
 if __name__ == "__main__":
