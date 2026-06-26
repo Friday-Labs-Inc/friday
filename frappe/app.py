@@ -132,6 +132,13 @@ def application(request: Request):
 			security_settings = frappe.get_doc("Security Settings")
 			response = Response(security_settings.security_txt, content_type="text/plain")
 
+		elif request.path == "/.well-known/agent.json" and request.method == "GET":
+			# Friday A2A Agent Card discovery (Design 92) — served before the generic
+			# OAuth well-known handler, mirroring the security.txt special-case above.
+			from frappe.friday_core.a2a.server import agent_card
+
+			response = agent_card()
+
 		elif request.path.startswith("/.well-known/") and request.method == "GET":
 			response = handle_wellknown(request.path)
 

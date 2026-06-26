@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "creation": "2026-06-26 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "agent_profile",
+  "intro",
+  "secrets_section",
+  "auth_token"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "When unchecked, the A2A server endpoint and Agent Card return 404 — other agents cannot reach or discover Friday.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "Other agents reach exactly the skills THIS Agent Profile is allowed to use (role + permission-matrix scoped), and every message/send runs as this profile through the governed agent loop (matrix + audit + approval gate).",
+   "fieldname": "agent_profile",
+   "fieldtype": "Link",
+   "label": "Exposed Agent Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "fieldname": "intro",
+   "fieldtype": "HTML",
+   "options": "<p>Endpoint: <code>POST /api/method/frappe.friday_core.a2a.server.handle</code>. Agent Card: <code>GET /.well-known/agent.json</code> (public). Authenticate calls with the <code>X-A2A-Token: &lt;token&gt;</code> header (a custom header, NOT <code>Authorization: Bearer</code> — Frappe's auth layer would reject a Bearer token before the endpoint runs). Speaks A2A JSON-RPC (message/send, tasks/get, tasks/cancel).</p>"
+  },
+  {
+   "fieldname": "secrets_section",
+   "fieldtype": "Section Break",
+   "label": "Secrets (encrypted)"
+  },
+  {
+   "description": "Static token a calling agent must present in the X-A2A-Token header. Stored encrypted. Generate a long random value and treat it as a credential.",
+   "fieldname": "auth_token",
+   "fieldtype": "Password",
+   "label": "A2A Token"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "module": "Friday Core",
+ "name": "A2A Server Settings",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
