@@ -121,6 +121,33 @@ class TestReconcilerExecutingStale(unittest.TestCase):
 		self.assertIn("last_heartbeat_at", sql)
 		self.assertIn("workflow_state = 'Executing'", sql)
 
+	@patch("frappe.friday_core.tasks.reconciler._raise_runner_lost_issue")
+	@patch("frappe.friday_core.tasks.reconciler.get_jobs")
+	@patch("frappe.friday_core.tasks.reconciler.frappe")
+	def test_one_poisoned_row_is_isolated_and_the_sweep_continues(self, mock_frappe, mock_get_jobs, mock_issue):
+		"""A row whose save() raises must roll back to the per-row savepoint and NOT
+		abort the rest of the sweep — the next good row still gets rescued. Without the
+		savepoint, Postgres aborts the whole tick tx and every later row/sweep no-ops
+		(the #132 transaction-poison class)."""
+		from frappe.friday_core.tasks.reconciler import _reconcile_executing_stale
+
+		mock_frappe.db.sql.return_value = [{"name": "BAD"}, {"name": "GOOD"}]
+		mock_get_jobs.return_value = {}
+
+		bad = _mock_task("BAD", "Executing")
+		bad.save.side_effect = RuntimeError("constraint violation")
+		good = _mock_task("GOOD", "Executing")
+		mock_frappe.get_doc.side_effect = lambda _dt, name: bad if name == "BAD" else good
+
+		acted = _reconcile_executing_stale()  # must not raise
+
+		# the bad row's partial writes were undone to the per-row savepoint...
+		mock_frappe.db.savepoint.assert_any_call("friday_reconcile_row")
+		mock_frappe.db.rollback.assert_called_with(save_point="friday_reconcile_row")
+		# ...and the GOOD row was still rescued, so the sweep didn't abort.
+		good.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(acted, 1)  # only GOOD counted
+
 
 class TestReconcilerTransientBlockedRetry(unittest.TestCase):
 	"""Blocked tasks with a transient reason → re-Pend (up to 3 retries)."""
@@ -141,6 +168,27 @@ class TestReconcilerTransientBlockedRetry(unittest.TestCase):
 		self.assertEqual(task.assigned_to_profile, None)
 		self.assertEqual(task.executing_token, None)
 		task.save.assert_called_once_with(ignore_permissions=True)
+
+	@patch("frappe.friday_core.tasks.reconciler.frappe")
+	def test_poisoned_row_is_isolated_and_the_sweep_continues(self, mock_frappe):
+		"""Same #132 isolation for the re-pend sweep: a bad row rolls back to the
+		savepoint and the next good row is still re-Pended."""
+		from frappe.friday_core.tasks.reconciler import _reconcile_transient_blocked
+
+		mock_frappe.db.sql.return_value = [
+			{"name": "BAD", "retry_count": 0},
+			{"name": "GOOD", "retry_count": 0},
+		]
+		bad = _mock_task("BAD", "Blocked", blocked_reason="oom", retry_count=0)
+		bad.save.side_effect = RuntimeError("constraint violation")
+		good = _mock_task("GOOD", "Blocked", blocked_reason="timeout", retry_count=0)
+		mock_frappe.get_doc.side_effect = lambda _dt, name: bad if name == "BAD" else good
+
+		acted = _reconcile_transient_blocked()  # must not raise
+
+		mock_frappe.db.rollback.assert_called_with(save_point="friday_reconcile_row")
+		good.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(acted, 1)
 
 	@patch("frappe.friday_core.tasks.reconciler.frappe")
 	def test_sql_caps_retry_count_at_3(self, mock_frappe):

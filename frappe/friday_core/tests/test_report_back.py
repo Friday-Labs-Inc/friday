@@ -140,6 +140,30 @@ class TestReportBackWritesChatMessage(unittest.TestCase):
 		report_back(task, "Completed")
 		mock_frappe.log_error.assert_called()
 
+	@patch(f"{_RB}.frappe")
+	def test_insert_failure_rolls_back_to_savepoint(self, mock_frappe):
+		"""report_back runs INSIDE the caller's task-save tx. A failed insert must roll
+		back to the per-call savepoint FIRST, so the caller's Postgres tx is left usable
+		(its own task.save would otherwise fail with InFailedSqlTransaction — #132 class)."""
+		from frappe.friday_core.tasks.report_back import report_back
+
+		task = MagicMock()
+		task.name = "TASK-1"
+		task.get.side_effect = lambda f, d=None: {
+			"originating_session": "CH-001",
+			"originating_platform": "raven",
+			"assigned_to_profile": "Copywriter",
+			"result": "{}",
+		}.get(f, d)
+		mock_frappe.get_doc.return_value.insert.side_effect = RuntimeError("unique violation")
+
+		report_back(task, "Completed")  # must not raise
+
+		# savepoint set before the insert; rolled back to it on failure (un-poison).
+		mock_frappe.db.savepoint.assert_called_once_with("friday_report_back")
+		mock_frappe.db.rollback.assert_called_once_with(save_point="friday_report_back")
+		mock_frappe.log_error.assert_called()
+
 
 if __name__ == "__main__":
 	unittest.main()

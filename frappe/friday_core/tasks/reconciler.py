@@ -86,6 +86,15 @@ CONNECTOR_EVENT_FAILED_GRACE_MINUTES = 5
 TASK_JOB_NAME = "task:{name}"
 EVENT_JOB_NAME = "connector-event:{event_id}"
 
+# Per-row isolation savepoint for the rescue sweeps. All four sweeps share one
+# tick transaction, and on Postgres ANY failed statement aborts the WHOLE tx —
+# so without a savepoint, one task whose .save() raises would poison every later
+# row AND every later sweep (each phase's try/except catches the Python error but
+# the tx stays aborted, so the rescues silently no-op). Wrapping each row's writes
+# in this savepoint means a bad row rolls back to here and the tick carries on;
+# the task stays stale and is retried on the next tick.
+_ROW_SAVEPOINT = "friday_reconcile_row"
+
 
 # ---------------------------------------------------------------------------
 # Entry point — wired in hooks.scheduler_events["cron"]["* * * * *"]
@@ -248,20 +257,31 @@ def _reconcile_executing_stale() -> int:
 		if job_name in in_flight:
 			continue  # genuinely running, just slow on heartbeats — leave it
 		task = frappe.get_doc("Task", row["name"])
+		frappe.db.savepoint(_ROW_SAVEPOINT)
 		frappe.flags.dispatcher_event_source = "reconciler_runner_lost"
 		try:
 			task.workflow_state = "Blocked"
 			task.blocked_reason = "runner_lost"
 			task.save(ignore_permissions=True)
+			_raise_runner_lost_issue(row["name"])
+			emit(
+				"reconciler.action",
+				task=row["name"],
+				trigger_source="runner_lost",
+				summary=f"runner_lost: {row['name']} (no heartbeat, no job in flight)",
+			)
+		except Exception:
+			# Isolate the bad row: undo its partial writes so the aborted Postgres
+			# tx is usable again, log loudly, and let the next tick retry it.
+			frappe.db.rollback(save_point=_ROW_SAVEPOINT)
+			_logger.warning(
+				"reconciler: runner_lost rescue failed for %s — rolled back, will retry next tick",
+				row["name"],
+				exc_info=True,
+			)
+			continue
 		finally:
 			frappe.flags.dispatcher_event_source = None
-		_raise_runner_lost_issue(row["name"])
-		emit(
-			"reconciler.action",
-			task=row["name"],
-			trigger_source="runner_lost",
-			summary=f"runner_lost: {row['name']} (no heartbeat, no job in flight)",
-		)
 		acted += 1
 	return acted
 
@@ -300,6 +320,7 @@ def _reconcile_transient_blocked() -> int:
 	for row in rows:
 		task = frappe.get_doc("Task", row["name"])
 		old_blocked_reason = task.blocked_reason
+		frappe.db.savepoint(_ROW_SAVEPOINT)
 		frappe.flags.dispatcher_event_source = "reconciler_reset"
 		try:
 			task.workflow_state = "Pending"
@@ -308,21 +329,29 @@ def _reconcile_transient_blocked() -> int:
 			task.blocked_reason = None
 			task.retry_count = (row.get("retry_count") or 0) + 1
 			task.save(ignore_permissions=True)
+			_logger.info(
+				"reconciler: re-Pending transient-Blocked task %s (retry %s/%s)",
+				row["name"],
+				task.retry_count,
+				RETRY_BUDGET,
+			)
+			emit(
+				"reconciler.action",
+				task=row["name"],
+				trigger_source="re_pend_transient",
+				summary=f"re-pend: {row['name']} (was Blocked: {old_blocked_reason}, retry {task.retry_count}/{RETRY_BUDGET})",
+				payload={"blocked_reason": old_blocked_reason, "retry_count": task.retry_count},
+			)
+		except Exception:
+			frappe.db.rollback(save_point=_ROW_SAVEPOINT)
+			_logger.warning(
+				"reconciler: re-pend failed for %s — rolled back, will retry next tick",
+				row["name"],
+				exc_info=True,
+			)
+			continue
 		finally:
 			frappe.flags.dispatcher_event_source = None
-		_logger.info(
-			"reconciler: re-Pending transient-Blocked task %s (retry %s/%s)",
-			row["name"],
-			task.retry_count,
-			RETRY_BUDGET,
-		)
-		emit(
-			"reconciler.action",
-			task=row["name"],
-			trigger_source="re_pend_transient",
-			summary=f"re-pend: {row['name']} (was Blocked: {old_blocked_reason}, retry {task.retry_count}/{RETRY_BUDGET})",
-			payload={"blocked_reason": old_blocked_reason, "retry_count": task.retry_count},
-		)
 		acted += 1
 	return acted
 
