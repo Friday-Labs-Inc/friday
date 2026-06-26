@@ -20,8 +20,9 @@ enterprise value: a governed, audited tool backend, not a raw one.
 PROTOCOL
 ========
 We speak the same streamable-HTTP JSON-RPC 2.0 subset the client speaks, on one
-guest-reachable POST endpoint authenticated by a static bearer token (the MCP spec's
-transport-level auth). Methods handled:
+guest-reachable POST endpoint authenticated by a static token in the `X-MCP-Token`
+header (a custom header, NOT `Authorization: Bearer` — Frappe's auth middleware would
+reject an unknown Bearer before the endpoint runs; see `handle()`). Methods handled:
 
   * `initialize`                 → protocol/version + server capabilities (tools).
   * `notifications/initialized`  → accepted, no response (it's a notification).
@@ -29,8 +30,8 @@ transport-level auth). Methods handled:
   * `tools/call`                 → run ONE skill through the governed dispatcher.
 
 Scoped OUT (v1): resources, prompts, sampling, SSE streaming of partial results,
-per-session state, OAuth. Bearer auth + request/response JSON only — symmetric with
-the client's v1 scope (design 67).
+per-session state, OAuth. Static-token (header) auth + request/response JSON only —
+symmetric with the client's v1 scope (design 67).
 
 DESIGN
 ======
@@ -213,10 +214,16 @@ def _tools_call(req_id, params: dict, profile: str, dispatch_fn) -> dict:
 def handle():
 	"""POST /api/method/frappe.friday_core.mcp.server.handle — the MCP server endpoint.
 
-	Guest-reachable; the static bearer token IS the authentication. Reads a JSON-RPC
-	request, runs it through `handle_jsonrpc`, and writes the JSON-RPC response as a RAW
-	body (not Frappe's `{"message": ...}` wrapper — MCP clients expect the body to BE the
-	JSON-RPC message).
+	Guest-reachable; a static token in the `X-MCP-Token` header IS the authentication.
+	Reads a JSON-RPC request, runs it through `handle_jsonrpc`, and writes the JSON-RPC
+	response as a RAW body (not Frappe's `{"message": ...}` wrapper — MCP clients expect
+	the body to BE the JSON-RPC message).
+
+	WHY `X-MCP-Token` AND NOT `Authorization: Bearer`: Frappe's `validate_auth` rejects
+	ANY `Authorization: Bearer <token>` it can't validate as an OAuth/API-key token with a
+	401, BEFORE a whitelisted function runs (frappe/auth.py). So a custom MCP token sent
+	as a Bearer would never reach this check. A custom header sidesteps that entirely;
+	MCP clients configure it via their `headers` map (e.g. Claude Code's `mcpServers`).
 	"""
 	from werkzeug.wrappers import Response
 
@@ -224,16 +231,13 @@ def handle():
 	if not config.get("enabled"):
 		return _raw(_error(None, _INVALID_REQUEST, "MCP server is disabled."), status=404)
 
-	# Transport auth: a static bearer token (MCP's transport-level auth).
-	auth = frappe.get_request_header("Authorization") or ""
-	token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-	if not config.get("token") or token != config["token"]:
+	if not _authorized(config):
 		return _raw(_error(None, _INVALID_REQUEST, "Unauthorized."), status=401)
 
 	raw = frappe.request.get_data() if frappe.request else b"{}"
 	try:
 		body = json.loads(raw or b"{}")
-	except (ValueError, TypeError):
+	except ValueError, TypeError:
 		return _raw(_error(None, _PARSE_ERROR, "Parse error."), status=400)
 
 	response = handle_jsonrpc(body, profile=config["profile"])
@@ -241,6 +245,20 @@ def handle():
 		# A notification — acknowledge with 202 and an empty body (no JSON-RPC reply).
 		return Response(status=202)
 	return _raw(response, status=200)
+
+
+def _authorized(config: dict) -> bool:
+	"""Constant-time check of the MCP token from the `X-MCP-Token` request header.
+
+	NOT `Authorization` — see `handle()` for why Frappe's auth middleware makes Bearer
+	unusable here. Returns False when no token is configured (so a misconfigured server
+	can't be reached even if enabled) or the header is missing/wrong.
+	"""
+	import hmac
+
+	provided = (frappe.get_request_header("X-MCP-Token") or "").strip()
+	expected = config.get("token") or ""
+	return bool(expected) and hmac.compare_digest(provided, expected)
 
 
 def _raw(payload: dict, *, status: int):
