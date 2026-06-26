@@ -82,6 +82,32 @@ class TestExtractDeltas(unittest.TestCase):
 		self.assertEqual(intake.extract_deltas("t", [], _Counting()), [])
 		self.assertEqual(called["n"], 0)  # no LLM call when there are no fields
 
+	def test_on_usage_receives_the_extraction_calls_usage(self):
+		# The extraction pass is a real model call and must be cost-auditable: when an
+		# on_usage callback is given it gets the call's token usage (the gap that left the
+		# streaming chat path with no LLM Usage Log rows).
+		class _Provider:
+			def chat(self, *a, **k):
+				return {"content": '{"deltas": []}', "usage": {"total_tokens": 7}}
+
+		seen = {}
+		intake.extract_deltas("user: hi", _FIELDS, _Provider(), on_usage=seen.update)
+		self.assertEqual(seen, {"total_tokens": 7})
+
+	def test_on_usage_callback_failure_never_breaks_extraction(self):
+		class _Provider:
+			def chat(self, *a, **k):
+				return {
+					"content": '{"deltas": [{"field": "business_name", "value": "X", "confidence": 0.9}]}',
+					"usage": {},
+				}
+
+		def boom(_u):
+			raise RuntimeError("usage sink down")
+
+		out = intake.extract_deltas("t", _FIELDS, _Provider(), on_usage=boom)
+		self.assertEqual(out[0]["field"], "business_name")  # extraction still succeeded
+
 
 class TestStreamIntakeTurn(unittest.TestCase):
 	def test_turn_streams_reply_and_extracts_deltas(self):

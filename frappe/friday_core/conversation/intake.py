@@ -113,8 +113,14 @@ def parse_deltas(content: str, fields: list[dict]) -> list[dict]:
 	return out
 
 
-def extract_deltas(transcript: str, fields: list[dict], provider) -> list[dict]:
-	"""Run the structured-extraction pass for one turn. Never raises → [] on any failure."""
+def extract_deltas(transcript: str, fields: list[dict], provider, on_usage=None) -> list[dict]:
+	"""Run the structured-extraction pass for one turn. Never raises → [] on any failure.
+
+	`on_usage(usage_dict)` — when given — receives the extraction call's token usage so the
+	caller can record an LLM Usage Log row for it. This pass IS a real model call and must
+	be cost-audited like any other; the callback is best-effort (a usage hiccup can't break
+	extraction) and keeps this function Frappe-free (the caller owns the logging).
+	"""
 	if not fields:
 		return []
 	try:
@@ -122,6 +128,11 @@ def extract_deltas(transcript: str, fields: list[dict], provider) -> list[dict]:
 		content = resp["content"] if isinstance(resp, dict) else getattr(resp, "content", "")
 	except Exception:
 		return []
+	if on_usage is not None and isinstance(resp, dict):
+		try:
+			on_usage(resp.get("usage") or {})
+		except Exception:
+			pass
 	return parse_deltas(content or "", fields)
 
 

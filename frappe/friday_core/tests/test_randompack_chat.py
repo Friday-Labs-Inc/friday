@@ -12,6 +12,7 @@ row and are exercised on deploy.
 from __future__ import annotations
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 from frappe.friday_core.surfaces import randompack_chat as chat
 
@@ -96,6 +97,49 @@ class TestEndpointsAreRoutable(unittest.TestCase):
 			self.assertIn(fn, frappe.whitelisted)
 			self.assertIn(fn, frappe.guest_methods)
 			self.assertIn("POST", frappe.allowed_http_methods_for_whitelisted_func[fn])
+
+
+class TestRecordTurnPersistsAndAudits(unittest.TestCase):
+	"""The governance gap caught on the live loopback: a clean SSE stream left 0 Chat
+	Message rows AND 0 LLM Usage Log rows. The SSE generator runs PAST the request's
+	auto-commit, and the path bypassed run_turn (so no usage logging). `_record_turn`
+	closes both: it writes the transcript, records usage for BOTH model calls, and — the
+	load-bearing bit — COMMITS, or the writes are silently discarded."""
+
+	@patch(f"{chat.__name__}.record_usage")
+	@patch(f"{chat.__name__}.frappe")
+	def test_persists_transcript_records_both_usages_and_commits(self, fr, rec):
+		provider = MagicMock()
+		provider.get_default_model.return_value = "minimax-m3"
+
+		chat._record_turn("S1", "hi", "hello", provider, {"total_tokens": 50}, {"total_tokens": 10})
+
+		# Transcript: one inbound + one outbound Chat Message row.
+		chat_rows = [c.args[0] for c in fr.get_doc.call_args_list if c.args[0]["doctype"] == "Chat Message"]
+		self.assertEqual([r["direction"] for r in chat_rows], ["inbound", "outbound"])
+		# Usage audited for BOTH the streamed reply AND the extraction pass.
+		self.assertEqual(rec.call_count, 2)
+		self.assertEqual(rec.call_args_list[0].kwargs["usage"], {"total_tokens": 50})
+		self.assertEqual(rec.call_args_list[1].kwargs["usage"], {"total_tokens": 10})
+		# The load-bearing commit (without it the post-auto-commit writes vanish).
+		fr.db.commit.assert_called_once()
+
+	@patch(f"{chat.__name__}.record_usage")
+	@patch(f"{chat.__name__}.frappe")
+	def test_no_extraction_usage_skips_the_second_log(self, fr, rec):
+		provider = MagicMock()
+		chat._record_turn("S1", "hi", "hello", provider, {"total_tokens": 50}, {})
+		self.assertEqual(rec.call_count, 1)  # only the conversational call
+		fr.db.commit.assert_called_once()
+
+	@patch(f"{chat.__name__}.record_usage")
+	@patch(f"{chat.__name__}.frappe")
+	def test_persistence_failure_is_logged_not_raised(self, fr, rec):
+		# A persistence failure must not corrupt the reply already streamed — but it is no
+		# longer SILENT (the old bare `except: pass`); it logs.
+		fr.get_doc.side_effect = RuntimeError("db down")
+		chat._record_turn("S1", "hi", "hello", MagicMock(), {}, {})  # must not raise
+		fr.logger.return_value.warning.assert_called()
 
 
 if __name__ == "__main__":

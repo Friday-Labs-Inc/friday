@@ -43,6 +43,7 @@ from frappe.friday_core.connectors.core import (
 )
 from frappe.friday_core.conversation.intake import extract_deltas
 from frappe.friday_core.llm.reasoning import strip_reasoning
+from frappe.friday_core.llm.usage import record_usage
 
 CONNECTOR_NAME = "randompack-system"
 INTAKE_PROFILE = "Customer Intake"
@@ -272,6 +273,49 @@ def _persist(session_id: str, message: str, reply: str) -> None:
 		).insert(ignore_permissions=True)
 
 
+def _default_model(provider) -> str:
+	"""The provider's default model name for the usage log (defensive — never raises)."""
+	try:
+		return provider.get_default_model() or ""
+	except Exception:
+		return ""
+
+
+def _record_turn(session_id: str, message: str, reply: str, provider, conv_usage, extraction_usage) -> None:
+	"""Persist the transcript + per-call LLM usage for one streamed turn, then COMMIT.
+
+	This runs INSIDE the SSE generator, which Frappe iterates AFTER the request's
+	auto-commit — so without an explicit commit these writes are silently discarded (the
+	governance gap caught on the live loopback: a clean stream that left 0 Chat Message and
+	0 LLM Usage Log rows). Both model calls of the turn — the streamed reply AND the
+	extraction pass — are cost-audited. Guarded + logged: a persistence failure must never
+	corrupt the reply already streamed, but it is no longer SILENT.
+	"""
+	try:
+		_persist(session_id, message, reply)
+		model = _default_model(provider)
+		record_usage(
+			profile_name=INTAKE_PROFILE,
+			session_id=session_id,
+			provider=provider,
+			model=model,
+			usage=conv_usage or {},
+		)
+		if extraction_usage:
+			record_usage(
+				profile_name=INTAKE_PROFILE,
+				session_id=session_id,
+				provider=provider,
+				model=model,
+				usage=extraction_usage,
+			)
+		frappe.db.commit()
+	except Exception:
+		frappe.logger("friday.randompack_chat").warning(
+			f"intake turn persistence failed for session {session_id!r}", exc_info=True
+		)
+
+
 def _transcript(history: list[dict], *, extra_user: str = "", extra_assistant: str = "") -> str:
 	lines = [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in history]
 	if extra_user:
@@ -332,7 +376,20 @@ def chat_finalize():
 		return {"ok": False, "error": "session_id required"}
 
 	provider = get_provider_for_profile(INTAKE_PROFILE)
-	deltas = extract_deltas(_transcript(_history(session_id)), _EXTRACTION_FIELDS, provider)
+	# The finalize extraction is a real model call too — cost-audit it. This runs in a
+	# normal request (not the SSE generator), so Frappe auto-commits the usage row.
+	deltas = extract_deltas(
+		_transcript(_history(session_id)),
+		_EXTRACTION_FIELDS,
+		provider,
+		on_usage=lambda u: record_usage(
+			profile_name=INTAKE_PROFILE,
+			session_id=session_id,
+			provider=provider,
+			model=_default_model(provider),
+			usage=u,
+		),
+	)
 	return {"ok": True, "session_id": session_id, "deltas": wire_deltas(deltas)}
 
 
@@ -370,7 +427,11 @@ def _stream(session_id: str, message: str):
 		def _worker():
 			try:
 				resp = provider.chat(messages, on_token=lambda t: q.put(("tok", t)))
-				result["reply"] = resp["content"] if isinstance(resp, dict) else getattr(resp, "content", "")
+				if isinstance(resp, dict):
+					result["reply"] = resp.get("content", "")
+					result["usage"] = resp.get("usage") or {}  # logged from the request thread
+				else:
+					result["reply"] = getattr(resp, "content", "")
 			except Exception as exc:
 				result["error"] = type(exc).__name__
 			finally:
@@ -397,14 +458,20 @@ def _stream(session_id: str, message: str):
 			return
 
 		reply = strip_reasoning(result.get("reply", "") or "")
-		try:
-			_persist(session_id, message, reply)
-		except Exception:
-			pass  # a persistence hiccup must not lose the live reply already streamed
 
+		# Extract wizard deltas (a SECOND model call) and capture its token usage too.
+		extraction_usage: dict = {}
 		deltas = extract_deltas(
-			_transcript(history, extra_user=message, extra_assistant=reply), _EXTRACTION_FIELDS, provider
+			_transcript(history, extra_user=message, extra_assistant=reply),
+			_EXTRACTION_FIELDS,
+			provider,
+			on_usage=extraction_usage.update,
 		)
+
+		# Persist the transcript + BOTH calls' usage, then COMMIT — the SSE generator runs
+		# past the request's auto-commit, so this is what actually makes the audit durable.
+		_record_turn(session_id, message, reply, provider, result.get("usage"), extraction_usage)
+
 		for d in wire_deltas(deltas):
 			yield sse({"type": "delta", **d})
 		yield sse({"type": "done"})
