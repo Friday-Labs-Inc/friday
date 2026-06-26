@@ -56,6 +56,13 @@ _SESSION_LOCK = "friday:session_lock:{}"
 _LOCK_TTL = 300
 _LOCK_WAIT = 30
 
+# Brand personality must use live `Brand Attribute` names (CONTRACT §4.5), fetched from RP
+# (studio-editable). RP rate-limits get_brand_attributes to 60/hr, so the list is cached
+# globally with a short TTL — well under the limit and shared across sessions/turns.
+_BRAND_ATTR_PATH = "randompack.api.v1.get_brand_attributes"
+_BRAND_ATTR_CACHE_KEY = "friday:randompack-intake:brand_attributes"
+_BRAND_ATTR_TTL = 600  # 10 min; a studio edit propagates within that window
+
 # The extraction vocabulary — RandomPack's `Onboarding Brief` field names exactly
 # (CONTRACT.md §4.5). The 3 never-touch fields are simply absent. Select fields name
 # their exact allowed options so the extractor emits a verbatim string or nothing.
@@ -122,15 +129,84 @@ _FIELDS: list[dict] = [
 ]
 _FIELD_STEP = {f["name"]: f["step"] for f in _FIELDS}
 # What the extraction pass sees (no `step` — that's wire metadata we add back on the way out).
+# This is the STATIC fallback; the live pass uses `_extraction_fields()`, which constrains
+# `personality` to the studio's current Brand Attribute names.
 _EXTRACTION_FIELDS = [{"name": f["name"], "description": f["description"]} for f in _FIELDS]
+
+
+def _brand_attributes() -> list[str]:
+	"""The studio's live `Brand Attribute` names (CONTRACT §4.5), fetched from RP + cached.
+
+	Best-effort: returns [] on any failure (connector disabled, RP down, rate-limited) →
+	`personality` extraction falls back to its unconstrained description, and RP snaps/drops
+	any free-form value at apply-time. The connector `send` never raises.
+	"""
+	cache = frappe.cache()
+	cached = cache.get_value(_BRAND_ATTR_CACHE_KEY)
+	if cached is not None:
+		try:
+			return json.loads(cached)
+		except (ValueError, TypeError):
+			return []
+
+	from frappe.friday_core.connectors.client import send
+
+	resp = send(CONNECTOR_NAME, _BRAND_ATTR_PATH, {})
+	attrs: list[str] = []
+	if isinstance(resp, dict) and isinstance(resp.get("message"), list):
+		attrs = [str(a).strip() for a in resp["message"] if str(a).strip()]
+	# Cache success for the full TTL; cache an empty/failed result only briefly so a blip
+	# recovers fast without hammering RP's 60/hr limit.
+	cache.set_value(_BRAND_ATTR_CACHE_KEY, json.dumps(attrs), expires_in_sec=_BRAND_ATTR_TTL if attrs else 60)
+	return attrs
+
+
+def _extraction_fields() -> list[dict]:
+	"""The extraction vocabulary for one pass, with `personality` constrained to the live
+	Brand Attribute names when available — so the model emits valid values that survive RP's
+	apply-time snap instead of free-form words that get dropped (CONTRACT §4.5).
+	"""
+	attrs = _brand_attributes()
+	if not attrs:
+		return _EXTRACTION_FIELDS
+	out = []
+	for f in _EXTRACTION_FIELDS:
+		if f["name"] == "personality":
+			out.append(
+				{
+					"name": "personality",
+					"description": (
+						"the brand personality — a JSON ARRAY of up to 3 values, each EXACTLY one "
+						f"of this list, verbatim (use ONLY these): {' | '.join(attrs)}. Choose the "
+						"ones the customer expressed or clearly implied; omit personality entirely "
+						"if none clearly fit. Never invent a word outside the list."
+					),
+				}
+			)
+		else:
+			out.append(f)
+	return out
 
 INTAKE_SYSTEM_PROMPT = (
 	"You are Friday's warm, sharp brand-intake assistant for RandomPack. You are having a "
 	"live chat with a customer to scope a branding project. Each turn: in 1-2 warm sentences "
 	"acknowledge what they just told you, then ask the SINGLE most useful next question — "
-	"never more than one question at a time, never a wall of text. Naturally steer the "
-	"conversation to cover these essentials before suggesting they move to the review step: "
-	"their name, email, company name, what the business does, and what makes it different. "
+	"never more than one question at a time, never a wall of text.\n\n"
+	"Your job is to come away with a COMPLETE brief. Before you suggest moving on to review, "
+	"make sure the conversation has naturally captured ALL of these REQUIRED essentials:\n"
+	"  - their full name and email\n"
+	"  - the company / brand name\n"
+	"  - what the business does\n"
+	"  - what makes it different (its edge / differentiator)\n"
+	"  - naming status — is the name locked, are they open to exploring, or do they need one\n"
+	"  - brand personality — guide them to land on about THREE words for how the brand "
+	"should feel\n"
+	"Weave these in too when it flows naturally (don't force them): who it's for (target "
+	"audience), competitors, brands they admire, preferred start date, business category, and "
+	"stage.\n\n"
+	"Only once the REQUIRED essentials are in hand, warmly invite them to review — a light "
+	"'a few quick things and I'll hand you a finished brief…' framing. Keep it conversational, "
+	"not an interrogation: one question at a time, building on what they said. "
 	"Be genuinely helpful and concise; do not ask for payment details, passwords, or legal "
 	"consent — those are handled later in the review wizard."
 )
@@ -399,7 +475,7 @@ def chat_finalize():
 	# normal request (not the SSE generator), so Frappe auto-commits the usage row.
 	deltas = extract_deltas(
 		_transcript(_history(session_id)),
-		_EXTRACTION_FIELDS,
+		_extraction_fields(),
 		provider,
 		on_usage=lambda u: record_usage(
 			profile_name=INTAKE_PROFILE,
@@ -482,7 +558,7 @@ def _stream(session_id: str, message: str):
 		extraction_usage: dict = {}
 		deltas = extract_deltas(
 			_transcript(history, extra_user=message, extra_assistant=reply),
-			_EXTRACTION_FIELDS,
+			_extraction_fields(),
 			provider,
 			on_usage=extraction_usage.update,
 		)

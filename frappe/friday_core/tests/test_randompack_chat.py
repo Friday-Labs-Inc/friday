@@ -180,5 +180,63 @@ class TestEnsureIntakePlatform(unittest.TestCase):
 		self.assertFalse(out["created"])  # the profile was NOT re-created
 
 
+class TestBrandAttributesFetch(unittest.TestCase):
+	"""personality must use live Brand Attribute names (CONTRACT §4.5) — fetched from RP +
+	cached (RP rate-limits get_brand_attributes to 60/hr). Best-effort: [] on any failure."""
+
+	@patch("frappe.friday_core.connectors.client.send")
+	@patch(f"{chat.__name__}.frappe")
+	def test_fetches_parses_and_caches_for_full_ttl(self, fr, send):
+		fr.cache.return_value.get_value.return_value = None  # cache miss
+		send.return_value = {"message": ["Bold", "Heritage", "Playful"]}
+		out = chat._brand_attributes()
+		self.assertEqual(out, ["Bold", "Heritage", "Playful"])
+		send.assert_called_once_with(chat.CONNECTOR_NAME, chat._BRAND_ATTR_PATH, {})
+		self.assertEqual(fr.cache.return_value.set_value.call_args.kwargs["expires_in_sec"], chat._BRAND_ATTR_TTL)
+
+	@patch("frappe.friday_core.connectors.client.send")
+	@patch(f"{chat.__name__}.frappe")
+	def test_cache_hit_skips_the_fetch(self, fr, send):
+		fr.cache.return_value.get_value.return_value = '["Bold", "Calm"]'
+		self.assertEqual(chat._brand_attributes(), ["Bold", "Calm"])
+		send.assert_not_called()
+
+	@patch("frappe.friday_core.connectors.client.send")
+	@patch(f"{chat.__name__}.frappe")
+	def test_failure_returns_empty_and_caches_briefly(self, fr, send):
+		fr.cache.return_value.get_value.return_value = None
+		send.return_value = None  # connector disabled / RP down — send never raises
+		self.assertEqual(chat._brand_attributes(), [])
+		self.assertEqual(fr.cache.return_value.set_value.call_args.kwargs["expires_in_sec"], 60)
+
+
+class TestExtractionFieldsConstrainPersonality(unittest.TestCase):
+	@patch(f"{chat.__name__}._brand_attributes")
+	def test_personality_constrained_to_live_attributes(self, attrs):
+		attrs.return_value = ["Bold", "Heritage", "Playful"]
+		fields = chat._extraction_fields()
+		personality = next(f for f in fields if f["name"] == "personality")
+		for a in ("Bold", "Heritage", "Playful"):
+			self.assertIn(a, personality["description"])
+		self.assertIn("ONLY these", personality["description"])
+		self.assertEqual(len(fields), len(chat._EXTRACTION_FIELDS))  # nothing dropped
+
+	@patch(f"{chat.__name__}._brand_attributes")
+	def test_falls_back_to_static_vocab_when_no_attributes(self, attrs):
+		attrs.return_value = []
+		self.assertIs(chat._extraction_fields(), chat._EXTRACTION_FIELDS)
+
+
+class TestSystemPromptCoversRequiredFields(unittest.TestCase):
+	"""Ask 1: steer through ALL the wizard-required essentials before inviting review."""
+
+	def test_prompt_names_every_required_essential(self):
+		p = chat.INTAKE_SYSTEM_PROMPT.lower()
+		for essential in ("name", "email", "company", "different", "naming", "personality"):
+			self.assertIn(essential, p)
+		self.assertIn("required", p)  # the essentials are gated before handoff
+		self.assertIn("review", p)
+
+
 if __name__ == "__main__":
 	unittest.main()
