@@ -261,8 +261,14 @@ class LLMProvider(ABC):
 		headers: dict,
 		payload: dict,
 		model: str,
-	) -> dict:
+		raw: bool = False,
+	) -> "dict | str":
 		"""POST `payload` as JSON and return the parsed response dict.
+
+		`raw=True` returns the response BODY TEXT instead of parsed JSON — for
+		endpoints that answer with something other than a JSON object (the
+		Codex backend answers with an SSE event stream). Retry/auth/classifier
+		behaviour is identical either way.
 
 		The single audited transport path shared by every provider adapter:
 		retry with exponential backoff on retryable failures, routing every
@@ -298,7 +304,7 @@ class LLMProvider(ABC):
 
 			# 2xx — success.
 			if response.status_code < 300:
-				return response.json()
+				return response.text if raw else response.json()
 
 			# Non-2xx — the classifier decides the recovery action. The body is
 			# passed for disambiguation only; it never enters the raised error.
@@ -538,7 +544,7 @@ class _OpenAICompatibleProvider(LLMProvider):
 		import time
 
 		import httpx
-		from openai import APIError, APIConnectionError, APIStatusError, APITimeoutError
+		from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError
 
 		last_exc: Exception | None = None
 		classified = None
@@ -1216,7 +1222,11 @@ class CodexProvider(LLMProvider):
 			"input": input_items,
 			# The Responses API REQUIRES store:false for the Codex backend.
 			"store": False,
-			"stream": False,
+			# The Codex backend REJECTS non-streaming requests outright
+			# ("Stream must be set to true", HTTP 400 — found live 2026-07-02).
+			# We stream on the wire but still return one complete reply: the
+			# final `response.completed` SSE event carries the full response.
+			"stream": True,
 		}
 		if instructions:
 			payload["instructions"] = instructions
@@ -1225,8 +1235,8 @@ class CodexProvider(LLMProvider):
 		if self.default_temperature is not None:
 			payload["temperature"] = self.default_temperature
 
-		data = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model)
-		return _parse_responses(data)
+		body = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model, raw=True)
+		return _parse_responses(_parse_codex_sse(body))
 
 	def get_default_model(self) -> str:
 		return self.default_model
@@ -1296,6 +1306,27 @@ def _to_responses_tools(tools: list[dict]) -> list[dict]:
 			}
 		)
 	return out
+
+
+def _parse_codex_sse(body: str) -> dict:
+	"""Codex SSE event stream → the final response object.
+
+	The stream is a sequence of `event:`/`data:` line pairs; the terminal
+	`response.completed` event's `data` JSON carries the complete response
+	under its `response` key — exactly the object `_parse_responses` reads.
+	A stream that ends without `response.completed` (disconnect, backend
+	error mid-stream) raises LLMError so the runner's retry machinery sees it.
+	"""
+	for line in body.splitlines():
+		if not line.startswith("data:"):
+			continue
+		try:
+			data = json.loads(line[len("data:") :].strip())
+		except (json.JSONDecodeError, TypeError):
+			continue
+		if data.get("type") == "response.completed" and isinstance(data.get("response"), dict):
+			return data["response"]
+	raise LLMError("openai-codex stream ended without a response.completed event.")
 
 
 def _parse_responses(data: dict) -> LLMResponse:
