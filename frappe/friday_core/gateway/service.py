@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
+from frappe.friday_core.agent_runner.journal import EVENT_REPLY_DELIVERED, TurnJournal
 from frappe.friday_core.agent_runner.runner import run_turn
 from frappe.friday_core.gateway.batching import flush_batch
 from frappe.friday_core.permissions.matrix import check as permission_check
@@ -260,6 +261,27 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		return
 
 	try:
+		# Design 93 — the durable turn journal for this turn. The inbound row
+		# name is the turn_id: one inbound row = one turn, and every retry
+		# (recovery sweeper, drain, requeue) re-enters with the same row, so
+		# a crashed turn resumes from its diary. Best-effort: a journal read
+		# failure must never block the pipeline.
+		journal = None
+		try:
+			journal = TurnJournal.open(inbound.name, session_id, profile_name)
+		except Exception:
+			frappe.logger("friday.gateway").warning(
+				f"turn journal open failed for {inbound.name!r}; running unjournaled",
+				exc_info=True,
+			)
+		if journal is not None and journal.is_delivered():
+			# A previous attempt crashed AFTER writing the outbound reply but
+			# BEFORE marking the inbound processed. The user already has the
+			# answer — close the books, don't reply twice (the old
+			# double-reply crash window, design 93 Q4).
+			_mark_processed(inbound, retry_count=inbound.retry_count or 0)
+			return
+
 		# Stub today: real batching lands with the first bursty surface.
 		# flush_batch() returns [inbound.content] — list of one.
 		batch = flush_batch(session_id, inbound.content or "")
@@ -278,20 +300,28 @@ def _run_pipeline(inbound, in_worker: bool = False, lock_retry: int = 0) -> None
 		#  per-skill inside the agent loop in later slices.)
 		_ = profile_name  # placeholder for future per-skill checks
 
-		# Agent runs and produces a reply.
+		# Agent runs and produces a reply. turn_id switches on the design-93
+		# journal: a crashed turn resumes instead of re-running from scratch.
 		reply = run_turn(
 			profile_name=profile_name,
 			session_id=session_id,
 			inbound_content=joined_content,
+			turn_id=inbound.name,
 		)
 
 		# Write the outbound row.
-		_write_outbound(
+		outbound_name = _write_outbound(
 			inbound,
 			content=reply,
 			processed=True,
 			sender_label=profile_name,
 		)
+
+		# Design 93 — record delivery in the journal so a crash between the
+		# outbound write (above) and the processed mark (below) can never
+		# produce a second reply on retry.
+		if journal is not None:
+			journal.record(EVENT_REPLY_DELIVERED, {"outbound": outbound_name})
 
 		# Fire the realtime event so future Telegram/Slack/Raven
 		# subscribers get pushed. CLI doesn't subscribe; it reads the

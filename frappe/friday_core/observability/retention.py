@@ -34,6 +34,11 @@ RETENTION_DAYS = 30
 PURGE_BATCH_SIZE = 1000
 PURGE_MAX_BATCHES = 100  # safety cap: at most 100,000 rows per sweep
 
+# Design 93 (Q6) — Turn Event rows are REPLAY STATE, not audit trail (that
+# stays in Execution Log / LLM Usage Log / Chat Message). By 7 days every
+# turn is long since finished or given up on, so the diary can go.
+TURN_EVENT_RETENTION_DAYS = 7
+
 
 # Terminal states for the Task Completion Summary writer. A task reaching any
 # of these is "done" enough to lock its summary; a Blocked task that the
@@ -167,4 +172,27 @@ def purge_old_events() -> int:
 	except Exception:
 		_logger.exception("purge_old_events failed at batch %d", total_deleted)
 		# Don't re-raise — a failed sweep is logged, not a worker crash.
+
+	# Design 93 — same batched sweep for the turn journal, shorter window.
+	turn_cutoff = frappe.utils.add_to_date(now_datetime(), days=-TURN_EVENT_RETENTION_DAYS)
+	try:
+		for _ in range(PURGE_MAX_BATCHES):
+			frappe.db.sql(
+				"""
+				DELETE FROM `tabTurn Event`
+				WHERE name IN (
+					SELECT name FROM `tabTurn Event`
+					WHERE creation < %(cutoff)s
+					LIMIT %(batch)s
+				)
+				""",
+				{"cutoff": turn_cutoff, "batch": PURGE_BATCH_SIZE},
+			)
+			deleted = frappe.db._cursor.rowcount or 0
+			total_deleted += deleted
+			frappe.db.commit()
+			if deleted < PURGE_BATCH_SIZE:
+				break
+	except Exception:
+		_logger.exception("purge_old_events (Turn Event) failed")
 	return total_deleted

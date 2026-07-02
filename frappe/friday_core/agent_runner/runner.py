@@ -46,11 +46,19 @@ import json
 
 import frappe
 from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
+from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
+from frappe.friday_core.agent_runner.journal import (
+	EVENT_LLM_RESPONSE,
+	EVENT_STEER_INJECTED,
+	EVENT_TOOL_RESULT,
+	EVENT_TURN_COMPLETED,
+	EVENT_TURN_STARTED,
+	TurnJournal,
+)
 from frappe.friday_core.agent_runner.message_hygiene import (
 	sanitize_messages_surrogates,
 	sanitize_surrogates,
 )
-from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 from frappe.friday_core.gateway.interrupt import clear_interrupt, is_interrupt_requested
 from frappe.friday_core.gateway.steer import clear_steer, drain_steer
 from frappe.friday_core.llm import get_provider_for_profile
@@ -98,6 +106,7 @@ def run_turn(
 	allowed_skills: "set[str] | None" = None,
 	skip_compression: bool = False,
 	provider_override=None,
+	turn_id: "str | None" = None,
 ) -> str:
 	"""Produce one agent reply for one user message via the ReAct loop.
 
@@ -114,6 +123,12 @@ def run_turn(
 	    The review turn (design 79) reads the live session as read-only context
 	    and must never compress the real conversation. Default False = today's
 	    behaviour.
+	  - `turn_id`: when given, turns ON the durable turn journal (design 93):
+	    every step is written to `Turn Event` as it happens, and a retry with
+	    the SAME turn_id resumes from the journal instead of re-running the
+	    turn from scratch. Callers pass a deterministic id (the inbound Chat
+	    Message name; `task::<name>` for tasks). `None` (self-review, evals)
+	    = journaling off = old behaviour.
 
 	Returns the reply text the gateway writes to the single outbound Chat
 	Message row for this turn.
@@ -144,6 +159,24 @@ def run_turn(
 	clear_interrupt(session_id)
 	clear_steer(session_id)
 
+	# Design 93 — open the turn's diary. A journaled turn.completed means a
+	# crash/retry re-entered a turn that already finished: return the reply
+	# as-is — no LLM call, no tool run, the user never pays twice. Best-effort
+	# like every journal touch: an open failure degrades to an unjournaled
+	# turn, it never breaks one.
+	journal = None
+	if turn_id:
+		try:
+			journal = TurnJournal.open(turn_id, session_id, profile_name)
+		except Exception:
+			frappe.logger("friday.agent_runner.journal").warning(
+				f"journal open failed for turn {turn_id!r}; running unjournaled", exc_info=True
+			)
+	if journal is not None:
+		_done = journal.completed_reply()
+		if _done is not None:
+			return _done
+
 	skill_definitions = load_for_profile(profile_name)
 
 	# Design 79 — the self-improvement review runs a tool-restricted turn: keep
@@ -158,7 +191,10 @@ def run_turn(
 	# never break the turn, so we log and continue with the full prompt.
 	# Design 79 — a review turn skips this: it reads the live session as
 	# read-only context and must not compress the real conversation.
-	if not skip_compression:
+	# Design 93 — a RESUMED turn skips it too: the replayed prompt is pinned
+	# by the journal; compressing now would desync prompt and diary.
+	replay = journal.rebuild(profile_name, _inject_steer) if journal is not None else None
+	if not skip_compression and replay is None:
 		try:
 			maybe_compress_session(profile_name, session_id)
 		except Exception as exc:
@@ -178,16 +214,49 @@ def run_turn(
 	# Default (None) resolves the profile's own provider — today's behaviour.
 	provider = provider_override or get_provider_for_profile(profile_name)
 
-	# A working copy of the conversation that the loop appends to.
-	messages: list[dict] = list(prompt["messages"])
+	# A working copy of the conversation that the loop appends to. On a
+	# design-93 resume, the journal (not the freshly built prompt) is the
+	# source of truth for the conversation — only `tools` come from build(),
+	# so the model always sees the CURRENT skill definitions.
 	tools = prompt["tools"]
-	model = prompt["model"]
+	if replay is None:
+		messages: list[dict] = list(prompt["messages"])
+		model = prompt["model"]
+		if journal is not None:
+			journal.record(
+				EVENT_TURN_STARTED,
+				{"messages": messages, "model": model, "agent_profile": profile_name},
+			)
+	else:
+		messages = replay.messages
+		model = replay.model or prompt["model"]
 
 	last_assistant_content = ""
 	empty_retries = 0
 	compress_retries = 0
 
-	for _iteration in range(MAX_REACT_ITERATIONS):
+	# Design 93 — the crash happened AFTER the model's final plain-text answer
+	# but BEFORE the completion bookkeeping. Nothing to resume: finish it.
+	if replay is not None and replay.final_reply is not None:
+		if journal is not None:
+			journal.record(EVENT_TURN_COMPLETED, {"reply": replay.final_reply})
+		return replay.final_reply
+
+	# Design 93 — the interrupted turn still owes tool results from its last
+	# journaled LLM response. Dispatch exactly those, then fall into the loop
+	# so the model observes them and continues.
+	if replay is not None and replay.pending_tool_calls:
+		_terminal = _dispatch_and_journal(
+			replay.pending_tool_calls, profile_name, session_id, replay.tokens_used, messages, journal
+		)
+		if _terminal is not None:
+			return _terminal
+
+	# Design 93 — replayed LLM calls count against the SAME 15-cycle budget;
+	# a crash must not grant extra iterations.
+	_start_iteration = replay.iterations_used if replay is not None else 0
+
+	for _iteration in range(_start_iteration, MAX_REACT_ITERATIONS):
 		# Design 83 — cooperative interrupt: an operator `/stop` set the flag.
 		# Check it at the iteration boundary (before the next LLM call) and bail
 		# cleanly. Friday's blocking provider call means this is the soonest the
@@ -206,6 +275,8 @@ def run_turn(
 		_steer = drain_steer(session_id)
 		if _steer:
 			_inject_steer(messages, _steer)
+			if journal is not None:
+				journal.record(EVENT_STEER_INJECTED, {"text": _steer})
 
 		# Design 61b — heartbeat once per ReAct iteration so the durability
 		# reconciler's executing-stale sweep distinguishes a long but healthy
@@ -250,6 +321,13 @@ def run_turn(
 				messages = list(prompt["messages"])
 				tools = prompt["tools"]
 				model = prompt["model"]
+				# Design 93 — the compressed prompt supersedes the old one;
+				# a fresh turn.started re-bases the diary so replay uses IT.
+				if journal is not None:
+					journal.record(
+						EVENT_TURN_STARTED,
+						{"messages": messages, "model": model, "agent_profile": profile_name},
+					)
 				continue
 			raise
 		# Usage accounting — one LLM Usage Log row per call (tokens + estimated
@@ -279,14 +357,29 @@ def run_turn(
 			# message in place of Hermes' "(empty)" sentinel.
 			if not content and empty_retries < MAX_EMPTY_RETRIES:
 				empty_retries += 1
+				# Design 93 — an empty response still consumed an iteration;
+				# journal it so a resumed turn keeps the same budget.
+				if journal is not None:
+					journal.record(
+						EVENT_LLM_RESPONSE,
+						{"content": "", "tool_calls": None, "total_tokens": tokens_used},
+					)
 				frappe.logger("friday.runner").warning(
 					f"Empty model response — retry {empty_retries}/{MAX_EMPTY_RETRIES} "
 					f"(session {session_id!r})"
 				)
 				continue
 			if not content:
+				if journal is not None:
+					journal.record(EVENT_TURN_COMPLETED, {"reply": _EMPTY_RESPONSE_FALLBACK})
 				return _EMPTY_RESPONSE_FALLBACK
 			# Plain-text reply — the agent is done.
+			if journal is not None:
+				journal.record(
+					EVENT_LLM_RESPONSE,
+					{"content": content, "tool_calls": None, "total_tokens": tokens_used},
+				)
+				journal.record(EVENT_TURN_COMPLETED, {"reply": content})
 			return content
 
 		# A usable (tool-calling) response resets the empty-response streak.
@@ -303,42 +396,83 @@ def run_turn(
 					_call.get("name", ""), _call.get("arguments", ""), _index
 				)
 
+		# Design 93 — journal the response with its CANONICAL tool calls
+		# (post-dedup, ids assigned) so replay redispatches by stable id.
+		if journal is not None:
+			journal.record(
+				EVENT_LLM_RESPONSE,
+				{"content": content, "tool_calls": tool_calls, "total_tokens": tokens_used},
+			)
+
 		last_assistant_content = content
 		# Put the assistant's turn (with its tool calls) back into the
 		# conversation so the next call shows the model what it asked for.
 		messages.append(_assistant_message(content, tool_calls))
 
-		for tool_call in tool_calls:  # sequential, in order (A.6)
-			result = dispatch(
-				tool_call=tool_call,
-				agent_profile=profile_name,
-				session_id=session_id,
-				tokens_used=tokens_used,
-			)
-			if _is_permission_denial(result):
-				# A.4 — the operator said NO. Break the loop and surface it;
-				# letting the model silently route around it is a governance hole.
-				return result.content
-
-			if result.pending_approval:
-				# H2 — the skill needs human approval. Pause the turn and
-				# surface the request; a human resumes it later via approve().
-				return result.content
-
-			# A.3 — feed the tool result (success or error) back verbatim so
-			# the model can observe it and adapt. The loop then continues.
-			messages.append(
-				{
-					"role": "tool",
-					"tool_call_id": result.tool_call_id or tool_call.get("id", ""),
-					"content": result.content,
-				}
-			)
+		_terminal = _dispatch_and_journal(
+			tool_calls, profile_name, session_id, tokens_used, messages, journal
+		)
+		if _terminal is not None:
+			return _terminal
 		# Loop continues: re-prompt so the model observes the tool results.
 
 	# A.2 — hit the iteration cap without a clean plain-text reply.
 	final = last_assistant_content or _EMPTY_REPLY_FALLBACK
-	return final + _BUDGET_EXHAUSTED_SUFFIX.format(n=MAX_REACT_ITERATIONS)
+	reply = final + _BUDGET_EXHAUSTED_SUFFIX.format(n=MAX_REACT_ITERATIONS)
+	if journal is not None:
+		journal.record(EVENT_TURN_COMPLETED, {"reply": reply})
+	return reply
+
+
+def _dispatch_and_journal(
+	tool_calls: list[dict],
+	profile_name: str,
+	session_id: str,
+	tokens_used: int,
+	messages: list[dict],
+	journal: "TurnJournal | None",
+) -> "str | None":
+	"""Dispatch tool calls sequentially, in order (A.6), journaling each result.
+
+	Shared by the main loop and the design-93 resume path (which owes the
+	pending calls of the last journaled LLM response). Appends every result to
+	`messages` as a `{role:"tool", ...}` message (A.3). Returns a TERMINAL
+	reply when the loop must stop — a permission denial (A.4) or an approval
+	pause (H2) — or None to continue; terminal replies are journaled as
+	turn.completed so a crash-retry never redoes a denied or gated turn.
+	"""
+	for tool_call in tool_calls:
+		result = dispatch(
+			tool_call=tool_call,
+			agent_profile=profile_name,
+			session_id=session_id,
+			tokens_used=tokens_used,
+		)
+		if _is_permission_denial(result):
+			# A.4 — the operator said NO. Break the loop and surface it;
+			# letting the model silently route around it is a governance hole.
+			if journal is not None:
+				journal.record(
+					EVENT_TURN_COMPLETED, {"reply": result.content, "reason": "permission_denial"}
+				)
+			return result.content
+
+		if result.pending_approval:
+			# H2 — the skill needs human approval. Pause the turn and
+			# surface the request; a human resumes it later via approve().
+			if journal is not None:
+				journal.record(
+					EVENT_TURN_COMPLETED, {"reply": result.content, "reason": "pending_approval"}
+				)
+			return result.content
+
+		# A.3 — feed the tool result (success or error) back verbatim so
+		# the model can observe it and adapt. The loop then continues.
+		call_id = result.tool_call_id or tool_call.get("id", "")
+		messages.append({"role": "tool", "tool_call_id": call_id, "content": result.content})
+		if journal is not None:
+			journal.record(EVENT_TOOL_RESULT, {"tool_call_id": call_id, "content": result.content})
+	return None
 
 
 def _assistant_message(content: str, tool_calls: list[dict]) -> dict:

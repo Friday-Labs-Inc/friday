@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "turn_id",
+  "session_id",
+  "seq",
+  "event_type",
+  "agent_profile",
+  "payload"
+ ],
+ "fields": [
+  {"fieldname": "turn_id", "fieldtype": "Data", "in_list_view": 1, "label": "Turn ID", "reqd": 1, "search_index": 1, "description": "Deterministic per-turn key: the inbound Chat Message name (chat path) or task::<name> (task path). Retries share it — that is what makes replay find the diary."},
+  {"fieldname": "session_id", "fieldtype": "Data", "label": "Session ID", "search_index": 1, "description": "The conversation session this turn belongs to."},
+  {"fieldname": "seq", "fieldtype": "Int", "in_list_view": 1, "label": "Seq", "reqd": 1, "description": "1-based position of this line in the turn's diary. (turn_id, seq) is unique."},
+  {"fieldname": "event_type", "fieldtype": "Data", "in_list_view": 1, "label": "Event Type", "reqd": 1, "description": "turn.started | llm.response | tool.result | steer.injected | turn.completed | reply.delivered"},
+  {"fieldname": "agent_profile", "fieldtype": "Data", "label": "Agent Profile", "description": "The profile that ran the turn. Data (not Link) on purpose: journal writes must never fail on link validation."},
+  {"fieldname": "payload", "fieldtype": "JSON", "label": "Payload (JSON)", "description": "Event-specific replay state (the built prompt, an LLM response, a tool result, ...)."}
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Turn Event",
+ "naming_rule": "Autoincrement",
+ "permissions": [
+  {"read": 1, "role": "System Manager"}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

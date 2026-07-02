@@ -478,6 +478,10 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			session_id=f"task::{task.name}",
 			inbound_content=framing,
 			heartbeat=lambda: _heartbeat(task_name),
+			# Design 93 — stable across reconciler retries (the claim token
+			# already guarantees single execution), so a runner_lost retry
+			# resumes the turn from its journal instead of starting over.
+			turn_id=f"task::{task.name}",
 		)
 	except TurnInterrupted:
 		# Design 85 (Q3) — this delegated child was cascaded a `/stop`. It did NOT
