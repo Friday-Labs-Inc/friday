@@ -78,5 +78,55 @@ class TestBuildProviderOAuthBranch(unittest.TestCase):
 		self.assertEqual(provider.account_id, "acc-123")
 
 
+# The Codex backend REJECTS non-streaming requests ("Stream must be set to
+# true", found live on prod 2026-07-02), so the provider must send stream:true
+# and assemble the reply from the SSE event stream. The final
+# `response.completed` event carries the full response object.
+_CODEX_SSE_OK = (
+	'event: response.created\n'
+	'data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}\n'
+	"\n"
+	'event: response.output_item.done\n'
+	'data: {"type":"response.output_item.done","item":{"type":"message"}}\n'
+	"\n"
+	'event: response.completed\n'
+	'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed",'
+	'"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}],'
+	'"usage":{"input_tokens":3,"output_tokens":2}}}\n'
+)
+
+
+class TestCodexSSE(unittest.TestCase):
+	def _codex(self):
+		from frappe.friday_core.llm.provider import CodexProvider
+
+		return CodexProvider(oauth_token="tok", account_id="acc-123", default_model="gpt-5.4")
+
+	def test_parse_codex_sse_returns_completed_response(self):
+		from frappe.friday_core.llm.provider import _parse_codex_sse
+
+		data = _parse_codex_sse(_CODEX_SSE_OK)
+		self.assertEqual(data["id"], "resp_1")
+		self.assertEqual(data["status"], "completed")
+
+	def test_parse_codex_sse_without_completed_raises(self):
+		from frappe.friday_core.llm.provider import LLMError, _parse_codex_sse
+
+		truncated = 'event: response.created\ndata: {"type":"response.created"}\n'
+		with self.assertRaises(LLMError):
+			_parse_codex_sse(truncated)
+
+	def test_chat_sends_stream_true_and_parses_sse(self):
+		p = self._codex()
+		p._post_with_recovery = MagicMock(return_value=_CODEX_SSE_OK)
+		result = p.chat(messages=[{"role": "user", "content": "Reply with exactly: OK"}])
+
+		kwargs = p._post_with_recovery.call_args.kwargs
+		self.assertIs(kwargs["payload"]["stream"], True)
+		self.assertIs(kwargs["raw"], True)
+		self.assertEqual(result["content"], "OK")
+		self.assertEqual(result["usage"]["total_tokens"], 5)
+
+
 if __name__ == "__main__":
 	unittest.main()

@@ -123,20 +123,26 @@ class TestRefresh(unittest.TestCase):
 
 
 class TestCodexProviderResponses(unittest.TestCase):
+	# The Codex backend only answers SSE ("Stream must be set to true" on a
+	# non-streaming request — found live 2026-07-02). The mock now serves the
+	# event stream; the final response.completed event carries the same
+	# response object the old JSON mock had.
+	_SSE = (
+		"event: response.created\n"
+		'data: {"type":"response.created","response":{"status":"in_progress"}}\n'
+		"\n"
+		"event: response.completed\n"
+		'data: {"type":"response.completed","response":{'
+		'"output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]},'
+		'{"type":"function_call","call_id":"c1","name":"foo","arguments":"{}"}],'
+		'"usage":{"input_tokens":3,"output_tokens":4},"status":"completed"}}\n'
+	)
+
 	def _provider(self):
 		from frappe.friday_core.llm.provider import CodexProvider
 
 		p = CodexProvider(oauth_token="tok", account_id="acc-9", default_model="gpt-5-codex")
-		p._post_with_recovery = MagicMock(
-			return_value={
-				"output": [
-					{"type": "message", "content": [{"type": "output_text", "text": "hello"}]},
-					{"type": "function_call", "call_id": "c1", "name": "foo", "arguments": "{}"},
-				],
-				"usage": {"input_tokens": 3, "output_tokens": 4},
-				"status": "completed",
-			}
-		)
+		p._post_with_recovery = MagicMock(return_value=self._SSE)
 		return p
 
 	def test_request_shape_and_headers(self):
@@ -151,6 +157,7 @@ class TestCodexProviderResponses(unittest.TestCase):
 		self.assertEqual(headers["originator"], "codex_cli_rs")
 		self.assertEqual(headers["ChatGPT-Account-ID"], "acc-9")
 		self.assertEqual(payload["store"], False)
+		self.assertIs(payload["stream"], True)
 		self.assertEqual(payload["instructions"], "be brief")
 		self.assertTrue(any(i.get("role") == "user" for i in payload["input"]))
 		self.assertEqual(payload["tools"][0]["type"], "function")
