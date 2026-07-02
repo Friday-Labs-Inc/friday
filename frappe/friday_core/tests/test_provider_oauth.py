@@ -80,19 +80,21 @@ class TestBuildProviderOAuthBranch(unittest.TestCase):
 
 # The Codex backend REJECTS non-streaming requests ("Stream must be set to
 # true", found live on prod 2026-07-02), so the provider must send stream:true
-# and assemble the reply from the SSE event stream. The final
-# `response.completed` event carries the full response object.
+# and assemble the reply from the SSE event stream. Output items arrive in
+# `response.output_item.done` events; the terminal `response.completed` event
+# carries status + usage but an EMPTY output array (live backend behaviour) —
+# both facts are pinned by this fixture.
 _CODEX_SSE_OK = (
 	'event: response.created\n'
 	'data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}\n'
 	"\n"
 	'event: response.output_item.done\n'
-	'data: {"type":"response.output_item.done","item":{"type":"message"}}\n'
+	'data: {"type":"response.output_item.done","item":'
+	'{"type":"message","content":[{"type":"output_text","text":"OK"}]}}\n'
 	"\n"
 	'event: response.completed\n'
 	'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed",'
-	'"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}],'
-	'"usage":{"input_tokens":3,"output_tokens":2}}}\n'
+	'"output":[],"usage":{"input_tokens":3,"output_tokens":2}}}\n'
 )
 
 
@@ -108,6 +110,9 @@ class TestCodexSSE(unittest.TestCase):
 		data = _parse_codex_sse(_CODEX_SSE_OK)
 		self.assertEqual(data["id"], "resp_1")
 		self.assertEqual(data["status"], "completed")
+		# completed's output is empty on the live backend — the parser must
+		# backfill it from the response.output_item.done events.
+		self.assertEqual(data["output"][0]["content"][0]["text"], "OK")
 
 	def test_parse_codex_sse_without_completed_raises(self):
 		from frappe.friday_core.llm.provider import LLMError, _parse_codex_sse
