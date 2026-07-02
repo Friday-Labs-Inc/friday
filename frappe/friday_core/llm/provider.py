@@ -1232,8 +1232,11 @@ class CodexProvider(LLMProvider):
 			payload["instructions"] = instructions
 		if tools:
 			payload["tools"] = _to_responses_tools(tools)
-		if self.default_temperature is not None:
-			payload["temperature"] = self.default_temperature
+		# NO temperature, ever: the Codex backend serves only gpt-5.x reasoning
+		# models and rejects it outright ("Unsupported parameter: temperature",
+		# HTTP 400 — found live 2026-07-02). The LLM Provider row's
+		# default_temperature (a doctype default meant for the chat-completions
+		# adapters) must not leak onto this wire.
 
 		body = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model, raw=True)
 		return _parse_responses(_parse_codex_sse(body))
