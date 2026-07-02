@@ -127,6 +127,19 @@ class TestCodexSSE(unittest.TestCase):
 		self.assertEqual(result["content"], "OK")
 		self.assertEqual(result["usage"]["total_tokens"], 5)
 
+	def test_chat_never_sends_temperature(self):
+		"""The Codex backend rejects temperature outright ('Unsupported
+		parameter: temperature', HTTP 400 live) — a configured
+		default_temperature must not leak onto the wire."""
+		from frappe.friday_core.llm.provider import CodexProvider
+
+		p = CodexProvider(
+			oauth_token="tok", account_id="acc-123", default_model="gpt-5.4", default_temperature=0.7
+		)
+		p._post_with_recovery = MagicMock(return_value=_CODEX_SSE_OK)
+		p.chat(messages=[{"role": "user", "content": "hi"}])
+		self.assertNotIn("temperature", p._post_with_recovery.call_args.kwargs["payload"])
+
 
 if __name__ == "__main__":
 	unittest.main()
