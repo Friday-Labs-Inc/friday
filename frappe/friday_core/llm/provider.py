@@ -1314,12 +1314,17 @@ def _to_responses_tools(tools: list[dict]) -> list[dict]:
 def _parse_codex_sse(body: str) -> dict:
 	"""Codex SSE event stream → the final response object.
 
-	The stream is a sequence of `event:`/`data:` line pairs; the terminal
-	`response.completed` event's `data` JSON carries the complete response
-	under its `response` key — exactly the object `_parse_responses` reads.
-	A stream that ends without `response.completed` (disconnect, backend
-	error mid-stream) raises LLMError so the runner's retry machinery sees it.
+	The stream is a sequence of `event:`/`data:` line pairs. Output items
+	(messages, function calls) arrive one-by-one in `response.output_item.done`
+	events; the terminal `response.completed` event carries status + usage but
+	— on the live backend (verified 2026-07-02) — an EMPTY `output` array, so
+	the items must be collected along the way. When `response.completed` does
+	include output (older/other backends), it wins. A stream that ends without
+	`response.completed` (disconnect, backend error mid-stream) raises
+	LLMError so the runner's retry machinery sees it.
 	"""
+	items: list[dict] = []
+	completed: dict | None = None
 	for line in body.splitlines():
 		if not line.startswith("data:"):
 			continue
@@ -1327,9 +1332,16 @@ def _parse_codex_sse(body: str) -> dict:
 			data = json.loads(line[len("data:") :].strip())
 		except (json.JSONDecodeError, TypeError):
 			continue
-		if data.get("type") == "response.completed" and isinstance(data.get("response"), dict):
-			return data["response"]
-	raise LLMError("openai-codex stream ended without a response.completed event.")
+		dtype = data.get("type")
+		if dtype == "response.output_item.done" and isinstance(data.get("item"), dict):
+			items.append(data["item"])
+		elif dtype == "response.completed" and isinstance(data.get("response"), dict):
+			completed = data["response"]
+	if completed is None:
+		raise LLMError("openai-codex stream ended without a response.completed event.")
+	if not completed.get("output"):
+		completed = {**completed, "output": items}
+	return completed
 
 
 def _parse_responses(data: dict) -> LLMResponse:
