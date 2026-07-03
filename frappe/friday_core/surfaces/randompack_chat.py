@@ -126,6 +126,33 @@ _FIELDS: list[dict] = [
 		"description": "preferred start date, normalised to ISO YYYY-MM-DD",
 	},
 	{"name": "notes", "step": "logistics", "description": "any other notes the customer added"},
+	# CONTRACT §4.8 additions (chat-first intake) — the conversation now covers these too.
+	{
+		"name": "brand_story",
+		"step": "business",
+		"description": "the brand's story / why they started it, in their words",
+	},
+	{"name": "color_preferences", "step": "taste", "description": "colours they prefer and/or want to avoid"},
+	{
+		"name": "brand_animal",
+		"step": "taste",
+		"description": "an animal that represents the brand, if they name one",
+	},
+	{
+		"name": "brand_symbol",
+		"step": "taste",
+		"description": "a shape, symbol, or object that represents the brand, if they name one",
+	},
+	{
+		"name": "logo_style",
+		"step": "taste",
+		"description": "logo style — EXACTLY one of: Wordmark (text only) | Icon / symbol | Combination | Not sure",
+	},
+	{
+		"name": "brand_surfaces",
+		"step": "logistics",
+		"description": "where the brand appears most — e.g. website, packaging, social, storefront (their words)",
+	},
 ]
 _FIELD_STEP = {f["name"]: f["step"] for f in _FIELDS}
 # What the extraction pass sees (no `step` — that's wire metadata we add back on the way out).
@@ -187,29 +214,109 @@ def _extraction_fields() -> list[dict]:
 			out.append(f)
 	return out
 
+# The base persona + rules (CONTRACT §4.8 — the chat is the ENTIRE intake). The per-turn
+# "what's still needed" steering is appended by `_build_system_prompt()` from the `context`
+# RandomPack sends each turn, so the interview tracks exactly what the brief still lacks.
 INTAKE_SYSTEM_PROMPT = (
-	"You are Friday's warm, sharp brand-intake assistant for RandomPack. You are having a "
-	"live chat with a customer to scope a branding project. Each turn: in 1-2 warm sentences "
-	"acknowledge what they just told you, then ask the SINGLE most useful next question — "
-	"never more than one question at a time, never a wall of text.\n\n"
-	"Your job is to come away with a COMPLETE brief. Before you suggest moving on to review, "
-	"make sure the conversation has naturally captured ALL of these REQUIRED essentials:\n"
-	"  - their full name and email\n"
-	"  - the company / brand name\n"
-	"  - what the business does\n"
-	"  - what makes it different (its edge / differentiator)\n"
-	"  - naming status — is the name locked, are they open to exploring, or do they need one\n"
-	"  - brand personality — guide them to land on about THREE words for how the brand "
-	"should feel\n"
-	"Weave these in too when it flows naturally (don't force them): who it's for (target "
-	"audience), competitors, brands they admire, preferred start date, business category, and "
-	"stage.\n\n"
-	"Only once the REQUIRED essentials are in hand, warmly invite them to review — a light "
-	"'a few quick things and I'll hand you a finished brief…' framing. Keep it conversational, "
-	"not an interrogation: one question at a time, building on what they said. "
-	"Be genuinely helpful and concise; do not ask for payment details, passwords, or legal "
-	"consent — those are handled later in the review wizard."
+	"You are Friday's warm, sharp brand-intake assistant for RandomPack. This live chat is the "
+	"ENTIRE intake — you gather everything needed for the brand brief through natural "
+	"conversation, and the customer only reviews at the very end (there is no separate form to "
+	"fill). Each turn: in 1-2 warm sentences acknowledge what they just told you, then ask the "
+	"SINGLE most useful next question — never more than one question at a time, never a wall of "
+	"text, never an interrogation. Always build on what they just said.\n\n"
+	"RandomPack serves every lawful business. NEVER refuse, judge, decline, or moralise about a "
+	"customer's brand, product, or industry — whatever they are building, engage warmly and "
+	"professionally and help them scope it. Always reply.\n\n"
+	"Do not ask for payment details, passwords, or legal consent — those are handled on the "
+	"review screen at the end."
 )
+
+# Natural-language hints for turning a raw field name (from RandomPack's missing lists) into a
+# human question. The model is told to use these NATURALLY, not read them verbatim (CONTRACT
+# §4.8 questionnaire). A field with no hint falls back to its own name.
+_QUESTION_HINTS = {
+	"full_name": "their name",
+	"email": "the best email to reach them at",
+	"company_name": "the brand / company name",
+	"what_you_do": "what the brand does",
+	"differentiator": "what makes them different from other brands",
+	"target_audience": "who the brand is for",
+	"naming_status": "whether the name is locked, they're open to exploring, or they still need one",
+	"current_name": "their current or working name",
+	"brand_story": "the brand's story — why they started it",
+	"personality": "how the brand should feel — as if it were a person; a few feel-words",
+	"brands_admired": "brands they admire",
+	"competitors": "who their competitors are",
+	"color_preferences": "colours they'd love, or want to avoid",
+	"avoid": "any looks, feels, or brands they want to AVOID",
+	"brand_animal": "an animal that captures the brand",
+	"brand_symbol": "a shape, symbol, or object that represents the brand",
+	"logo_style": "the logo style they lean toward — a wordmark (text only), an icon/symbol, a combination, or not sure yet",
+	"brand_surfaces": "where the brand shows up most — website, packaging, social, a storefront",
+	"preferred_start": "when they'd like to get started",
+	"category": "roughly what category the business is in",
+	"stage": "what stage they're at",
+}
+
+# Fallback steering when RandomPack sends no `context` (e.g. a direct/demo call): the general
+# essentials, so the assistant still interviews sensibly without the per-turn missing lists.
+_GENERAL_ESSENTIALS = (
+	"Naturally make sure the conversation captures: their name and email, the brand name, what "
+	"the business does, what makes it different, naming status, and about three words for how "
+	"the brand should feel — then weave in target audience, competitors, admired brands, "
+	"colours, and a logo direction when it flows. Once the essentials are in hand, warmly "
+	"invite them to review."
+)
+
+# Never leave the customer with a blank turn (the "no assistant reply" symptom — an empty or
+# all-reasoning completion). If the reply comes back empty, send this gentle nudge instead.
+_EMPTY_FALLBACK = "Sorry — could you tell me a little more about that? I want to capture it right."
+
+
+def _hint_lines(names: list[str]) -> str:
+	"""Render field names as natural-question bullet hints, order preserved."""
+	return "\n".join(f"- {_QUESTION_HINTS.get(n) or n}" for n in names if isinstance(n, str))
+
+
+def _build_system_prompt(context: dict | None) -> str:
+	"""The per-turn system prompt: base persona + steering from RandomPack's `context`.
+
+	`context = {missing_required: [...], missing_questionnaire: [...]}` is RP's ground truth
+	for what the brief still lacks (recomputed every turn, shrinks as deltas apply). We steer
+	the assistant to cover `missing_required` first, then `missing_questionnaire` in order, one
+	question per turn — and to close the interview once both are empty.
+	"""
+	context = context or {}
+	required = [f for f in (context.get("missing_required") or []) if isinstance(f, str)]
+	questionnaire = [f for f in (context.get("missing_questionnaire") or []) if isinstance(f, str)]
+
+	# Both lists empty AND a context was actually supplied → the brief is complete; stop asking.
+	if context.get("missing_required") is not None and not required and not questionnaire:
+		return (
+			INTAKE_SYSTEM_PROMPT + "\n\nYou now have everything needed for the brief. Do NOT ask "
+			"any more questions. In ONE warm sentence, briefly summarise what you captured, then "
+			'tell the customer they are all set and to tap "Review & pay" to finish.'
+		)
+
+	if required or questionnaire:
+		parts = [
+			INTAKE_SYSTEM_PROMPT,
+			"Still needed for the brief, in PRIORITY ORDER — ask about the FIRST item the "
+			"customer has not already given, ONE question this turn:",
+		]
+		if required:
+			parts.append("MUST cover these first:\n" + _hint_lines(required))
+		if questionnaire:
+			parts.append("Then, in this order:\n" + _hint_lines(questionnaire))
+		parts.append(
+			"If the customer's latest message already answers any of these, acknowledge it and "
+			"move to the next gap — never re-ask something already covered, and never ask about "
+			"anything that is NOT in the lists above."
+		)
+		return "\n\n".join(parts)
+
+	# No context supplied — fall back to the general essentials.
+	return INTAKE_SYSTEM_PROMPT + "\n\n" + _GENERAL_ESSENTIALS
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +534,12 @@ def _transcript(history: list[dict], *, extra_user: str = "", extra_assistant: s
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def chat_send():
-	"""POST {session_id, message} → SSE stream of {token}/{delta}/{done}/{error}."""
+	"""POST {session_id, message, context?} → SSE stream of {token}/{delta}/{done}/{error}.
+
+	`context = {missing_required: [...], missing_questionnaire: [...]}` (CONTRACT §4.8) is
+	RandomPack's ground truth for what the brief still lacks — it drives the interview toward
+	the unanswered fields. Optional: absent context falls back to general-essentials steering.
+	"""
 	from werkzeug.wrappers import Response
 
 	raw = frappe.request.get_data() if frappe.request else b"{}"
@@ -442,11 +554,12 @@ def chat_send():
 
 	session_id = (body.get("session_id") or "").strip()
 	message = body.get("message") or ""
+	context = body.get("context") if isinstance(body.get("context"), dict) else None
 	if not session_id or not message:
 		frappe.local.response["http_status_code"] = 400
 		return {"ok": False, "error": "session_id and message required"}
 
-	return Response(_stream(session_id, message), mimetype="text/event-stream")
+	return Response(_stream(session_id, message, context), mimetype="text/event-stream")
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -488,11 +601,12 @@ def chat_finalize():
 	return {"ok": True, "session_id": session_id, "deltas": wire_deltas(deltas)}
 
 
-def _stream(session_id: str, message: str):
+def _stream(session_id: str, message: str, context: dict | None = None):
 	"""The SSE generator: stream the reply (think-filtered), then the wizard deltas.
 
 	`provider.chat()` runs in a worker thread (it is Frappe-free); this generator — the
-	request thread — owns the session lock + all Frappe DB work and relays tokens.
+	request thread — owns the session lock + all Frappe DB work and relays tokens. `context`
+	(RandomPack's per-turn missing-field lists, §4.8) steers which question to ask next.
 	"""
 	from frappe.friday_core.llm.provider import get_provider_for_profile
 
@@ -511,7 +625,7 @@ def _stream(session_id: str, message: str):
 	try:
 		history = _history(session_id)
 		messages = [
-			{"role": "system", "content": INTAKE_SYSTEM_PROMPT},
+			{"role": "system", "content": _build_system_prompt(context)},
 			*history,
 			{"role": "user", "content": message},
 		]
@@ -553,6 +667,12 @@ def _stream(session_id: str, message: str):
 			return
 
 		reply = strip_reasoning(result.get("reply", "") or "")
+		if not reply.strip():
+			# The model returned nothing usable (empty, or all-reasoning stripped away) — the
+			# "no assistant reply" symptom. Never leave the customer with a blank turn: send a
+			# gentle nudge, and persist/extract against it like any reply.
+			reply = _EMPTY_FALLBACK
+			yield sse({"type": "token", "text": reply})
 
 		# Extract wizard deltas (a SECOND model call) and capture its token usage too.
 		extraction_usage: dict = {}
