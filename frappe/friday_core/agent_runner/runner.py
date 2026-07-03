@@ -49,6 +49,7 @@ from frappe.friday_core.agent_runner.dispatcher import DispatchResult, dispatch
 from frappe.friday_core.agent_runner.exceptions import TurnInterrupted
 from frappe.friday_core.agent_runner.journal import (
 	EVENT_LLM_RESPONSE,
+	EVENT_PROVIDER_FAILOVER,
 	EVENT_STEER_INJECTED,
 	EVENT_TOOL_RESULT,
 	EVENT_TURN_COMPLETED,
@@ -65,9 +66,14 @@ from frappe.friday_core.llm import get_provider_for_profile
 from frappe.friday_core.llm.compression import maybe_compress_session
 from frappe.friday_core.llm.error_classifier import classify_api_error
 from frappe.friday_core.llm.prompt_builder import build
-from frappe.friday_core.llm.provider import LLMError
+from frappe.friday_core.llm.provider import (
+	MAX_FAILOVER_HOPS,
+	LLMError,
+	get_fallback_provider,
+)
 from frappe.friday_core.llm.reasoning import strip_reasoning
 from frappe.friday_core.llm.usage import record_usage
+from frappe.friday_core.observability.emit import emit
 from frappe.friday_core.skills.loader import load_for_profile
 
 # A.1 — the loop is capped at 15 think/act cycles per turn. A module constant
@@ -235,6 +241,12 @@ def run_turn(
 	empty_retries = 0
 	compress_retries = 0
 
+	# Design 94 — provider failover bookkeeping: how many hops this turn has
+	# taken, and which provider rows already ran (the cycle guard — A→B→A
+	# must stop, not loop).
+	_failover_hops = 0
+	_visited_providers = {getattr(provider, "source_row_name", None)}
+
 	# Design 93 — the crash happened AFTER the model's final plain-text answer
 	# but BEFORE the completion bookkeeping. Nothing to resume: finish it.
 	if replay is not None and replay.final_reply is not None:
@@ -329,6 +341,41 @@ def run_turn(
 						{"messages": messages, "model": model, "agent_profile": profile_name},
 					)
 				continue
+			# Design 94 — provider failover. By the time an LLMError reaches
+			# here, the provider's transport layer has already exhausted its
+			# same-provider retry budget — switching to the configured backup
+			# is the only move left that isn't "block and wait". The backup
+			# takes over THIS turn, mid-conversation, and answers with its
+			# own default model (Q3). No chain configured = raise as today.
+			if _failover_hops < MAX_FAILOVER_HOPS:
+				_next = get_fallback_provider(provider)
+				_next_name = getattr(_next, "source_row_name", None) if _next is not None else None
+				if _next is not None and _next_name not in _visited_providers:
+					_from = getattr(provider, "source_row_name", None) or ""
+					_failover_hops += 1
+					_visited_providers.add(_next_name)
+					provider = _next
+					model = None  # Q3 — the backup's own default model
+					if journal is not None:
+						journal.record(
+							EVENT_PROVIDER_FAILOVER,
+							{"from": _from, "to": _next_name, "reason": classified.reason.value},
+						)
+					try:
+						emit(
+							"llm.failover",
+							agent_profile=profile_name,
+							trigger_source="runner_failover",
+							summary=f"{_from} → {_next_name} ({classified.reason.value})",
+							payload={"session_id": session_id},
+						)
+					except Exception:
+						pass  # observability must never break a turn
+					frappe.logger("friday.runner").warning(
+						f"provider failover: {_from} → {_next_name} "
+						f"({classified.reason.value}, session {session_id!r})"
+					)
+					continue
 			raise
 		# Usage accounting — one LLM Usage Log row per call (tokens + estimated
 		# cost). record_usage never raises; a logging failure can't break a turn.

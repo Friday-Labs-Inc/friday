@@ -8,6 +8,7 @@
         "provider_name",
         "provider_type",
         "is_active",
+        "fallback_provider",
         "auth_mode",
         "api_key",
         "base_url",
@@ -54,6 +55,13 @@
             "fieldtype": "Check",
             "label": "Active",
             "description": "Only active providers can be used. Inactive providers are skipped during fallback resolution."
+        },
+        {
+            "fieldname": "fallback_provider",
+            "fieldtype": "Link",
+            "label": "Fallback Provider",
+            "options": "LLM Provider",
+            "description": "Design 94 — if a call to this provider fails beyond its own retries, the turn hands over to this backup on the spot (transitive, max 3 hops; cycles are guarded at runtime). The backup answers with ITS OWN Default Model. Leave empty for no failover."
         },
         {
             "default": "api_key",
