@@ -133,6 +133,109 @@ class TestListModelsEndpoint(unittest.TestCase):
 		self.assertEqual(out["provider"], "Minimax")
 		self.assertEqual(out["models"], ["MiniMax-M2"])
 
+	@patch(f"{_M}.frappe")
+	def test_missing_api_key_clears_the_phantom_desk_message(self, mock_frappe):
+		"""get_password frappe.throw()s when the field was never set; the raise
+		is caught, but the message it queued would still POP UP in Desk next
+		to a perfectly good catalog dialog ("Password not found…"). The
+		endpoint must clear the message log."""
+		from frappe.friday_core.llm.model_discovery import list_models
+
+		doc = MagicMock()
+		doc.auth_mode = "api_key"
+		doc.provider_type = "openai"
+		doc.base_url = ""
+		doc.get_password.side_effect = Exception("Password not found")
+		mock_frappe.get_doc.return_value = doc
+
+		out = list_models("Codex")
+
+		mock_frappe.clear_messages.assert_called_once()
+		self.assertEqual(out["source"], "catalog")
+
+
+class TestOAuthDiscovery(unittest.TestCase):
+	"""OAuth providers (design 63b) discover models with their subscription
+	token — never via get_password('api_key'), which they don't have."""
+
+	def test_codex_oauth_uses_the_live_codex_models_endpoint(self):
+		from frappe.friday_core.llm.model_discovery import fetch_models_oauth
+
+		resp = MagicMock(status_code=200)
+		resp.json.return_value = {
+			"models": [
+				{"slug": "gpt-5.5", "priority": 2, "visibility": "show"},
+				{"slug": "gpt-5.4", "priority": 1, "visibility": "show"},
+				{"slug": "secret-internal", "priority": 0, "visibility": "hidden"},
+			]
+		}
+		with patch(f"{_M}.requests") as mock_requests:
+			mock_requests.get.return_value = resp
+			out = fetch_models_oauth("openai-codex", "tok-1", "")
+
+		url = mock_requests.get.call_args.args[0]
+		headers = mock_requests.get.call_args.kwargs["headers"]
+		self.assertIn("chatgpt.com/backend-api/codex/models", url)
+		self.assertEqual(headers["Authorization"], "Bearer tok-1")
+		# hidden models dropped, remainder sorted by priority
+		self.assertEqual(out["models"], ["gpt-5.4", "gpt-5.5"])
+		self.assertEqual(out["source"], "live")
+
+	def test_codex_oauth_live_failure_falls_back_to_codex_catalog(self):
+		from frappe.friday_core.llm.model_discovery import fetch_models_oauth
+
+		with patch(f"{_M}.requests") as mock_requests:
+			mock_requests.get.side_effect = Exception("boom")
+			out = fetch_models_oauth("openai-codex", "tok-1", "")
+
+		self.assertEqual(out["source"], "catalog")
+		self.assertIn("gpt-5.4", out["models"])
+		# the codex catalog, NOT the api-key openai catalog
+		self.assertNotIn("gpt-4o", out["models"])
+
+	def test_anthropic_oauth_uses_bearer_and_oauth_beta(self):
+		from frappe.friday_core.llm.model_discovery import fetch_models_oauth
+
+		resp = MagicMock(status_code=200)
+		resp.json.return_value = {"data": [{"id": "claude-sonnet-4-6"}]}
+		with patch(f"{_M}.requests") as mock_requests:
+			mock_requests.get.return_value = resp
+			out = fetch_models_oauth("anthropic-claude", "tok-2", "")
+
+		headers = mock_requests.get.call_args.kwargs["headers"]
+		self.assertEqual(headers["authorization"], "Bearer tok-2")
+		self.assertIn("oauth-2025-04-20", headers["anthropic-beta"])
+		self.assertEqual(out["models"], ["claude-sonnet-4-6"])
+		self.assertEqual(out["source"], "live")
+
+	def test_no_token_returns_flavor_catalog_not_an_error(self):
+		from frappe.friday_core.llm.model_discovery import fetch_models_oauth
+
+		out = fetch_models_oauth("openai-codex", "", "")
+		self.assertEqual(out["source"], "catalog")
+		self.assertIn("gpt-5.4", out["models"])
+
+	@patch(f"{_M}.frappe")
+	def test_list_models_routes_oauth_rows_without_touching_api_key(self, mock_frappe):
+		from frappe.friday_core.llm.model_discovery import list_models
+
+		doc = MagicMock()
+		doc.auth_mode = "oauth"
+		doc.oauth_flavor = "openai-codex"
+		doc.provider_type = "openai"
+		doc.base_url = ""
+		mock_frappe.get_doc.return_value = doc
+
+		with (
+			patch(f"{_M}.fetch_models_oauth", return_value={"models": ["gpt-5.4"], "source": "live", "error": None}) as mock_oauth,
+			patch(f"{_M}._fresh_oauth_token", return_value="tok-3"),
+		):
+			out = list_models("Codex")
+
+		doc.get_password.assert_not_called()
+		mock_oauth.assert_called_once_with("openai-codex", "tok-3", "")
+		self.assertEqual(out["models"], ["gpt-5.4"])
+
 	@patch(f"{_M}.fetch_models")
 	@patch(f"{_M}.frappe")
 	def test_missing_key_still_returns_catalog(self, mock_frappe, mock_fetch):
