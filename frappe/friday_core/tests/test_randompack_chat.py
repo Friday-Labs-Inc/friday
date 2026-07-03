@@ -228,14 +228,73 @@ class TestExtractionFieldsConstrainPersonality(unittest.TestCase):
 
 
 class TestSystemPromptCoversRequiredFields(unittest.TestCase):
-	"""Ask 1: steer through ALL the wizard-required essentials before inviting review."""
+	"""#169's guarantee, restructured for §4.8: when RP sends no per-turn context, the
+	general-essentials fallback still steers through the key fields before inviting review."""
 
-	def test_prompt_names_every_required_essential(self):
-		p = chat.INTAKE_SYSTEM_PROMPT.lower()
-		for essential in ("name", "email", "company", "different", "naming", "personality"):
+	def test_general_fallback_still_covers_the_essentials(self):
+		p = chat._build_system_prompt(None).lower()
+		for essential in ("name", "email", "brand name", "different", "naming", "feel"):
 			self.assertIn(essential, p)
-		self.assertIn("required", p)  # the essentials are gated before handoff
 		self.assertIn("review", p)
+
+
+class TestChatFirstIntake(unittest.TestCase):
+	"""CONTRACT §4.8 — the chat is the WHOLE intake. RP sends per-turn missing-field lists;
+	Friday steers the interview toward them (required first), closes with 'Review & pay' when
+	both are empty, adds the 6 new fields, and never refuses a lawful category."""
+
+	def test_new_fields_are_in_the_vocabulary(self):
+		names = {f["name"] for f in chat._FIELDS}
+		for f in ("brand_story", "brand_surfaces", "color_preferences", "brand_animal", "brand_symbol", "logo_style"):
+			self.assertIn(f, names)
+
+	def test_logo_style_names_its_exact_options(self):
+		desc = {f["name"]: f["description"] for f in chat._FIELDS}["logo_style"]
+		for opt in ("Wordmark (text only)", "Icon / symbol", "Combination", "Not sure"):
+			self.assertIn(opt, desc)
+
+	def test_new_field_delta_survives_wire_tagging(self):
+		# A new field MUST be in _FIELD_STEP or wire_deltas silently drops its delta.
+		out = chat.wire_deltas([{"field": "brand_animal", "value": "owl", "confidence": 0.8}])
+		self.assertEqual(len(out), 1)
+		self.assertEqual(out[0]["step"], "taste")
+
+	def test_never_touch_fields_still_absent(self):
+		names = {f["name"] for f in chat._FIELDS}
+		for forbidden in ("password", "gate_commitment", "terms_accepted"):
+			self.assertNotIn(forbidden, names)
+
+	def test_prompt_steers_to_missing_required_first(self):
+		p = chat._build_system_prompt(
+			{"missing_required": ["email", "what_you_do"], "missing_questionnaire": ["brand_animal"]}
+		)
+		self.assertIn("PRIORITY ORDER", p)
+		self.assertIn("MUST cover", p)
+		# required hints render in order, before the questionnaire section
+		self.assertLess(p.index("email"), p.index("what the brand does"))
+		self.assertIn("Then, in this order", p)
+		self.assertIn("animal", p)  # the questionnaire field's hint
+		self.assertIn("never re-ask", p.lower())
+
+	def test_prompt_closes_when_both_lists_empty(self):
+		p = chat._build_system_prompt({"missing_required": [], "missing_questionnaire": []})
+		self.assertIn("Review & pay", p)
+		self.assertIn("not ask", p.lower())
+
+	def test_prompt_without_context_uses_general_essentials(self):
+		p = chat._build_system_prompt(None)
+		self.assertIn("name and email", p)  # from _GENERAL_ESSENTIALS
+		self.assertNotIn("PRIORITY ORDER", p)
+
+	def test_every_prompt_variant_forbids_refusal(self):
+		# The refusal bug: a lawful-but-sensitive brand category got no reply. Every variant of
+		# the system prompt must tell the model never to refuse.
+		for ctx in (
+			None,
+			{"missing_required": ["email"], "missing_questionnaire": []},
+			{"missing_required": [], "missing_questionnaire": []},
+		):
+			self.assertIn("NEVER refuse", chat._build_system_prompt(ctx))
 
 
 if __name__ == "__main__":
