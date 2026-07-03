@@ -39,13 +39,15 @@ from dataclasses import dataclass, field
 
 import frappe
 
-# Event types — the six diary line kinds (design 93, Q3).
+# Event types — the six diary line kinds (design 93, Q3), plus the
+# provider-failover hop (design 94, Q4).
 EVENT_TURN_STARTED = "turn.started"
 EVENT_LLM_RESPONSE = "llm.response"
 EVENT_TOOL_RESULT = "tool.result"
 EVENT_STEER_INJECTED = "steer.injected"
 EVENT_TURN_COMPLETED = "turn.completed"
 EVENT_REPLY_DELIVERED = "reply.delivered"
+EVENT_PROVIDER_FAILOVER = "provider.failover"
 
 _logger = frappe.logger("friday.agent_runner.journal")
 
@@ -135,6 +137,13 @@ def rebuild(events: list[dict], profile_name: str, inject_steer) -> "ReplayState
 
 		elif etype == EVENT_STEER_INJECTED:
 			inject_steer(state.messages, payload.get("text") or "")
+
+		elif etype == EVENT_PROVIDER_FAILOVER:
+			# Design 94 (Q4) — the turn switched providers mid-flight. A
+			# resumed turn re-resolves from the profile's PRIMARY provider,
+			# so the journaled model (possibly the backup's) must not be
+			# pinned: None lets the resumed provider use its own default.
+			state.model = None
 
 	return state
 

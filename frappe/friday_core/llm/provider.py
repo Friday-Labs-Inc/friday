@@ -1142,7 +1142,7 @@ def get_provider_for_profile(profile_name: str) -> LLMProvider:
 			f"and no default in Agent Settings. Add at least one active "
 			f"LLM Provider row in Desk."
 		)
-	return _build_provider(provider_row)
+	return _attach_row_identity(_build_provider(provider_row), provider_row)
 
 
 def get_provider_by_name(provider_name: str) -> LLMProvider:
@@ -1158,7 +1158,43 @@ def get_provider_by_name(provider_name: str) -> LLMProvider:
 	row = frappe.get_doc("LLM Provider", provider_name)
 	if not row.is_active:
 		raise LLMError(f"LLM Provider {provider_name!r} is inactive.")
-	return _build_provider(row.as_dict())
+	return _attach_row_identity(_build_provider(row.as_dict()), row.as_dict())
+
+
+def _attach_row_identity(provider: LLMProvider, provider_row: dict) -> LLMProvider:
+	"""Stamp the provider instance with which LLM Provider ROW built it.
+
+	Design 94 needs both: `source_row_name` keys the failover cycle guard and
+	the audit events; `fallback_provider_name` is the next link in the chain.
+	Attached by the two public factories (not `_build_provider`, which has
+	per-transport return points).
+	"""
+	provider.source_row_name = provider_row.get("name")
+	provider.fallback_provider_name = provider_row.get("fallback_provider") or None
+	return provider
+
+
+# Design 94 (Q2) — a failover chain is followed at most this many hops per
+# turn, on top of the visited-set cycle guard in the runner.
+MAX_FAILOVER_HOPS = 3
+
+
+def get_fallback_provider(provider: LLMProvider) -> "LLMProvider | None":
+	"""The next provider in this provider's failover chain, or None.
+
+	Follows `LLM Provider.fallback_provider` (design 94, Q2). A missing,
+	deleted, or inactive backup returns None — failover degrades to today's
+	fail-and-block, it never introduces a new error of its own. Cycle
+	protection lives at the call site (the runner's visited set), where the
+	whole chain is in view.
+	"""
+	name = getattr(provider, "fallback_provider_name", None)
+	if not name or not isinstance(name, str):
+		return None
+	try:
+		return get_provider_by_name(name)
+	except LLMError:
+		return None
 
 
 # ---------------------------------------------------------------------------
