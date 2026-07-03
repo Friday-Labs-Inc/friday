@@ -19,7 +19,6 @@ import unittest
 from unittest.mock import patch
 
 import frappe
-
 from frappe.friday_core.integrations import randompack_bridge as bridge
 from frappe.friday_core.surfaces import randompack as surface
 
@@ -101,7 +100,8 @@ class TestRandompackInbound(unittest.TestCase):
 		surface.handle_gate_decided(
 			{"project": "PROJ-T3", "decision": "Approved", "chosen_direction": "Glacial Mist"}, _Evt()
 		)
-		self.assertEqual(frappe.db.get_value("Brand Brief", b, "workflow_state"), "Buildout")
+		# Design 95: Gate 1 approval enters the AI Production stage (was Buildout).
+		self.assertEqual(frappe.db.get_value("Brand Brief", b, "workflow_state"), "AI Production")
 		self.assertEqual(frappe.db.get_value("Brand Brief", b, "chosen_direction"), "Glacial Mist")
 
 	def test_project_created_creates_local_friday_project(self):

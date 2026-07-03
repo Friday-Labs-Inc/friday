@@ -1,6 +1,6 @@
 # Design 95 — The Creative Director apprenticeship (human creates, AI learns, then earns it)
 
-**Status:** DRAFT — core flow locked with the founder 2026-07-03; three Q-locks open below
+**Status:** LOCKED 2026-07-03 (Q1–Q3 accepted as proposed) — Slice 1 implemented
 **Track:** Domain (`domain:randompack`) with one Core slice (research tooling)
 **Origin:** founder's correction of the shipped pipeline + his vision, verbatim: *"the
 creative director agent slowly should study and learn from human director feeds, once
