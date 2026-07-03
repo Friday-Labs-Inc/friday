@@ -7,10 +7,16 @@ Topology (CONTRACT.md §4): browser ──SSE── RandomPack `chat_*` ──si
 endpoints. The browser never talks to Friday directly; RandomPack proxies, signing each
 call with the SAME HMAC seam as connector events (`X-RP-Signature`, the
 `randompack-system` Connector's secret). This module turns one customer message into a
-live streamed reply + structured wizard deltas, on top of `conversation/intake.py`.
+live streamed reply + structured wizard deltas, on top of the shared streaming spine
+(`surfaces/chat_spine.py`) and `conversation/intake.py`.
+
+CHAT-FIRST (CONTRACT §4.8): the chat is the ENTIRE intake — no wizard steps. RandomPack
+sends a per-turn `context` naming the fields the brief still lacks
+(`missing_required` / `missing_questionnaire`); the assistant interviews toward them,
+one question per turn, and closes with "Review & pay" when both lists are empty.
 
 ENDPOINTS (whitelisted, guest — the HMAC signature IS the auth)
-  * `chat_send`     — POST {session_id, message} → an SSE stream:
+  * `chat_send`     — POST {session_id, message, context?} → an SSE stream:
                         {type:"token", text}        (live reply, <think> blocks hidden)
                         {type:"delta", step, field, value, confidence}  (wizard pre-fill)
                         {type:"done"}  |  {type:"error", error}
@@ -23,38 +29,33 @@ in-band), no `chat.*` outbox events (chat is live request/response, not the asyn
 outbox). The 3 never-touch fields (password / gate_commitment / terms_accepted) are not
 in the extraction vocabulary at all, so they can never be emitted as deltas.
 
-STREAMING MODEL: `provider.chat()` is Frappe-free, so the streamed completion runs in a
-worker thread feeding a queue; the SSE generator (the request thread) owns all Frappe
-work (history load, persistence, the session lock) and relays tokens through a
-`_ThinkFilter` that suppresses `<think>…</think>` before they reach the browser.
+This module keeps only intake MEANING (the vocabulary, the interview prompt, the delta
+pass); the streaming/auth/persistence/audit plumbing is the shared spine — so fixes to
+the hard parts (the post-auto-commit audit trail, platform registration, the anti-blank
+guard) land once and apply to every chat surface.
 """
 
 from __future__ import annotations
 
 import json
-import queue
-import threading
 
 import frappe
-from frappe.friday_core.connectors.core import (
-	DEFAULT_TOLERANCE_SECONDS,
-	SIGNATURE_HEADER,
-	verify_signature,
-)
 from frappe.friday_core.conversation.intake import extract_deltas
-from frappe.friday_core.llm.reasoning import strip_reasoning
 from frappe.friday_core.llm.usage import record_usage
+from frappe.friday_core.surfaces import chat_spine
+from frappe.friday_core.surfaces.chat_spine import (
+	ThinkFilter as _ThinkFilter,
+)
+from frappe.friday_core.surfaces.chat_spine import (
+	sse,
+)
+
+__all__ = ["chat_finalize", "chat_send", "provision_intake_profile", "sse", "wire_deltas"]
 
 CONNECTOR_NAME = "randompack-system"
 INTAKE_PROFILE = "Customer Intake"
 PLATFORM = "randompack-intake"
-# Chat Message.platform is a Link to Chat Platform — this surface's row must exist or
-# every transcript insert fails LinkValidationError. Registered like every other surface.
 _ADAPTER_MODULE = "frappe.friday_core.surfaces.randompack_chat"
-_PERSIST_SAVEPOINT = "friday_intake_persist"
-_SESSION_LOCK = "friday:session_lock:{}"
-_LOCK_TTL = 300
-_LOCK_WAIT = 30
 
 # Brand personality must use live `Brand Attribute` names (CONTRACT §4.5), fetched from RP
 # (studio-editable). RP rate-limits get_brand_attributes to 60/hr, so the list is cached
@@ -64,8 +65,8 @@ _BRAND_ATTR_CACHE_KEY = "friday:randompack-intake:brand_attributes"
 _BRAND_ATTR_TTL = 600  # 10 min; a studio edit propagates within that window
 
 # The extraction vocabulary — RandomPack's `Onboarding Brief` field names exactly
-# (CONTRACT.md §4.5). The 3 never-touch fields are simply absent. Select fields name
-# their exact allowed options so the extractor emits a verbatim string or nothing.
+# (CONTRACT.md §4.5 + §4.8). The 3 never-touch fields are simply absent. Select fields
+# name their exact allowed options so the extractor emits a verbatim string or nothing.
 _FIELDS: list[dict] = [
 	# identity
 	{"name": "full_name", "step": "identity", "description": "the customer's full name"},
@@ -214,6 +215,7 @@ def _extraction_fields() -> list[dict]:
 			out.append(f)
 	return out
 
+
 # The base persona + rules (CONTRACT §4.8 — the chat is the ENTIRE intake). The per-turn
 # "what's still needed" steering is appended by `_build_system_prompt()` from the `context`
 # RandomPack sends each turn, so the interview tracks exactly what the brief still lacks.
@@ -268,10 +270,6 @@ _GENERAL_ESSENTIALS = (
 	"invite them to review."
 )
 
-# Never leave the customer with a blank turn (the "no assistant reply" symptom — an empty or
-# all-reasoning completion). If the reply comes back empty, send this gentle nudge instead.
-_EMPTY_FALLBACK = "Sorry — could you tell me a little more about that? I want to capture it right."
-
 
 def _hint_lines(names: list[str]) -> str:
 	"""Render field names as natural-question bullet hints, order preserved."""
@@ -320,35 +318,13 @@ def _build_system_prompt(context: dict | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Auth (reuse the connector HMAC seam)
+# Auth + the wire delta shape
 # ---------------------------------------------------------------------------
 
 
 def _verify(raw_body: bytes) -> bool:
 	"""Verify the RandomPack HMAC signature using the connector's outbound secret."""
-	try:
-		connector = frappe.get_cached_doc("Connector", CONNECTOR_NAME)
-	except Exception:
-		return False
-	if not connector.enabled:
-		return False
-	header = frappe.get_request_header(SIGNATURE_HEADER) or ""
-	try:
-		secret = connector.get_password("webhook_secret") or ""
-	except Exception:
-		secret = ""
-	tolerance = connector.signature_tolerance_seconds or DEFAULT_TOLERANCE_SECONDS
-	return verify_signature(raw_body, header, secret, tolerance)
-
-
-# ---------------------------------------------------------------------------
-# Pure helpers (SSE framing, the <think> filter, the wire delta shape)
-# ---------------------------------------------------------------------------
-
-
-def sse(obj: dict) -> str:
-	"""Frame one object as a Server-Sent Event line."""
-	return f"data: {json.dumps(obj)}\n\n"
+	return chat_spine.verify_rp_signature(raw_body, CONNECTOR_NAME)
 
 
 def wire_deltas(deltas: list[dict]) -> list[dict]:
@@ -364,167 +340,6 @@ def wire_deltas(deltas: list[dict]) -> list[dict]:
 			continue
 		out.append({"step": step, "field": d["field"], "value": d["value"], "confidence": d["confidence"]})
 	return out
-
-
-class _ThinkFilter:
-	"""Suppress `<think>…</think>` blocks from a token stream, tag-split-safe.
-
-	Reasoning models (MiniMax-M3) emit chain-of-thought in `<think>` tags; the customer
-	must never see it. Tokens arrive in arbitrary chunks, so a tag can split across two
-	deltas (`"<thi"` + `"nk>"`). `feed()` returns only the customer-visible text, holding
-	back any trailing run that could be the start of a tag until it's resolved; `flush()`
-	emits whatever's left at end-of-stream. The FINAL reply is also scrubbed with
-	`strip_reasoning` for persistence/extraction — this is the live-stream counterpart.
-	"""
-
-	_OPEN = "<think>"
-	_CLOSE = "</think>"
-
-	def __init__(self):
-		self.buf = ""
-		self.inside = False
-
-	def feed(self, text: str) -> str:
-		self.buf += text
-		out: list[str] = []
-		while True:
-			if not self.inside:
-				i = self.buf.find(self._OPEN)
-				if i == -1:
-					hold = _partial_tail(self.buf, self._OPEN)
-					emit = self.buf[: len(self.buf) - hold]
-					self.buf = self.buf[len(self.buf) - hold :]
-					if emit:
-						out.append(emit)
-					break
-				if i > 0:
-					out.append(self.buf[:i])
-				self.buf = self.buf[i + len(self._OPEN) :]
-				self.inside = True
-			else:
-				j = self.buf.find(self._CLOSE)
-				if j == -1:
-					hold = _partial_tail(self.buf, self._CLOSE)
-					self.buf = self.buf[len(self.buf) - hold :]
-					break
-				self.buf = self.buf[j + len(self._CLOSE) :]
-				self.inside = False
-		return "".join(out)
-
-	def flush(self) -> str:
-		out = self.buf if not self.inside else ""
-		self.buf = ""
-		return out
-
-
-def _partial_tail(s: str, tag: str) -> int:
-	"""Length of the longest suffix of `s` that is a (proper) prefix of `tag`."""
-	for k in range(min(len(s), len(tag) - 1), 0, -1):
-		if tag.startswith(s[-k:]):
-			return k
-	return 0
-
-
-# ---------------------------------------------------------------------------
-# Session transcript (Chat Message rows — continuity that survives a refresh)
-# ---------------------------------------------------------------------------
-
-
-def _history(session_id: str) -> list[dict]:
-	rows = frappe.get_all(
-		"Chat Message",
-		filters={"session_id": session_id, "direction": ("in", ["inbound", "outbound"]), "compacted": 0},
-		fields=["direction", "content"],
-		order_by="creation asc",
-		limit=40,
-	)
-	return [
-		{"role": "user" if r["direction"] == "inbound" else "assistant", "content": r["content"] or ""}
-		for r in rows
-	]
-
-
-def _persist(session_id: str, message: str, reply: str) -> None:
-	now = frappe.utils.now_datetime()
-	for direction, content in (("inbound", message), ("outbound", reply)):
-		frappe.get_doc(
-			{
-				"doctype": "Chat Message",
-				"session_id": session_id,
-				"direction": direction,
-				"platform": PLATFORM,
-				"content": content,
-				"timestamp": now,
-				"processed": 1,
-			}
-		).insert(ignore_permissions=True)
-
-
-def _default_model(provider) -> str:
-	"""The provider's default model name for the usage log (defensive — never raises)."""
-	try:
-		return provider.get_default_model() or ""
-	except Exception:
-		return ""
-
-
-def _record_turn(session_id: str, message: str, reply: str, provider, conv_usage, extraction_usage) -> None:
-	"""Persist the transcript + per-call LLM usage for one streamed turn, then COMMIT.
-
-	This runs INSIDE the SSE generator, which Frappe iterates AFTER the request's
-	auto-commit — so without an explicit commit these writes are silently discarded (the
-	governance gap caught on the live loopback: a clean stream that left 0 Chat Message and
-	0 LLM Usage Log rows). Both model calls of the turn — the streamed reply AND the
-	extraction pass — are cost-audited. Guarded + logged: a persistence failure must never
-	corrupt the reply already streamed, but it is no longer SILENT.
-	"""
-	frappe.db.savepoint(_PERSIST_SAVEPOINT)
-	try:
-		_persist(session_id, message, reply)
-		model = _default_model(provider)
-		record_usage(
-			profile_name=INTAKE_PROFILE,
-			session_id=session_id,
-			provider=provider,
-			model=model,
-			usage=conv_usage or {},
-		)
-		if extraction_usage:
-			record_usage(
-				profile_name=INTAKE_PROFILE,
-				session_id=session_id,
-				provider=provider,
-				model=model,
-				usage=extraction_usage,
-			)
-	except Exception:
-		# Undo the partial/poisoned writes so the tx is usable again, then record the
-		# failure in the Error Log — a plain logger.warning here went to a 0-byte void on
-		# the box, so the failure stayed SILENT (exactly the bug we're closing). log_error
-		# lands a durable, operator-visible row.
-		frappe.db.rollback(save_point=_PERSIST_SAVEPOINT)
-		try:
-			frappe.log_error(
-				title=f"friday.intake persist failed: {session_id}",
-				message=frappe.get_traceback(),
-			)
-		except Exception:
-			pass
-	# The SSE generator runs PAST the request's auto-commit, so commit explicitly or BOTH
-	# the turn's writes AND any error-log row are silently discarded.
-	try:
-		frappe.db.commit()
-	except Exception:
-		pass
-
-
-def _transcript(history: list[dict], *, extra_user: str = "", extra_assistant: str = "") -> str:
-	lines = [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in history]
-	if extra_user:
-		lines.append(f"user: {extra_user}")
-	if extra_assistant:
-		lines.append(f"assistant: {extra_assistant}")
-	return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -548,7 +363,7 @@ def chat_send():
 		return {"ok": False, "error": "bad signature"}
 	try:
 		body = json.loads(raw or b"{}")
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		frappe.local.response["http_status_code"] = 400
 		return {"ok": False, "error": "bad request"}
 
@@ -577,7 +392,7 @@ def chat_finalize():
 		return {"ok": False, "error": "bad signature"}
 	try:
 		session_id = (json.loads(raw or b"{}").get("session_id") or "").strip()
-	except ValueError, TypeError:
+	except (ValueError, TypeError):
 		session_id = ""
 	if not session_id:
 		frappe.local.response["http_status_code"] = 400
@@ -587,114 +402,45 @@ def chat_finalize():
 	# The finalize extraction is a real model call too — cost-audit it. This runs in a
 	# normal request (not the SSE generator), so Frappe auto-commits the usage row.
 	deltas = extract_deltas(
-		_transcript(_history(session_id)),
+		chat_spine.transcript(chat_spine.history(session_id)),
 		_extraction_fields(),
 		provider,
 		on_usage=lambda u: record_usage(
 			profile_name=INTAKE_PROFILE,
 			session_id=session_id,
 			provider=provider,
-			model=_default_model(provider),
+			model=chat_spine.default_model(provider),
 			usage=u,
 		),
 	)
 	return {"ok": True, "session_id": session_id, "deltas": wire_deltas(deltas)}
 
 
-def _stream(session_id: str, message: str, context: dict | None = None):
-	"""The SSE generator: stream the reply (think-filtered), then the wizard deltas.
+def _delta_pass(history_msgs: list[dict], message: str, reply: str, provider):
+	"""The intake surface's structured pass: extract wizard deltas from the finished turn.
 
-	`provider.chat()` runs in a worker thread (it is Frappe-free); this generator — the
-	request thread — owns the session lock + all Frappe DB work and relays tokens. `context`
-	(RandomPack's per-turn missing-field lists, §4.8) steers which question to ask next.
+	Returns (wire-ready delta events, the extraction call's usage) for the spine.
 	"""
-	from frappe.friday_core.llm.provider import get_provider_for_profile
-
-	try:
-		provider = get_provider_for_profile(INTAKE_PROFILE)
-	except Exception as exc:
-		yield sse({"type": "error", "error": f"intake profile unavailable: {type(exc).__name__}"})
-		return
-
-	lock = frappe.cache().lock(
-		_SESSION_LOCK.format(session_id), timeout=_LOCK_TTL, blocking_timeout=_LOCK_WAIT
+	usage: dict = {}
+	deltas = extract_deltas(
+		chat_spine.transcript(history_msgs, extra_user=message, extra_assistant=reply),
+		_extraction_fields(),
+		provider,
+		on_usage=usage.update,
 	)
-	if not lock.acquire(blocking=True):
-		yield sse({"type": "error", "error": "session busy"})
-		return
-	try:
-		history = _history(session_id)
-		messages = [
-			{"role": "system", "content": _build_system_prompt(context)},
-			*history,
-			{"role": "user", "content": message},
-		]
+	return [{"type": "delta", **d} for d in wire_deltas(deltas)], usage
 
-		q: queue.Queue = queue.Queue()
-		result: dict = {}
 
-		def _worker():
-			try:
-				resp = provider.chat(messages, on_token=lambda t: q.put(("tok", t)))
-				if isinstance(resp, dict):
-					result["reply"] = resp.get("content", "")
-					result["usage"] = resp.get("usage") or {}  # logged from the request thread
-				else:
-					result["reply"] = getattr(resp, "content", "")
-			except Exception as exc:
-				result["error"] = type(exc).__name__
-			finally:
-				q.put(("end", None))
-
-		th = threading.Thread(target=_worker, daemon=True)
-		th.start()
-
-		think = _ThinkFilter()
-		while True:
-			kind, val = q.get()
-			if kind == "end":
-				break
-			visible = think.feed(val)
-			if visible:
-				yield sse({"type": "token", "text": visible})
-		tail = think.flush()
-		if tail:
-			yield sse({"type": "token", "text": tail})
-		th.join(timeout=1)
-
-		if result.get("error"):
-			yield sse({"type": "error", "error": result["error"]})
-			return
-
-		reply = strip_reasoning(result.get("reply", "") or "")
-		if not reply.strip():
-			# The model returned nothing usable (empty, or all-reasoning stripped away) — the
-			# "no assistant reply" symptom. Never leave the customer with a blank turn: send a
-			# gentle nudge, and persist/extract against it like any reply.
-			reply = _EMPTY_FALLBACK
-			yield sse({"type": "token", "text": reply})
-
-		# Extract wizard deltas (a SECOND model call) and capture its token usage too.
-		extraction_usage: dict = {}
-		deltas = extract_deltas(
-			_transcript(history, extra_user=message, extra_assistant=reply),
-			_extraction_fields(),
-			provider,
-			on_usage=extraction_usage.update,
-		)
-
-		# Persist the transcript + BOTH calls' usage, then COMMIT — the SSE generator runs
-		# past the request's auto-commit, so this is what actually makes the audit durable.
-		_record_turn(session_id, message, reply, provider, result.get("usage"), extraction_usage)
-
-		for d in wire_deltas(deltas):
-			yield sse({"type": "delta", **d})
-		yield sse({"type": "done"})
-	finally:
-		try:
-			lock.release()
-		except Exception:
-			pass
+def _stream(session_id: str, message: str, context: dict | None = None):
+	"""One intake turn on the shared spine: interview prompt in, tokens + deltas out."""
+	return chat_spine.stream_turn(
+		session_id,
+		message,
+		profile=INTAKE_PROFILE,
+		platform=PLATFORM,
+		system_prompt=_build_system_prompt(context),
+		structured_pass=_delta_pass,
+	)
 
 
 # ---------------------------------------------------------------------------
@@ -703,29 +449,8 @@ def _stream(session_id: str, message: str, context: dict | None = None):
 
 
 def ensure_intake_platform() -> dict:
-	"""Idempotently register the `randompack-intake` Chat Platform row. after_migrate-safe.
-
-	`Chat Message.platform` is a Link to Chat Platform, so the transcript writes in
-	`_persist` raise LinkValidationError unless this row exists — which on the box left
-	every chat turn with NO transcript and NO usage audit (caught on the live loopback).
-	Every other surface (cli/raven/slack) registers its platform the same way.
-
-	`enabled=0`: this surface handles `chat_send`/`chat_finalize` directly over HMAC, NOT
-	via the gateway's adapter dispatch — the row exists to satisfy the Link + register the
-	platform, not for worker pickup (intake rows are written `processed=1`).
-	"""
-	if frappe.db.exists("Chat Platform", PLATFORM):
-		return {"platform": PLATFORM, "platform_created": False}
-	frappe.get_doc(
-		{
-			"doctype": "Chat Platform",
-			"platform_name": PLATFORM,
-			"adapter_module": _ADAPTER_MODULE,
-			"enabled": 0,
-			"dispatch_mode": "sync",
-		}
-	).insert(ignore_permissions=True)
-	return {"platform": PLATFORM, "platform_created": True}
+	"""Idempotently register the `randompack-intake` Chat Platform row. after_migrate-safe."""
+	return chat_spine.ensure_platform(PLATFORM, _ADAPTER_MODULE)
 
 
 def provision_intake_profile() -> dict:
@@ -760,17 +485,21 @@ def run_demo(
 ) -> dict:
 	"""Sandbox showcase of the FULL surface logic (minus the HTTP/SSE/HMAC layer, which
 	needs the web stack): provision the intake profile, stream a real turn through the
-	<think> filter, and run the RandomPack 20-field extraction + step tagging.
+	<think> filter, and run the RandomPack field extraction + step tagging.
 
 	    bench --site <sandbox> execute frappe.friday_core.surfaces.randompack_chat.run_demo
 	"""
 	from frappe.friday_core.llm.provider import get_provider_by_name
+	from frappe.friday_core.llm.reasoning import strip_reasoning
 
 	provision_intake_profile()
 	# The live surface resolves the provider from the intake profile (operator-configured);
 	# the dev profile has none set, so the demo points at the known-good provider row.
 	provider = get_provider_by_name("Minimax")
-	messages = [{"role": "system", "content": INTAKE_SYSTEM_PROMPT}, {"role": "user", "content": message}]
+	messages = [
+		{"role": "system", "content": _build_system_prompt(None)},
+		{"role": "user", "content": message},
+	]
 
 	print(
 		f"\n=== RandomPack chat-intake surface demo ===\ncustomer> {message}\nfriday>   ", end="", flush=True
@@ -780,8 +509,8 @@ def run_demo(
 	print(think.flush(), end="", flush=True)
 	reply = strip_reasoning(resp["content"] if isinstance(resp, dict) else getattr(resp, "content", ""))
 
-	transcript = _transcript([], extra_user=message, extra_assistant=reply)
-	deltas = wire_deltas(extract_deltas(transcript, _EXTRACTION_FIELDS, provider))
+	transcript_text = chat_spine.transcript([], extra_user=message, extra_assistant=reply)
+	deltas = wire_deltas(extract_deltas(transcript_text, _extraction_fields(), provider))
 	print("\n\nwizard deltas (over RandomPack's real field vocabulary):")
 	for d in deltas:
 		print(f"  [{d['step']}] {d['field']} = {d['value']!r}  (conf {d['confidence']})")
