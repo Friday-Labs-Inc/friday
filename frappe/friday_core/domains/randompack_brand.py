@@ -32,8 +32,15 @@ Run once per site (idempotent):
         frappe.friday_core.domains.randompack_brand.provision
 
 Phase 1 is sequential-only (Design 75 §8): the historical naming/directions
-fan-out is linearised (Strategy -> Naming -> Directions). A true parallel
-fan-out is Phase 2.
+fan-out is linearised. A true parallel fan-out is Phase 2.
+
+DESIGN 95 (the CD apprenticeship) reshaped the machine: the HUMAN Creative
+Director creates the identity (the CD Creative stage — he uploads his direction
+options + design system to the Project and fires "Creative Ready"), the AI
+applies it (AI Production), and his CD Internal Gate approves or loops the
+production back for rework before anything reaches the client gates. The old
+AI-originates-directions states (Directions, Buildout) remain as LEGACY so
+in-flight briefs finish; no new brief enters them.
 """
 
 from __future__ import annotations
@@ -74,6 +81,13 @@ PERM_ROLE = "Brand Agent"
 # holds it, so no agent can fire a gate (Design 75 §3 governance).
 GATE_ROLE = "Brand Client Reviewer"
 
+# The HUMAN Creative Director's role (Design 95). Distinct from the client-gate
+# role even while one person holds both today, and from the AI "Creative
+# Director" profile (the apprentice seat): the human CREATES the identity (the
+# CD Creative stage) and APPROVES the AI's production (the CD Internal Gate).
+# No agent ever holds this role. Grant it to the human CD's user in Desk.
+CD_ROLE = "Brand Creative Director"
+
 # The no-login system user that fires the gates (the human in Desk acts through
 # it, or the RandomPack webhook does). Holds GATE_ROLE and nothing else.
 GATEWAY_USER = "gateway+brand@friday.local"
@@ -91,31 +105,51 @@ STATES: list[tuple[str, str]] = [
 	("Intake", "System Manager"),
 	("Strategy", "Brand Strategist"),
 	("Naming", "Brand Copywriter"),
-	("Directions", "Creative Director"),
+	# Design 95 — the HUMAN Creative Director's stage: he creates the direction
+	# options (logo concepts + design system) and uploads them to the Project.
+	# No agentic phase; the engine waits for his "Creative Ready" transition.
+	("CD Creative", CD_ROLE),
 	("Gate 1 Prep", "Brand Strategist"),
 	("Gate 1 Review", GATE_ROLE),
-	("Buildout", "Creative Director"),
+	# Design 95 — the AI applies the human's chosen system across the
+	# deliverable set (the apprentice's production stage; replaces Buildout).
+	("AI Production", "Creative Director"),
+	# Design 95 — the human CD's internal QA gate: approve forwards the work;
+	# refine loops it back to AI Production. Nothing reaches the client uninspected.
+	("CD Internal Gate", CD_ROLE),
 	("Gate 2 Prep", "Brand Strategist"),
 	("Gate 2 Review", GATE_ROLE),
 	("Guidelines", "Brand Copywriter"),
 	("Delivered", "System Manager"),
+	# LEGACY (pre-Design-95 machine) — kept ONLY so in-flight briefs already at
+	# these states remain valid and can finish; no new brief ever enters them.
+	("Directions", "Creative Director"),
+	("Buildout", "Creative Director"),
 ]
 INITIAL_STATE = "Intake"
 
 # (from_state, action, next_state, allowed_role). "Start Pipeline" is the
 # system transition project.created fires to leave the idle Intake state. The
-# two gates are owned by GATE_ROLE; everything else by an agent role.
+# client gates are owned by GATE_ROLE, the two human-CD transitions by CD_ROLE;
+# everything else by an agent role.
 TRANSITIONS: list[tuple[str, str, str, str]] = [
 	("Intake", "Start Pipeline", "Strategy", "System Manager"),
 	("Strategy", "Complete Strategy", "Naming", "Brand Strategist"),
-	("Naming", "Complete Naming", "Directions", "Brand Copywriter"),
-	("Directions", "Complete Directions", "Gate 1 Prep", "Creative Director"),
+	("Naming", "Complete Naming", "CD Creative", "Brand Copywriter"),
+	# The human CD signals "my directions + design system are on the Project".
+	("CD Creative", "Creative Ready", "Gate 1 Prep", CD_ROLE),
 	("Gate 1 Prep", "Complete Gate 1 Prep", "Gate 1 Review", "Brand Strategist"),
-	("Gate 1 Review", "Approve Direction", "Buildout", GATE_ROLE),
-	("Buildout", "Complete Buildout", "Gate 2 Prep", "Creative Director"),
+	("Gate 1 Review", "Approve Direction", "AI Production", GATE_ROLE),
+	("AI Production", "Complete Production", "CD Internal Gate", "Creative Director"),
+	# The internal gate: forward to the client track, or loop back for rework.
+	("CD Internal Gate", "Approve Production", "Gate 2 Prep", CD_ROLE),
+	("CD Internal Gate", "Request Refinement", "AI Production", CD_ROLE),
 	("Gate 2 Prep", "Complete Gate 2 Prep", "Gate 2 Review", "Brand Strategist"),
 	("Gate 2 Review", "Final Approval", "Guidelines", GATE_ROLE),
 	("Guidelines", "Complete Guidelines", "Delivered", "Brand Copywriter"),
+	# LEGACY exits — let in-flight briefs finish the old machine, then rejoin.
+	("Directions", "Complete Directions", "Gate 1 Prep", "Creative Director"),
+	("Buildout", "Complete Buildout", "Gate 2 Prep", "Creative Director"),
 ]
 
 # Agentic transition metadata — one row per agent-owned transition. phase_key is
@@ -159,6 +193,113 @@ PHASES: list[dict] = [
 		),
 	},
 	{
+		"phase_key": "gate1_prep",
+		"from_state": "Gate 1 Prep",
+		"action": "Complete Gate 1 Prep",
+		"agent_role": "Brand Strategist",
+		"skills": [
+			"get-brand-brief",
+			"get-phase-outputs",
+			"list-project-files",
+			"get-project-file",
+			"attach-deliverable",
+		],
+		"prompt": (
+			"The human Creative Director has just uploaded their direction options "
+			"(logo concepts + design system) to the project. FIRST call "
+			"list-project-files with project_name=\"{{ project }}\" and read the "
+			"Creative Director's uploaded direction files with get-project-file — "
+			"those files ARE the directions; never invent or restyle them. Then call "
+			"get-phase-outputs for the strategy draft and naming candidates for "
+			"{{ business_name }}. THEN assemble the client-facing summary for "
+			"decision gate 1 (brief {{ name }}): each direction the Creative "
+			"Director prepared (one paragraph each, client-friendly, faithful to "
+			"their files), naming shortlist context, and a recommendation with "
+			"reasoning. After the summary, call attach-deliverable with "
+			"project_name=\"{{ project }}\" and file_name=\"gate1-client-presentation.md\" "
+			"passing the full presentation as content — this is what the client "
+			"clicks at Gate 1. Reply with the full presentation text."
+		),
+	},
+	{
+		# Design 95 — the apprentice's production stage: apply the HUMAN Creative
+		# Director's system, never originate one. Also re-entered on "Request
+		# Refinement" from the CD Internal Gate.
+		"phase_key": "production",
+		"from_state": "AI Production",
+		"action": "Complete Production",
+		"agent_role": "Creative Director",
+		"skills": [
+			"get-brand-brief",
+			"get-phase-outputs",
+			"list-project-files",
+			"get-project-file",
+			"generate-image",
+			"attach-deliverable",
+		],
+		"prompt": (
+			"The client of {{ business_name }} chose the direction "
+			"\"{{ chosen_direction or 'the approved direction' }}\" from the options "
+			"the human Creative Director created. Their design system is LAW: FIRST "
+			"call list-project-files with project_name=\"{{ project }}\" and read the "
+			"Creative Director's uploaded design-system and direction files with "
+			"get-project-file — follow their palette, typography, logo usage, and "
+			"rules EXACTLY; never invent outside their system (where it is silent, "
+			"extrapolate conservatively and note the gap). Also read get-phase-outputs "
+			"for the strategy context — and if this task follows a refinement "
+			"request, treat the Creative Director's refinement notes as corrections "
+			"to apply first. Produce the production package applying their chosen "
+			"system: palette values as specified, typography hierarchy, voice & tone "
+			"rules, application copy (web hero, about, boilerplate), designer-ready "
+			"specs for every core asset, and generate-image production visuals that "
+			"follow the system. After the package, call attach-deliverable with "
+			"project_name=\"{{ project }}\" and file_name=\"production-package.md\" "
+			"passing the full package as content. Reply with the full package."
+		),
+	},
+	{
+		"phase_key": "gate2_prep",
+		"from_state": "Gate 2 Prep",
+		"action": "Complete Gate 2 Prep",
+		"agent_role": "Brand Strategist",
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
+		"prompt": (
+			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
+			"see what's already on the project, then get-phase-outputs to read the "
+			"production package (or the legacy build-out package) and the earlier "
+			"decisions for {{ business_name }}. "
+			"THEN assemble the client-facing final-review summary (brief {{ name }}): "
+			"what was built, the decisions made, and what delivery contains. After "
+			"the summary, call attach-deliverable with project_name=\"{{ project }}\" "
+			"and file_name=\"gate2-final-review.md\" passing the full summary as "
+			"content — this is what the client clicks at Gate 2. Reply with the full "
+			"presentation text."
+		),
+	},
+	{
+		"phase_key": "guidelines",
+		"from_state": "Guidelines",
+		"action": "Complete Guidelines",
+		"agent_role": "Brand Copywriter",
+		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
+		"prompt": (
+			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
+			"see what's already on the project, then get-phase-outputs to read the "
+			"production package (or the legacy build-out package) and the strategy "
+			"for {{ business_name }}. THEN draft "
+			"the complete brand guidelines document (brief {{ name }}): strategy "
+			"recap, logo usage rules, palette with values, typography, voice & tone "
+			"with examples, and application do/don'ts. After the document, call "
+			"attach-deliverable with project_name=\"{{ project }}\" and "
+			"file_name=\"brand-guidelines.md\" passing the full document as content "
+			"— this is the customer's primary deliverable. Reply with the full "
+			"document in Markdown."
+		),
+	},
+	# ------------------------------------------------------------------ LEGACY
+	# Pre-Design-95 phases, kept ONLY so in-flight briefs already at these states
+	# can finish. No new brief reaches them (the flow was re-routed above).
+	{
 		"phase_key": "directions",
 		"from_state": "Directions",
 		"action": "Complete Directions",
@@ -173,26 +314,6 @@ PHASES: list[dict] = [
 			"the direction with create-brand-direction (palette, typography, "
 			"designer-ready logo concept, taglines). Reply with a one-paragraph "
 			"summary of each direction, noting its generated visual."
-		),
-	},
-	{
-		"phase_key": "gate1_prep",
-		"from_state": "Gate 1 Prep",
-		"action": "Complete Gate 1 Prep",
-		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
-		"prompt": (
-			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
-			"see what's already on the project, then get-phase-outputs to read what "
-			"the earlier phases produced for {{ business_name }} — the strategy "
-			"draft, the naming candidates, and the three creative directions. THEN "
-			"assemble the client-facing summary for decision gate 1 (brief "
-			"{{ name }}): the three directions (one paragraph each, client-friendly), "
-			"naming shortlist context, and a recommendation with reasoning. After "
-			"the summary, call attach-deliverable with project_name=\"{{ project }}\" "
-			"and file_name=\"gate1-client-presentation.md\" passing the full "
-			"presentation as content — this is what the client clicks at Gate 1. "
-			"Reply with the full presentation text."
 		),
 	},
 	{
@@ -217,43 +338,6 @@ PHASES: list[dict] = [
 			"passing the full package as content. Reply with the full package."
 		),
 	},
-	{
-		"phase_key": "gate2_prep",
-		"from_state": "Gate 2 Prep",
-		"action": "Complete Gate 2 Prep",
-		"agent_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
-		"prompt": (
-			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
-			"see what's already on the project, then get-phase-outputs to read the "
-			"build-out package and the earlier decisions for {{ business_name }}. "
-			"THEN assemble the client-facing final-review summary (brief {{ name }}): "
-			"what was built, the decisions made, and what delivery contains. After "
-			"the summary, call attach-deliverable with project_name=\"{{ project }}\" "
-			"and file_name=\"gate2-final-review.md\" passing the full summary as "
-			"content — this is what the client clicks at Gate 2. Reply with the full "
-			"presentation text."
-		),
-	},
-	{
-		"phase_key": "guidelines",
-		"from_state": "Guidelines",
-		"action": "Complete Guidelines",
-		"agent_role": "Brand Copywriter",
-		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
-		"prompt": (
-			"FIRST call list-project-files with project_name=\"{{ project }}\" to "
-			"see what's already on the project, then get-phase-outputs to read the "
-			"build-out package and the strategy for {{ business_name }}. THEN draft "
-			"the complete brand guidelines document (brief {{ name }}): strategy "
-			"recap, logo usage rules, palette with values, typography, voice & tone "
-			"with examples, and application do/don'ts. After the document, call "
-			"attach-deliverable with project_name=\"{{ project }}\" and "
-			"file_name=\"brand-guidelines.md\" passing the full document as content "
-			"— this is the customer's primary deliverable. Reply with the full "
-			"document in Markdown."
-		),
-	},
 ]
 
 # The brand specialist team — Agent Profiles. discriminator_role is the routing
@@ -264,7 +348,13 @@ PROFILES: list[dict] = [
 	{
 		"profile_name": "Brand Strategist",
 		"discriminator_role": "Brand Strategist",
-		"skills": ["get-brand-brief", "get-phase-outputs", "list-project-files", "attach-deliverable"],
+		"skills": [
+			"get-brand-brief",
+			"get-phase-outputs",
+			"list-project-files",
+			"get-project-file",
+			"attach-deliverable",
+		],
 		"system_prompt": (
 			"You are a senior brand strategist. You think in positioning, audience "
 			"insight, and the single differentiating idea. You are concise, "
@@ -282,13 +372,29 @@ PROFILES: list[dict] = [
 		),
 	},
 	{
+		# Design 95 — the apprentice seat. The HUMAN Creative Director creates the
+		# identity; this agent PRODUCES around it, faithfully. (create-brand-direction
+		# + generate-image stay granted for the LEGACY directions/buildout phases of
+		# in-flight briefs, and generate-image serves production visuals.)
 		"profile_name": "Creative Director",
 		"discriminator_role": "Creative Director",
-		"skills": ["get-brand-brief", "create-brand-direction", "get-phase-outputs", "generate-image", "list-project-files", "attach-deliverable"],
+		"skills": [
+			"get-brand-brief",
+			"create-brand-direction",
+			"get-phase-outputs",
+			"generate-image",
+			"list-project-files",
+			"get-project-file",
+			"attach-deliverable",
+		],
 		"system_prompt": (
-			"You are a creative director. You translate strategy into distinct "
-			"visual directions — palette, typography, logo concept, application — and "
-			"you make each direction genuinely different in mood, not a variation."
+			"You are the studio's production designer — the apprentice seat of the "
+			"human Creative Director. Their logo and design system are law: read their "
+			"files first, and apply their palette, typography, and rules exactly, at "
+			"production quality, across every deliverable. You never originate a new "
+			"identity direction; where their system is silent, extrapolate "
+			"conservatively from it and flag the gap. Treat every correction and "
+			"refinement note from the Creative Director as a lesson to follow."
 		),
 	},
 ]
@@ -323,6 +429,7 @@ def provision() -> dict:
 	# reference it. Its Task:read grant needs PERM_ROLE, created by _ensure_roles.
 	_ensure_engine_skill()
 	_ensure_visual_skill()
+	_ensure_file_skills()
 	_ensure_workflow_masters()
 	_ensure_workflow()
 	_ensure_transition_meta()
@@ -381,13 +488,29 @@ def _ensure_connector() -> None:
 
 
 def _ensure_roles() -> None:
-	"""Create the agent (discriminator) roles + the gate role. PERM_ROLE is owned
-	by bootstrap_brand; create it too if a site hasn't run that yet."""
-	for role in [*AGENT_ROLES, GATE_ROLE, PERM_ROLE]:
+	"""Create the agent (discriminator) roles + the gate role + the human CD role.
+	PERM_ROLE is owned by bootstrap_brand; create it too if a site hasn't run that
+	yet."""
+	for role in [*AGENT_ROLES, GATE_ROLE, CD_ROLE, PERM_ROLE]:
 		if not frappe.db.exists("Role", role):
 			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(
 				ignore_permissions=True
 			)
+
+
+def _ensure_file_skills() -> None:
+	"""Ensure the file-tool Skill rows this bundle references exist (Design 66b).
+
+	bootstrap_files is NOT in after_migrate, so on a fresh site the Skill rows the
+	profiles/phases Link to (list-project-files, get-project-file,
+	attach-deliverable) could be missing when this bundle provisions — the Link
+	validation would then fail. Same ordering pattern as _ensure_engine_skill.
+	"""
+	from frappe.friday_core.skills.bootstrap_files import _ensure_skill_row
+
+	for skill_name in ("list-project-files", "get-project-file", "attach-deliverable"):
+		if not frappe.db.exists("Skill", skill_name):
+			_ensure_skill_row(skill_name)
 
 
 def _ensure_engine_skill() -> None:
@@ -629,9 +752,10 @@ def _ensure_gateway_account() -> None:
 
 
 def _ensure_work_item_perms() -> None:
-	"""The gate role needs WRITE on Brand Brief so apply_workflow's save succeeds
-	when it fires a gate. (Agent roles already get this via PERM_ROLE.)"""
-	for role in [GATE_ROLE]:
+	"""The gate role + the human CD role need WRITE on Brand Brief so
+	apply_workflow's save succeeds when they fire their transitions. (Agent roles
+	already get this via PERM_ROLE.)"""
+	for role in [GATE_ROLE, CD_ROLE]:
 		if frappe.db.exists("Custom DocPerm", {"parent": DOMAIN_DOCTYPE, "role": role}):
 			continue
 		frappe.get_doc(
