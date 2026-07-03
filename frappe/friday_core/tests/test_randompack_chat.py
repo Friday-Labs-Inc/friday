@@ -99,82 +99,18 @@ class TestEndpointsAreRoutable(unittest.TestCase):
 			self.assertIn("POST", frappe.allowed_http_methods_for_whitelisted_func[fn])
 
 
-class TestRecordTurnPersistsAndAudits(unittest.TestCase):
-	"""The governance gap caught on the live loopback: a clean SSE stream left 0 Chat
-	Message rows AND 0 LLM Usage Log rows. The SSE generator runs PAST the request's
-	auto-commit, and the path bypassed run_turn (so no usage logging). `_record_turn`
-	closes both: it writes the transcript, records usage for BOTH model calls, and — the
-	load-bearing bit — COMMITS, or the writes are silently discarded."""
+class TestProvisionEnsuresPlatform(unittest.TestCase):
+	"""The #168 lesson at the surface level: provisioning must ensure the platform row even
+	when the profile already exists (the exact box state that broke persistence). The
+	platform/persistence mechanics themselves are pinned in test_chat_spine.py."""
 
-	@patch(f"{chat.__name__}.record_usage")
+	@patch("frappe.friday_core.surfaces.chat_spine.frappe")
 	@patch(f"{chat.__name__}.frappe")
-	def test_persists_transcript_records_both_usages_and_commits(self, fr, rec):
-		provider = MagicMock()
-		provider.get_default_model.return_value = "minimax-m3"
-
-		chat._record_turn("S1", "hi", "hello", provider, {"total_tokens": 50}, {"total_tokens": 10})
-
-		# Transcript: one inbound + one outbound Chat Message row.
-		chat_rows = [c.args[0] for c in fr.get_doc.call_args_list if c.args[0]["doctype"] == "Chat Message"]
-		self.assertEqual([r["direction"] for r in chat_rows], ["inbound", "outbound"])
-		# Usage audited for BOTH the streamed reply AND the extraction pass.
-		self.assertEqual(rec.call_count, 2)
-		self.assertEqual(rec.call_args_list[0].kwargs["usage"], {"total_tokens": 50})
-		self.assertEqual(rec.call_args_list[1].kwargs["usage"], {"total_tokens": 10})
-		# The load-bearing commit (without it the post-auto-commit writes vanish).
-		fr.db.commit.assert_called_once()
-
-	@patch(f"{chat.__name__}.record_usage")
-	@patch(f"{chat.__name__}.frappe")
-	def test_no_extraction_usage_skips_the_second_log(self, fr, rec):
-		provider = MagicMock()
-		chat._record_turn("S1", "hi", "hello", provider, {"total_tokens": 50}, {})
-		self.assertEqual(rec.call_count, 1)  # only the conversational call
-		fr.db.commit.assert_called_once()
-
-	@patch(f"{chat.__name__}.record_usage")
-	@patch(f"{chat.__name__}.frappe")
-	def test_persistence_failure_rolls_back_and_lands_in_error_log(self, fr, rec):
-		# A persistence failure must not corrupt the reply already streamed — and unlike the
-		# old logger.warning (which went to a 0-byte void on the box, staying silent), it now
-		# rolls back the poisoned tx and writes a durable, operator-visible Error Log row.
-		fr.get_doc.side_effect = RuntimeError("LinkValidationError")
-		chat._record_turn("S1", "hi", "hello", MagicMock(), {}, {})  # must not raise
-		fr.db.rollback.assert_called_with(save_point="friday_intake_persist")
-		fr.log_error.assert_called()
-		fr.db.commit.assert_called_once()  # the error-log row is still committed
-
-
-class TestEnsureIntakePlatform(unittest.TestCase):
-	"""The fix's PRIMARY cause: `Chat Message.platform` Links to `Chat Platform`, and the
-	`randompack-intake` row was never registered → every transcript insert hit
-	LinkValidationError, so chat turns left no transcript AND no usage audit."""
-
-	@patch(f"{chat.__name__}.frappe")
-	def test_creates_the_platform_row_when_absent(self, fr):
-		fr.db.exists.return_value = False
-		out = chat.ensure_intake_platform()
-		row = fr.get_doc.call_args.args[0]
-		self.assertEqual(row["doctype"], "Chat Platform")
-		self.assertEqual(row["platform_name"], chat.PLATFORM)
-		self.assertEqual(row["adapter_module"], chat._ADAPTER_MODULE)
-		self.assertEqual(row["enabled"], 0)  # registered for the Link, not gateway dispatch
-		self.assertTrue(out["platform_created"])
-
-	@patch(f"{chat.__name__}.frappe")
-	def test_idempotent_when_present(self, fr):
-		fr.db.exists.return_value = True
-		out = chat.ensure_intake_platform()
-		fr.get_doc.assert_not_called()
-		self.assertFalse(out["platform_created"])
-
-	@patch(f"{chat.__name__}.frappe")
-	def test_provision_ensures_platform_even_when_profile_already_exists(self, fr):
-		# The exact box state that broke us: profile present, platform missing. Provision
-		# must still create the platform (no early-return skip).
-		fr.db.exists.side_effect = lambda dt, name: dt == "Agent Profile"
+	def test_provision_ensures_platform_even_when_profile_already_exists(self, fr, spine_fr):
+		fr.db.exists.return_value = True  # the Agent Profile exists...
+		spine_fr.db.exists.return_value = False  # ...but the Chat Platform row is missing
 		out = chat.provision_intake_profile()
-		created = [c.args[0]["doctype"] for c in fr.get_doc.call_args_list]
+		created = [c.args[0]["doctype"] for c in spine_fr.get_doc.call_args_list]
 		self.assertIn("Chat Platform", created)
 		self.assertTrue(out["platform_created"])
 		self.assertFalse(out["created"])  # the profile was NOT re-created
