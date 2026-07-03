@@ -1232,8 +1232,11 @@ class CodexProvider(LLMProvider):
 			payload["instructions"] = instructions
 		if tools:
 			payload["tools"] = _to_responses_tools(tools)
-		if self.default_temperature is not None:
-			payload["temperature"] = self.default_temperature
+		# NO temperature, ever: the Codex backend serves only gpt-5.x reasoning
+		# models and rejects it outright ("Unsupported parameter: temperature",
+		# HTTP 400 — found live 2026-07-02). The LLM Provider row's
+		# default_temperature (a doctype default meant for the chat-completions
+		# adapters) must not leak onto this wire.
 
 		body = self._post_with_recovery(url=url, headers=headers, payload=payload, model=model, raw=True)
 		return _parse_responses(_parse_codex_sse(body))
@@ -1311,12 +1314,17 @@ def _to_responses_tools(tools: list[dict]) -> list[dict]:
 def _parse_codex_sse(body: str) -> dict:
 	"""Codex SSE event stream → the final response object.
 
-	The stream is a sequence of `event:`/`data:` line pairs; the terminal
-	`response.completed` event's `data` JSON carries the complete response
-	under its `response` key — exactly the object `_parse_responses` reads.
-	A stream that ends without `response.completed` (disconnect, backend
-	error mid-stream) raises LLMError so the runner's retry machinery sees it.
+	The stream is a sequence of `event:`/`data:` line pairs. Output items
+	(messages, function calls) arrive one-by-one in `response.output_item.done`
+	events; the terminal `response.completed` event carries status + usage but
+	— on the live backend (verified 2026-07-02) — an EMPTY `output` array, so
+	the items must be collected along the way. When `response.completed` does
+	include output (older/other backends), it wins. A stream that ends without
+	`response.completed` (disconnect, backend error mid-stream) raises
+	LLMError so the runner's retry machinery sees it.
 	"""
+	items: list[dict] = []
+	completed: dict | None = None
 	for line in body.splitlines():
 		if not line.startswith("data:"):
 			continue
@@ -1324,9 +1332,16 @@ def _parse_codex_sse(body: str) -> dict:
 			data = json.loads(line[len("data:") :].strip())
 		except (json.JSONDecodeError, TypeError):
 			continue
-		if data.get("type") == "response.completed" and isinstance(data.get("response"), dict):
-			return data["response"]
-	raise LLMError("openai-codex stream ended without a response.completed event.")
+		dtype = data.get("type")
+		if dtype == "response.output_item.done" and isinstance(data.get("item"), dict):
+			items.append(data["item"])
+		elif dtype == "response.completed" and isinstance(data.get("response"), dict):
+			completed = data["response"]
+	if completed is None:
+		raise LLMError("openai-codex stream ended without a response.completed event.")
+	if not completed.get("output"):
+		completed = {**completed, "output": items}
+	return completed
 
 
 def _parse_responses(data: dict) -> LLMResponse:
