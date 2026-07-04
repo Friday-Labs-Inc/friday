@@ -352,3 +352,84 @@ class TestGetProjectFile(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestDispatcherResultContract(unittest.TestCase):
+	"""THE contract the E2E bug hid behind: the dispatcher shows the LLM ONLY
+	outcome["result"] (dispatcher.py: `content=outcome.get("result", "Done.")`).
+	A handler return without a `result` key renders as a bare "Done." — the agent
+	is blind to file lists, file contents, and even denials (a denial that renders
+	"Done." reads like success). Every agent-visible return MUST carry `result`.
+	Caught live: gpt-5.5 got "Done." for list-project-files, fabricated filenames,
+	and could never read the human CD's design system."""
+
+	@patch(f"{_H}.frappe")
+	def test_list_project_files_success_renders_result(self, mock_frappe):
+		from frappe.friday_core.skills.handlers_files import list_project_files
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.db.exists.return_value = True
+		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.get_all.return_value = [
+			{"name": "a1d916290f", "file_name": "friday-labs-design-system.md",
+			 "file_url": "/x", "is_private": 1, "file_size": 4585, "creation": "t"},
+		]
+		out = list_project_files("list-project-files", {"project_name": "PRJ-1"})
+		self.assertIn("result", out)
+		# The LLM-visible text must carry BOTH the human name and the docname id.
+		self.assertIn("friday-labs-design-system.md", out["result"])
+		self.assertIn("a1d916290f", out["result"])
+
+	@patch(f"{_H}.frappe")
+	def test_list_project_files_denial_renders_result(self, mock_frappe):
+		from frappe.friday_core.skills.handlers_files import list_project_files
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.db.exists.return_value = True
+		mock_frappe.has_permission.return_value = False
+		out = list_project_files("list-project-files", {"project_name": "PRJ-1"})
+		self.assertIn("permission", out["result"])  # a denial must NOT render "Done."
+
+	@patch(f"{_H}.frappe")
+	def test_get_project_file_content_is_the_result(self, mock_frappe):
+		from frappe.friday_core.skills.handlers_files import get_project_file
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = True
+		file_doc = MagicMock()
+		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_name = "PRJ-1"
+		file_doc.file_name = "friday-labs-design-system.md"
+		file_doc.is_private = 1
+		file_doc.get_content.return_value = "# Friday Labs — tokens: #0B0D0F, #3DD6C4"
+		mock_frappe.get_doc.return_value = file_doc
+
+		out = get_project_file("get-project-file", {"project_name": "PRJ-1", "file_name": "a1d916290f"})
+		# The FILE BODY must be inside result — that's all the model sees.
+		self.assertIn("#0B0D0F", out["result"])
+		self.assertIn("#3DD6C4", out["result"])
+
+	@patch(f"{_H}.frappe")
+	def test_get_project_file_denial_renders_result(self, mock_frappe):
+		from frappe.friday_core.skills.handlers_files import get_project_file
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = False
+		mock_frappe.db.get_value.return_value = None
+		out = get_project_file("get-project-file", {"project_name": "PRJ-1", "file_name": "nope.md"})
+		self.assertIn("not readable", out["result"])
+		self.assertIn("list-project-files", out["result"])  # tells the agent how to self-correct
+
+	@patch(f"{_H}.frappe")
+	def test_attach_deliverable_denial_renders_result(self, mock_frappe):
+		from frappe.friday_core.skills.handlers_files import attach_deliverable
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.db.exists.return_value = False
+		out = attach_deliverable(
+			"attach-deliverable",
+			{"project_name": "PRJ-1", "file_name": "x.md", "content": "hello"},
+		)
+		self.assertIn("Could not attach", out["result"])

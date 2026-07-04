@@ -117,11 +117,21 @@ def attach_deliverable(skill_name: str, parameters: dict) -> dict:
 	parent_doctype, parent_name = _resolve_parent(parameters)
 
 	# Denied-and-unreachable collapse to the same error so an agent cannot
-	# probe forbidden project existence by attaching.
+	# probe forbidden project existence by attaching. The `result` string is
+	# what the LLM actually sees (dispatcher contract) — without it a denial
+	# rendered as a bare "Done.", reading like success.
 	if not frappe.db.exists(parent_doctype, parent_name):
-		return {"error": "denied_or_unreachable", "parent": f"{parent_doctype}/{parent_name}"}
+		return {
+			"result": f"Could not attach: {parent_doctype} '{parent_name}' is not reachable (missing or not permitted).",
+			"error": "denied_or_unreachable",
+			"parent": f"{parent_doctype}/{parent_name}",
+		}
 	if not frappe.has_permission(parent_doctype, "write", doc=parent_name):
-		return {"error": "denied_or_unreachable", "parent": f"{parent_doctype}/{parent_name}"}
+		return {
+			"result": f"Could not attach: {parent_doctype} '{parent_name}' is not reachable (missing or not permitted).",
+			"error": "denied_or_unreachable",
+			"parent": f"{parent_doctype}/{parent_name}",
+		}
 
 	is_private = 1 if parameters.get("is_private", True) else 0
 	# save_file accepts str or bytes; let Frappe handle the encoding (it
@@ -154,10 +164,19 @@ def list_project_files(skill_name: str, parameters: dict) -> dict:
 		raise ValueError("list-project-files could not determine the calling agent profile")
 
 	if not frappe.db.exists("Project", project_name):
-		return {"error": "denied_or_unreachable", "project_name": project_name}
+		return {
+			"result": f"Project '{project_name}' is not reachable (missing or not permitted).",
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+		}
 
 	if not frappe.has_permission("Project", "read", doc=project_name):
-		return {"project_name": project_name, "files": [], "denied": True}
+		return {
+			"result": f"You don't have permission to list files on project '{project_name}'.",
+			"project_name": project_name,
+			"files": [],
+			"denied": True,
+		}
 
 	limit = max(1, min(MAX_LIST_FILES, int(parameters.get("limit") or MAX_LIST_FILES)))
 	rows = frappe.db.get_all(
@@ -170,7 +189,22 @@ def list_project_files(skill_name: str, parameters: dict) -> dict:
 		limit_page_length=limit,
 		order_by="creation desc",
 	)
+	# `result` is the ONLY thing the LLM sees (dispatcher renders
+	# outcome["result"], defaulting to "Done." — the E2E bug: the agent got
+	# "Done." instead of the file list and fabricated filenames). Render the
+	# listing as text, with the exact ids/names to pass to get-project-file.
+	if rows:
+		listing = "\n".join(
+			f"- {r['file_name']}  (id: {r['name']}, {r.get('file_size') or '?'} bytes)" for r in rows
+		)
+		result_text = (
+			f"{len(rows)} file(s) attached to project '{project_name}':\n{listing}\n"
+			"Read one with get-project-file using either the id or the file name."
+		)
+	else:
+		result_text = f"No files are attached to project '{project_name}' yet."
 	return {
+		"result": result_text,
 		"project_name": project_name,
 		"files": rows,
 		"row_count": len(rows),
@@ -209,7 +243,16 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 	# different project" all with the same error shape — the agent cannot
 	# probe.
 	if not frappe.has_permission("Project", "read", doc=project_name):
-		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+		return {
+			"result": (
+				f"File '{file_name}' is not readable on project '{project_name}' "
+				"(missing, not attached to this project, or not permitted). Call "
+				"list-project-files first and use a listed id or file name."
+			),
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+			"file_name": file_name,
+		}
 
 	# Resolve docname vs human filename. Try docname first (the documented
 	# shape), then fall back to a project-scoped lookup by human filename.
@@ -228,27 +271,81 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 			"name",
 		)
 		if not resolved_name:
-			return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+			return {
+			"result": (
+				f"File '{file_name}' is not readable on project '{project_name}' "
+				"(missing, not attached to this project, or not permitted). Call "
+				"list-project-files first and use a listed id or file name."
+			),
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+			"file_name": file_name,
+		}
 
 	try:
 		file_doc = frappe.get_doc("File", resolved_name)
 	except Exception:
-		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+		return {
+			"result": (
+				f"File '{file_name}' is not readable on project '{project_name}' "
+				"(missing, not attached to this project, or not permitted). Call "
+				"list-project-files first and use a listed id or file name."
+			),
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+			"file_name": file_name,
+		}
 
 	if (
 		getattr(file_doc, "attached_to_doctype", None) != "Project"
 		or getattr(file_doc, "attached_to_name", None) != project_name
 	):
-		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+		return {
+			"result": (
+				f"File '{file_name}' is not readable on project '{project_name}' "
+				"(missing, not attached to this project, or not permitted). Call "
+				"list-project-files first and use a listed id or file name."
+			),
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+			"file_name": file_name,
+		}
 
 	try:
 		content = file_doc.get_content()
 	except Exception:
-		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+		return {
+			"result": (
+				f"File '{file_name}' is not readable on project '{project_name}' "
+				"(missing, not attached to this project, or not permitted). Call "
+				"list-project-files first and use a listed id or file name."
+			),
+			"error": "denied_or_unreachable",
+			"project_name": project_name,
+			"file_name": file_name,
+		}
 
+	# `result` is what the LLM sees (dispatcher contract). The E2E bug: content
+	# lived only under "content", so the model received a bare "Done." and could
+	# never read the Creative Director's design system.
+	human_name = getattr(file_doc, "file_name", resolved_name)
+	if isinstance(content, bytes):
+		try:
+			content = content.decode("utf-8")
+		except UnicodeDecodeError:
+			return {
+				"result": (
+					f"'{human_name}' is a binary file ({len(content)} bytes) — its raw "
+					"content can't be shown as text."
+				),
+				"project_name": project_name,
+				"file_name": human_name,
+				"is_private": bool(getattr(file_doc, "is_private", 0)),
+			}
 	return {
+		"result": f"Content of '{human_name}':\n\n{content}",
 		"project_name": project_name,
-		"file_name": getattr(file_doc, "file_name", resolved_name),
+		"file_name": human_name,
 		"is_private": bool(getattr(file_doc, "is_private", 0)),
 		"content": content,
 	}
