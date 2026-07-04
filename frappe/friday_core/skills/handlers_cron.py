@@ -33,7 +33,6 @@ SAFETY BOUNDARIES (disclosed)
 from __future__ import annotations
 
 import frappe
-
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
 
 SKILL_NAME = "manage-cron-jobs"
@@ -94,6 +93,10 @@ def _create(agent_profile: str, session_id: str, p: dict) -> dict:
 		}
 	).insert(ignore_permissions=True)
 	return {
+		"result": (
+			f"Cron job {job.name} created — next run "
+			f"{job.next_run_at or 'n/a'}, delivering to {deliver}."
+		),
 		"status": "created",
 		"job": job.name,
 		"next_run_at": str(job.next_run_at) if job.next_run_at else None,
@@ -109,7 +112,17 @@ def _list(agent_profile: str) -> dict:
 		fields=["name", "schedule_kind", "schedule_expr", "enabled", "state", "next_run_at"],
 		order_by="next_run_at asc",
 	)
-	return {"status": "ok", "count": len(rows), "jobs": rows}
+	if rows:
+		listing = "\n".join(
+			f"  - {r.get('name')}: {r.get('schedule_kind')} '{r.get('schedule_expr')}' "
+			f"({'enabled' if r.get('enabled') else 'disabled'}, {r.get('state')}, "
+			f"next: {r.get('next_run_at')})"
+			for r in rows
+		)
+		result_text = f"{len(rows)} cron job(s):\n{listing}"
+	else:
+		result_text = "You have no cron jobs."
+	return {"result": result_text, "status": "ok", "count": len(rows), "jobs": rows}
 
 
 def _act_on_job(agent_profile: str, action: str, p: dict) -> dict:
@@ -127,7 +140,7 @@ def _act_on_job(agent_profile: str, action: str, p: dict) -> dict:
 
 	if action == "remove":
 		frappe.delete_doc("Cron Job", name, ignore_permissions=True)
-		return {"status": "removed", "job": name}
+		return {"result": f"Cron job {name} removed.", "status": "removed", "job": name}
 
 	job = frappe.get_doc("Cron Job", name)
 	if action == "pause":
@@ -140,7 +153,12 @@ def _act_on_job(agent_profile: str, action: str, p: dict) -> dict:
 		# Fire on the next tick by making it due now.
 		job.next_run_at = frappe.utils.now_datetime()
 	job.save(ignore_permissions=True)
-	return {"status": action + "d", "job": name, "next_run_at": str(job.next_run_at)}
+	return {
+		"result": f"Cron job {name} {action}d — next run {job.next_run_at}.",
+		"status": action + "d",
+		"job": name,
+		"next_run_at": str(job.next_run_at),
+	}
 
 
 register_skill_handler(SKILL_NAME, manage_cron_jobs)

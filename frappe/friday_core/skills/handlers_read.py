@@ -103,14 +103,28 @@ def read_record(skill_name: str, parameters: dict) -> dict:
 	try:
 		meta = frappe.get_meta(doctype)
 	except Exception:
-		return {"error": "unknown_doctype", "doctype": doctype}
+		return {
+			"result": f"'{doctype}' is not a readable DocType here.",
+			"error": "unknown_doctype",
+			"doctype": doctype,
+		}
 
 	# Not-found and permission-denied collapse to the same error shape so
 	# an agent cannot probe forbidden existence by reading.
 	if not frappe.db.exists(doctype, name):
-		return {"error": "not_found_or_unreadable", "doctype": doctype, "name": name}
+		return {
+			"result": f"{doctype} '{name}' is not readable (missing or not permitted).",
+			"error": "not_found_or_unreadable",
+			"doctype": doctype,
+			"name": name,
+		}
 	if not frappe.has_permission(doctype, "read", doc=name):
-		return {"error": "not_found_or_unreadable", "doctype": doctype, "name": name}
+		return {
+			"result": f"{doctype} '{name}' is not readable (missing or not permitted).",
+			"error": "not_found_or_unreadable",
+			"doctype": doctype,
+			"name": name,
+		}
 
 	doc = frappe.get_doc(doctype, name)
 	full = doc.as_dict()
@@ -121,7 +135,17 @@ def read_record(skill_name: str, parameters: dict) -> dict:
 	}
 	record = {k: v for k, v in full.items() if k in allowed}
 
+	# `result` is what the LLM sees (dispatcher renders outcome["result"],
+	# defaulting to "Done." — without this the agent reads a record and gets
+	# literally nothing back).
+	lines = [f"{doctype} {name}:"]
+	for k, v in record.items():
+		if v not in (None, ""):
+			lines.append(f"  {k}: {v}")
+	if scrubbed_field_names:
+		lines.append(f"  (scrubbed fields hidden: {', '.join(sorted(scrubbed_field_names))})")
 	return {
+		"result": "\n".join(lines),
 		"doctype": doctype,
 		"name": name,
 		"record": record,
@@ -148,7 +172,12 @@ def list_records(skill_name: str, parameters: dict) -> dict:
 		raise ValueError("list-records could not determine the calling agent profile")
 
 	if not frappe.has_permission(doctype, "read"):
-		return {"doctype": doctype, "rows": [], "denied": True}
+		return {
+			"result": f"You don't have permission to list '{doctype}' records.",
+			"doctype": doctype,
+			"rows": [],
+			"denied": True,
+		}
 
 	filters = parameters.get("filters") or {}
 	limit = int(parameters.get("limit") or MAX_LIST_ROWS)
@@ -157,7 +186,11 @@ def list_records(skill_name: str, parameters: dict) -> dict:
 	try:
 		meta = frappe.get_meta(doctype)
 	except Exception:
-		return {"error": "unknown_doctype", "doctype": doctype}
+		return {
+			"result": f"'{doctype}' is not a listable DocType here.",
+			"error": "unknown_doctype",
+			"doctype": doctype,
+		}
 
 	# Project the agent only the safe-to-show fields by name. Frappe's
 	# ``fields=['*']`` would include Password fields verbatim; we choose
@@ -176,7 +209,19 @@ def list_records(skill_name: str, parameters: dict) -> dict:
 		limit_page_length=limit,
 		order_by="modified desc",
 	)
-	return {"doctype": doctype, "filters": filters, "rows": rows, "row_count": len(rows)}
+	if rows:
+		preview = "\n".join(f"  - {r}" for r in rows[:20])
+		more = f"\n  ... and {len(rows) - 20} more" if len(rows) > 20 else ""
+		result_text = f"{len(rows)} {doctype} record(s) (filters: {filters or 'none'}):\n{preview}{more}"
+	else:
+		result_text = f"No {doctype} records match (filters: {filters or 'none'})."
+	return {
+		"result": result_text,
+		"doctype": doctype,
+		"filters": filters,
+		"rows": rows,
+		"row_count": len(rows),
+	}
 
 
 register_skill_handler(READ_RECORD, read_record)
