@@ -119,6 +119,31 @@ so a search MCP server's tools become governed skills with audit for free:
 - **Q3 — Search MCP.** PROPOSED: scout the three candidates and recommend one in the
   research slice; not blocking Slices 1–3.
 
+## Slice 1 — findings from the real-artifact E2E (2026-07-04)
+
+A live agent-turn E2E (a real Creative Director turn against the founder's actual
+"Draft." design-system MD, 33 KB, uploaded to a test Project) surfaced two real
+bugs the shape tests missed, plus one model-fit finding:
+
+1. **The file skills were inert (fixed, PR #179).** `list-project-files` /
+   `get-project-file` / `attach-deliverable` were `status="Draft"` (bootstrap_files'
+   `_ensure_skill_row` default), and the skills loader hard-excludes non-Active skills —
+   so the CD agent's toolset never even contained them. AND the brand profiles lacked
+   the Project/File read the handlers check at runtime (the matrix ignores the ambient
+   `All` role). Both gates now opened in `_ensure_file_skills` (flip Active + grant the
+   `Friday File Author` role to the brand profiles). Verified via Execution Log: the tool
+   now returns the full design system (`row_count: 1`, 33 KB) to the agent.
+
+2. **Model fidelity (open — informs the CD/production phase's model choice).** With the
+   plumbing fixed, MiniMax-M3 (the local CD model) *misread* the successful tool result —
+   the file was returned, but the model claimed "empty" and refused. Its refusal-instinct
+   is correct (it won't fabricate a design system), but its tool-result comprehension
+   fumbled. **The AI Production phase demands strong instruction-following + faithful
+   tool-result reading; it should run on a top-tier model (e.g. gpt-5.4 / Claude), not a
+   small one.** Friday already supports per-profile model selection + Design 94 failover —
+   so this is an operator/config recommendation, captured here as the standard for the
+   apprentice seat.
+
 ## Slices
 
 1. **Pipeline restructure** (domain data): new states/transitions/phases in
