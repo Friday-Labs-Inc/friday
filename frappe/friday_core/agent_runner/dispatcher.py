@@ -345,13 +345,33 @@ def dispatch(
 		}
 
 		creds = resolve_credentials(agent_profile, skill_name)
-		outcome = _execute_sandboxed(
-			skill_name=skill_name,
-			parameters=parameters,
-			agent_profile=agent_profile,
-			credentials=creds,
-			handler=handler,
-		)
+
+		# Run the skill AS THE AGENT'S OWN USER. Without this, handlers'
+		# frappe.has_permission checks run as the AMBIENT session user — whoever
+		# happened to trigger the turn. Found live on the Friday Labs E2E, twice:
+		# a human (Rajiv) firing "Creative Ready" leaked HIS narrower perms into
+		# the gate1_prep worker, and the gate.decided webhook leaked the GATEWAY
+		# user (gateway+brand@…) into the AI Production turn — both denied file
+		# reads the agent's own user was fully permitted to make. An agent turn
+		# must carry the agent's identity, not its trigger's. Scoped to skill
+		# execution only (matrix/approval/logging already ran above); restored
+		# in finally so the ambient request/worker identity is never corrupted.
+		agent_user = frappe.db.get_value("Agent Profile", agent_profile, "frappe_user")
+		previous_user = getattr(frappe.session, "user", None)
+		switched = bool(agent_user) and agent_user != previous_user
+		if switched:
+			frappe.set_user(agent_user)
+		try:
+			outcome = _execute_sandboxed(
+				skill_name=skill_name,
+				parameters=parameters,
+				agent_profile=agent_profile,
+				credentials=creds,
+				handler=handler,
+			)
+		finally:
+			if switched and previous_user:
+				frappe.set_user(previous_user)
 
 	except Exception as exc:
 		duration_ms = int(time.time() * 1000) - start_ms
@@ -525,19 +545,19 @@ register_skill_handler("slice6-create-note", _handle_create_note)
 # at the BOTTOM so `register_skill_handler` above already exists when the
 # module's import-time registration runs.
 from frappe.friday_core.skills import handlers_brand as _handlers_brand
-from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
-from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
-from frappe.friday_core.skills import handlers_deliverables as _handlers_deliverables  # design 73 #5
-from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
-from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
 from frappe.friday_core.skills import handlers_cron as _handlers_cron  # design 87 slice 2
+from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
+from frappe.friday_core.skills import handlers_deliverables as _handlers_deliverables  # design 73 #5
+from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
+from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
 from frappe.friday_core.skills import handlers_memory as _handlers_memory
-from frappe.friday_core.skills import handlers_session_search as _handlers_session_search  # design 89
 from frappe.friday_core.skills import handlers_project as _handlers_project
 from frappe.friday_core.skills import (
 	handlers_propose_skill as _handlers_propose_skill,
 )  # design 79 slice 2
 from frappe.friday_core.skills import handlers_read as _handlers_read  # design 66a
+from frappe.friday_core.skills import handlers_session_search as _handlers_session_search  # design 89
+from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
 
 # ---------------------------------------------------------------------------
 # Internal helpers

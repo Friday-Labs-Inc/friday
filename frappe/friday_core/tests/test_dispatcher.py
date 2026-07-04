@@ -555,5 +555,64 @@ class TestDispatchNoToolCallName(unittest.TestCase):
 		self.assertIn("no name", result.content.lower())
 
 
+class TestAgentTurnIdentity(unittest.TestCase):
+	"""The skill executes AS THE AGENT'S OWN USER — not the ambient session user.
+
+	Found live on the Friday Labs E2E, twice: a human firing a workflow transition
+	and the connector-webhook gateway user both leaked THEIR identities (and
+	narrower permissions) into agent turns, denying file reads the agent's own
+	user was permitted to make. The dispatcher must switch to the agent's
+	frappe_user around skill execution and restore the ambient user after."""
+
+	@classmethod
+	def setUpClass(cls):
+		frappe.db.rollback()
+		_ensure_role(ROLE_CAN_CREATE, create_perm=True)
+		_ensure_llm_provider()
+		_ensure_skill()
+		_ensure_profile(PROFILE_ALLOWED, ROLE_CAN_CREATE, SKILL_NAME)
+		_link_provider_to_profile(PROFILE_ALLOWED)
+		frappe.db.commit()
+
+	def test_skill_runs_as_agent_user_and_ambient_is_restored(self):
+		from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
+
+		seen = {}
+
+		def probe(skill_name, parameters):
+			seen["user_during_skill"] = frappe.session.user
+			return {"result": "probed"}
+
+		# Shadow the handler for this one dispatch; restore after.
+		from frappe.friday_core.agent_runner import dispatcher as d
+
+		original = d._SKILL_HANDLERS.get("slice6-create-note")
+		register_skill_handler("slice6-create-note", probe)
+		try:
+			frappe.set_user("Administrator")  # the ambient user (e.g. a webhook gateway)
+			result = dispatch(
+				tool_call={
+					"id": "call_identity_1",
+					"name": "slice6-create-note",
+					"arguments": '{"title": "slice6-test-identity", "content": "x"}',
+				},
+				agent_profile=PROFILE_ALLOWED,
+				session_id="sess-identity",
+				tokens_used=1,
+			)
+		finally:
+			if original is not None:
+				register_skill_handler("slice6-create-note", original)
+			frappe.set_user("Administrator")
+
+		self.assertTrue(result.success)
+		agent_user = frappe.db.get_value("Agent Profile", PROFILE_ALLOWED, "frappe_user")
+		self.assertTrue(agent_user, "profile must have a provisioned frappe_user")
+		# The probe saw the AGENT's identity, not the ambient Administrator...
+		self.assertEqual(seen.get("user_during_skill"), agent_user)
+		# ...and the ambient user is restored after the dispatch.
+		self.assertEqual(frappe.session.user, "Administrator")
+
+
 if __name__ == "__main__":
 	unittest.main()
