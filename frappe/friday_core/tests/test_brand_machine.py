@@ -65,7 +65,7 @@ class TestDesign95MachineShape(unittest.TestCase):
 		self.assertEqual(prod["from_state"], "AI Production")
 		self.assertEqual(prod["agent_role"], "Creative Director")
 		self.assertIn("get-project-file", prod["skills"])
-		for anchor in ("design-system", "EXACTLY", "never invent", "refinement"):
+		for anchor in ("design system", "EXACTLY", "never invent", "refinement"):
 			self.assertIn(anchor, prod["prompt"])
 
 	def test_gate1_prep_reads_the_humans_files(self):
