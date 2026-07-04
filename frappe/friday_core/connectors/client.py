@@ -18,6 +18,8 @@ through `enqueue_send()` (the `friday` queue retries).
 
 from __future__ import annotations
 
+import json
+
 import requests
 
 import frappe
@@ -45,11 +47,45 @@ def _headers(connector) -> dict:
 	return {"Authorization": f"token {connector.api_key}:{secret}"}
 
 
+# Outbound identity-proof header — the reverse-direction twin of the inbound
+# `X-RP-Signature` seam. When the Connector carries an `outbound_signing_secret`,
+# every JSON call is signed over the EXACT raw bytes sent, so the external system
+# can verify "this caller really is Friday" beyond the token auth. (Found live:
+# RandomPack's `_require_friday()` gates its integration writes on this header;
+# without it every attach_deliverable/request_gate_open/get_project 403'd.)
+SIGNATURE_HEADER_OUT = "X-Friday-Signature"
+
+
+def _outbound_signature(secret: str, raw_body: bytes) -> str:
+	"""`t=<unix>,v1=HMAC_SHA256(secret, "t." + raw_body)` — the shared signing contract."""
+	import hashlib
+	import hmac
+	import time
+
+	t = int(time.time())
+	sig = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+	return f"t={t},v1={sig}"
+
+
+def _signing_secret(connector) -> str:
+	"""The outbound signing secret, or "" when unconfigured (sign only if set)."""
+	try:
+		return connector.get_password("outbound_signing_secret") or ""
+	except Exception:
+		return ""
+
+
 def send(connector_name: str, path: str, payload: dict, files: dict | None = None) -> dict | None:
 	"""POST one external API call through `connector_name`. NEVER raises.
 
 	`path` is the fully-resolved dotted endpoint (the domain adapter handles any
 	module prefixing). Full URL: {api_base_url}/api/method/{path}.
+
+	When the connector has an `outbound_signing_secret`, JSON calls are signed:
+	we serialize the body OURSELVES and post those exact bytes, because the
+	signature must cover the raw body verbatim — letting `requests` re-serialize
+	would break the HMAC. Multipart (files) calls are not signed (no canonical
+	byte representation; the receiving side's stock upload endpoint is ungated).
 	"""
 	connector = _connector(connector_name)
 	if connector is None:
@@ -59,12 +95,20 @@ def send(connector_name: str, path: str, payload: dict, files: dict | None = Non
 		return None
 	url = f"{(connector.api_base_url or '').rstrip('/')}/api/method/{path}"
 	try:
+		headers = _headers(connector)
 		if files:
 			response = requests.post(
-				url, data=payload, files=files, headers=_headers(connector), timeout=_TIMEOUT_SECONDS
+				url, data=payload, files=files, headers=headers, timeout=_TIMEOUT_SECONDS
 			)
 		else:
-			response = requests.post(url, json=payload, headers=_headers(connector), timeout=_TIMEOUT_SECONDS)
+			secret = _signing_secret(connector)
+			if secret:
+				body = json.dumps(payload or {}).encode("utf-8")
+				headers[SIGNATURE_HEADER_OUT] = _outbound_signature(secret, body)
+				headers["Content-Type"] = "application/json"
+				response = requests.post(url, data=body, headers=headers, timeout=_TIMEOUT_SECONDS)
+			else:
+				response = requests.post(url, json=payload, headers=headers, timeout=_TIMEOUT_SECONDS)
 		response.raise_for_status()
 		return response.json()
 	except Exception as exc:
