@@ -499,18 +499,31 @@ def _ensure_roles() -> None:
 
 
 def _ensure_file_skills() -> None:
-	"""Ensure the file-tool Skill rows this bundle references exist (Design 66b).
+	"""Make the file-tool skills (list-project-files, get-project-file, attach-deliverable)
+	actually USABLE by the brand team (Design 66b). TWO gates had to be opened — both found
+	by a real agent-turn E2E where the Creative Director couldn't read the human CD's
+	uploaded design system:
 
-	bootstrap_files is NOT in after_migrate, so on a fresh site the Skill rows the
-	profiles/phases Link to (list-project-files, get-project-file,
-	attach-deliverable) could be missing when this bundle provisions — the Link
-	validation would then fail. Same ordering pattern as _ensure_engine_skill.
+	  1. **Status.** `bootstrap_files._ensure_skill_row` creates the Skill row with the
+	     DEFAULT status "Draft", and the skills loader HARD-excludes non-Active skills — so
+	     the tool never even appeared in the agent's toolset. We flip them Active.
+	  2. **Runtime perms.** The handlers gate on `has_permission("Project"/"File", …)` as the
+	     AGENT'S user. The brand profiles' roles don't grant Project/File read, so even once
+	     the tool loaded the call returned "denied / no files". The `Friday File Author`
+	     role grants exactly File-create + Project/Task-read; we ensure it here and
+	     `_ensure_profiles` assigns it to each brand profile.
+
+	bootstrap_files is not in after_migrate, so both could be missing on a fresh site.
+	Same ordering pattern as _ensure_engine_skill.
 	"""
-	from frappe.friday_core.skills.bootstrap_files import _ensure_skill_row
+	from frappe.friday_core.skills.bootstrap_files import _ensure_role_and_perms, _ensure_skill_row
 
+	_ensure_role_and_perms()  # the Friday File Author role + File-create / Project+Task-read
 	for skill_name in ("list-project-files", "get-project-file", "attach-deliverable"):
 		if not frappe.db.exists("Skill", skill_name):
 			_ensure_skill_row(skill_name)
+		if frappe.db.get_value("Skill", skill_name, "status") != "Active":
+			frappe.db.set_value("Skill", skill_name, "status", "Active")
 
 
 def _ensure_engine_skill() -> None:
@@ -696,6 +709,8 @@ def _ensure_profiles() -> None:
 	"""Create/refresh the three specialist profiles. assigned_roles =
 	[discriminator_role, PERM_ROLE]; inserting fires after_insert which
 	provisions the agent's system user with those roles."""
+	from frappe.friday_core.skills.bootstrap_files import FILE_ROLE
+
 	provider, model = _model_config()
 	for spec in PROFILES:
 		name = spec["profile_name"]
@@ -714,7 +729,9 @@ def _ensure_profiles() -> None:
 		if model:
 			profile.model_name = model
 
-		_append_missing(profile, "assigned_roles", "role", [spec["discriminator_role"], PERM_ROLE])
+		# FILE_ROLE (Friday File Author) grants the Project/File perms the file-skill handlers
+		# check at RUNTIME — without it get-project-file / list-project-files return "denied".
+		_append_missing(profile, "assigned_roles", "role", [spec["discriminator_role"], PERM_ROLE, FILE_ROLE])
 		_append_missing(profile, "permitted_skills", "skill", spec["skills"])
 		profile.save(ignore_permissions=True)
 
