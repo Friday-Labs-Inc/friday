@@ -231,6 +231,7 @@ class TestGetProjectFile(unittest.TestCase):
 
 		mock_frappe.flags.get.return_value = _ctx()
 		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = True  # docname resolves
 
 		file_doc = MagicMock()
 		file_doc.attached_to_doctype = "Project"
@@ -252,6 +253,7 @@ class TestGetProjectFile(unittest.TestCase):
 
 		mock_frappe.flags.get.return_value = _ctx()
 		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = True
 
 		file_doc = MagicMock()
 		file_doc.attached_to_doctype = "Project"
@@ -269,6 +271,82 @@ class TestGetProjectFile(unittest.TestCase):
 		mock_frappe.has_permission.return_value = False
 
 		out = get_project_file("get-project-file", {"project_name": "PRJ-1", "file_name": "f-abc"})
+		self.assertEqual(out["error"], "denied_or_unreachable")
+
+	@patch(f"{_H}.frappe")
+	def test_falls_back_to_human_filename_scoped_to_project(self, mock_frappe):
+		"""The bug caught on a live E2E: `list-project-files` returns each File as
+		{name, file_name, ...}, so an agent easily passes the HUMAN name where the
+		handler expected the docname. Now we resolve either — scoped to the project
+		so a filename from a different project still returns denied_or_unreachable.
+		"""
+		from frappe.friday_core.skills.handlers_files import get_project_file
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.has_permission.return_value = True
+		# Docname lookup fails (agent passed the human filename)...
+		mock_frappe.db.exists.return_value = False
+		# ...but a project-scoped lookup by human filename resolves to the real docname.
+		mock_frappe.db.get_value.return_value = "a1d916290f"
+
+		file_doc = MagicMock()
+		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_name = "PRJ-1"
+		file_doc.file_name = "friday-labs-design-system.md"
+		file_doc.is_private = 1
+		file_doc.get_content.return_value = "# Friday Labs Inc — Brand & Design System\n..."
+		mock_frappe.get_doc.return_value = file_doc
+
+		out = get_project_file(
+			"get-project-file",
+			{"project_name": "PRJ-1", "file_name": "friday-labs-design-system.md"},
+		)
+		# The fallback lookup MUST be project-scoped — otherwise an agent could
+		# guess a filename from a different project and read across boundaries.
+		gv_call = mock_frappe.db.get_value.call_args
+		self.assertEqual(gv_call.args[0], "File")
+		self.assertEqual(gv_call.args[1]["attached_to_doctype"], "Project")
+		self.assertEqual(gv_call.args[1]["attached_to_name"], "PRJ-1")
+		self.assertEqual(gv_call.args[1]["file_name"], "friday-labs-design-system.md")
+		# And the get_doc call used the RESOLVED docname, not the human string.
+		self.assertEqual(mock_frappe.get_doc.call_args.args, ("File", "a1d916290f"))
+		self.assertIn("Friday Labs", out["content"])
+
+	@patch(f"{_H}.frappe")
+	def test_fallback_still_not_found_returns_denied(self, mock_frappe):
+		"""Neither the docname nor a project-scoped filename resolves → denied."""
+		from frappe.friday_core.skills.handlers_files import get_project_file
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = False
+		mock_frappe.db.get_value.return_value = None  # not on this project
+
+		out = get_project_file(
+			"get-project-file",
+			{"project_name": "PRJ-1", "file_name": "hallucinated-name.md"},
+		)
+		self.assertEqual(out["error"], "denied_or_unreachable")
+		# We did NOT call get_doc — the fallback failed first.
+		mock_frappe.get_doc.assert_not_called()
+
+	@patch(f"{_H}.frappe")
+	def test_fallback_wont_leak_across_projects(self, mock_frappe):
+		"""Project-scope guard: an agent that names a file living on a DIFFERENT
+		project (matching by human filename) still gets denied. The scope is on
+		the fallback query itself; simulate by returning None from get_value —
+		i.e., no file with that human name is attached to this project."""
+		from frappe.friday_core.skills.handlers_files import get_project_file
+
+		mock_frappe.flags.get.return_value = _ctx()
+		mock_frappe.has_permission.return_value = True
+		mock_frappe.db.exists.return_value = False
+		mock_frappe.db.get_value.return_value = None  # scoped lookup found nothing
+
+		out = get_project_file(
+			"get-project-file",
+			{"project_name": "PRJ-1", "file_name": "someone-elses-secrets.md"},
+		)
 		self.assertEqual(out["error"], "denied_or_unreachable")
 
 

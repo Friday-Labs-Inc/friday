@@ -181,12 +181,24 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 	"""
 	Read the content of one File attached to a Project. Verifies the
 	file actually belongs to the named project — no cross-project guess.
+
+	The `file_name` param accepts EITHER the File docname (e.g. `a1d916290f`)
+	or the human filename (e.g. `friday-labs-design-system.md`) — real agent
+	behavior on a live E2E showed the confusion is easy: `list-project-files`
+	returns both `name` (docname) AND `file_name` (human) per file, and the
+	agent guessed `file_name` was the human one. A missed guess used to
+	collapse to `denied_or_unreachable` (identical to a permission denial),
+	which the agent couldn't self-correct from. Now we first try the docname,
+	then fall back to a project-scoped lookup by human filename — the scope
+	still guards against cross-project guesses.
 	"""
 	project_name = (parameters.get("project_name") or "").strip()
 	file_name = (parameters.get("file_name") or "").strip()
 	if not project_name or not file_name:
 		raise ValueError(
-			"get-project-file requires both 'project_name' and 'file_name' (the File ID, e.g. 'f-abc')"
+			"get-project-file requires both 'project_name' and 'file_name' "
+			"(the File docname, e.g. `a1d916290f`, OR the human file_name, "
+			"e.g. `friday-labs-design-system.md` — both work)"
 		)
 
 	profile = _calling_profile()
@@ -199,8 +211,27 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 	if not frappe.has_permission("Project", "read", doc=project_name):
 		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
 
+	# Resolve docname vs human filename. Try docname first (the documented
+	# shape), then fall back to a project-scoped lookup by human filename.
+	# The project-scope is load-bearing — it means an agent guessing a
+	# filename it saw on a different project still gets `denied_or_unreachable`,
+	# never a cross-project leak.
+	resolved_name = file_name
+	if not frappe.db.exists("File", file_name):
+		resolved_name = frappe.db.get_value(
+			"File",
+			{
+				"attached_to_doctype": "Project",
+				"attached_to_name": project_name,
+				"file_name": file_name,
+			},
+			"name",
+		)
+		if not resolved_name:
+			return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
+
 	try:
-		file_doc = frappe.get_doc("File", file_name)
+		file_doc = frappe.get_doc("File", resolved_name)
 	except Exception:
 		return {"error": "denied_or_unreachable", "project_name": project_name, "file_name": file_name}
 
@@ -217,7 +248,7 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 
 	return {
 		"project_name": project_name,
-		"file_name": getattr(file_doc, "file_name", file_name),
+		"file_name": getattr(file_doc, "file_name", resolved_name),
 		"is_private": bool(getattr(file_doc, "is_private", 0)),
 		"content": content,
 	}
