@@ -14,6 +14,7 @@
   "api_base_url",
   "api_key",
   "api_secret",
+  "outbound_signing_secret",
   "inbound_column",
   "webhook_secret",
   "signature_tolerance_seconds",
@@ -86,10 +87,16 @@
    "label": "API Key"
   },
   {
-   "description": "API secret — stored encrypted at rest, never in code or git.",
+   "description": "API secret \u2014 stored encrypted at rest, never in code or git.",
    "fieldname": "api_secret",
    "fieldtype": "Password",
    "label": "API Secret"
+  },
+  {
+   "fieldname": "outbound_signing_secret",
+   "fieldtype": "Password",
+   "label": "Outbound Signing Secret",
+   "description": "When set, every outbound JSON call carries X-Friday-Signature: t=<unix>,v1=HMAC_SHA256(secret, \"t.\" + raw body) \u2014 the reverse-direction twin of Webhook Secret, proving to the external system that the caller is really Friday."
   },
   {
    "fieldname": "inbound_column",

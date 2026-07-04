@@ -126,12 +126,17 @@ class TestProcessEvent(unittest.TestCase):
 
 
 class TestOutboundClient(unittest.TestCase):
-	def _connector(self, enabled=1):
+	def _connector(self, enabled=1, signing_secret=""):
 		connector = MagicMock()
 		connector.enabled = enabled
 		connector.api_base_url = "https://ops.randompack.com"
 		connector.api_key = "key123"
-		connector.get_password.return_value = "sec456"
+		# Field-aware secrets: token auth always configured; outbound signing
+		# only when a test opts in (unsigned = the pre-signing behavior).
+		connector.get_password.side_effect = lambda field: {
+			"api_secret": "sec456",
+			"outbound_signing_secret": signing_secret,
+		}.get(field, "")
 		return connector
 
 	@patch(f"{_CLIENT}.requests")
@@ -165,6 +170,80 @@ class TestOutboundClient(unittest.TestCase):
 	def test_missing_connector_drops_send(self, mock_frappe):
 		mock_frappe.db.exists.return_value = False
 		self.assertIsNone(connector_client.send("nope", "x.y", {"note": "x"}))
+
+
+class TestOutboundSigning(unittest.TestCase):
+	"""X-Friday-Signature — the outbound identity proof (the Layer-2 wire).
+
+	Found live on the Friday Labs E2E: RandomPack's `_require_friday()` gates its
+	integration writes on this header; Friday sent none → every attach_deliverable
+	/ request_gate_open / get_project 403'd. The signature must cover the EXACT
+	raw bytes posted — re-serializing on the receiving side breaks the HMAC, so
+	the client serializes the body itself and posts those bytes."""
+
+	def _connector(self, signing_secret="s3cret"):
+		connector = MagicMock()
+		connector.enabled = 1
+		connector.api_base_url = "https://ops.randompack.com"
+		connector.api_key = "key123"
+		connector.get_password.side_effect = lambda field: {
+			"api_secret": "sec456",
+			"outbound_signing_secret": signing_secret,
+		}.get(field, "")
+		return connector
+
+	@patch(f"{_CLIENT}.requests")
+	@patch(f"{_CLIENT}.frappe")
+	def test_signed_call_carries_header_over_exact_bytes(self, mock_frappe, mock_requests):
+		import hashlib
+		import hmac as hmac_mod
+
+		mock_frappe.db.exists.return_value = True
+		mock_frappe.get_cached_doc.return_value = self._connector()
+		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
+
+		connector_client.send("c1", "randompack.api.v1.attach_deliverable", {"project": "PROJ-1"})
+
+		kwargs = mock_requests.post.call_args.kwargs
+		headers = kwargs["headers"]
+		self.assertIn("X-Friday-Signature", headers)
+		self.assertEqual(headers["Content-Type"], "application/json")
+		# Token auth STILL rides along (the role layer) — signing is additive.
+		self.assertEqual(headers["Authorization"], "token key123:sec456")
+		# The signature verifies against the EXACT bytes that were posted.
+		body = kwargs["data"]
+		self.assertIsInstance(body, bytes)
+		t_part, v1_part = headers["X-Friday-Signature"].split(",")
+		t = t_part.split("=", 1)[1]
+		expected = hmac_mod.new(b"s3cret", f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+		self.assertEqual(v1_part.split("=", 1)[1], expected)
+
+	@patch(f"{_CLIENT}.requests")
+	@patch(f"{_CLIENT}.frappe")
+	def test_no_secret_means_no_signature_no_behavior_change(self, mock_frappe, mock_requests):
+		mock_frappe.db.exists.return_value = True
+		mock_frappe.get_cached_doc.return_value = self._connector(signing_secret="")
+		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
+
+		connector_client.send("c1", "x.y.z", {"a": 1})
+
+		kwargs = mock_requests.post.call_args.kwargs
+		self.assertNotIn("X-Friday-Signature", kwargs["headers"])
+		self.assertIn("json", kwargs)  # the original json= path, untouched
+
+	@patch(f"{_CLIENT}.requests")
+	@patch(f"{_CLIENT}.frappe")
+	def test_multipart_uploads_are_not_signed(self, mock_frappe, mock_requests):
+		# No canonical byte representation for multipart; the stock upload
+		# endpoint is ungated anyway. Signing only the JSON calls is the contract.
+		mock_frappe.db.exists.return_value = True
+		mock_frappe.get_cached_doc.return_value = self._connector()
+		mock_requests.post.return_value = MagicMock(json=lambda: {"message": {"file_url": "/f"}})
+
+		connector_client.send("c1", "upload_file", {"is_private": 1}, files={"file": ("x.md", b"hi")})
+
+		kwargs = mock_requests.post.call_args.kwargs
+		self.assertNotIn("X-Friday-Signature", kwargs["headers"])
 
 
 if __name__ == "__main__":
