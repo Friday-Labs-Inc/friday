@@ -402,6 +402,10 @@ PROFILES: list[dict] = [
 			# Design 95 slice 2 — the observe task stores lessons via remember.
 			"remember",
 		],
+		# remember is matrix-checked (create on Agent Memory) at MENU BUILD time;
+		# without this role the loader silently drops the tool even though it is
+		# allow-listed above. Memory Agent = the same role the Friday profile uses.
+		"extra_roles": ["Memory Agent"],
 		"system_prompt": (
 			"You are the studio's production designer — the apprentice seat of the "
 			"human Creative Director. Their logo and design system are law: read their "
@@ -725,6 +729,12 @@ def _ensure_profiles() -> None:
 	[discriminator_role, PERM_ROLE]; inserting fires after_insert which
 	provisions the agent's system user with those roles."""
 	from frappe.friday_core.skills.bootstrap_files import FILE_ROLE
+	from frappe.friday_core.skills.bootstrap_memory import ensure_memory_role
+
+	# Memory Agent (+ its create-on-Agent-Memory perm) must exist before any
+	# spec below references it — fresh sites may not have run the memory
+	# bootstrap yet. Idempotent.
+	ensure_memory_role()
 
 	provider, model = _model_config()
 	for spec in PROFILES:
@@ -746,7 +756,12 @@ def _ensure_profiles() -> None:
 
 		# FILE_ROLE (Friday File Author) grants the Project/File perms the file-skill handlers
 		# check at RUNTIME — without it get-project-file / list-project-files return "denied".
-		_append_missing(profile, "assigned_roles", "role", [spec["discriminator_role"], PERM_ROLE, FILE_ROLE])
+		_append_missing(
+			profile,
+			"assigned_roles",
+			"role",
+			[spec["discriminator_role"], PERM_ROLE, FILE_ROLE, *spec.get("extra_roles", ())],
+		)
 		_append_missing(profile, "permitted_skills", "skill", spec["skills"])
 		profile.save(ignore_permissions=True)
 

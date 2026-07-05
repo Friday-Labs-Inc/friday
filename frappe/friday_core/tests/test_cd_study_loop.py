@@ -62,6 +62,17 @@ class TestLockstepWithDomainMachine(unittest.TestCase):
 		self.assertIn("list-project-files", spec["skills"])
 		self.assertIn("get-project-file", spec["skills"])
 
+	def test_remember_allow_list_backed_by_matrix_role(self):
+		"""The loader's matrix filter DROPS an allow-listed remember unless the
+		profile holds create-on-Agent-Memory (found live on prod: 7/8 tools, the
+		study loop dead as shipped in #188). The spec must carry the SAME role
+		bootstrap_memory provisions with that perm — allow-list and matrix must
+		agree, and this is the lockstep that was missing."""
+		from frappe.friday_core.skills.bootstrap_memory import MEMORY_ROLE
+
+		spec = next(p for p in randompack_brand.PROFILES if p["profile_name"] == study.CD_AGENT_PROFILE)
+		self.assertIn(MEMORY_ROLE, spec.get("extra_roles", ()))
+
 	def test_observe_phase_key_is_not_an_engine_phase(self):
 		engine_phases = {t[1] for t in randompack_brand.TRANSITIONS}  # action names
 		self.assertNotIn(study.OBSERVE_PHASE_KEY, engine_phases)
