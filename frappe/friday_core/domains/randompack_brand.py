@@ -165,7 +165,14 @@ PHASES: list[dict] = [
 		"prompt": (
 			"You are the brand strategist for {{ business_name }} (industry: "
 			"{{ industry or 'n/a' }}). Read the full brief first with get-brand-brief "
-			"(brief id: {{ name }}). Then draft strategy & positioning: market "
+			"(brief id: {{ name }}). GROUND YOUR RESEARCH (design 95): if your tools "
+			"include mcp_tavily_tavily_search / mcp_tavily_tavily_extract, run 2-4 "
+			"searches on the client's competitors, category conventions, and current "
+			"naming/visual trends in their industry — cite what you found (source + "
+			"one-line takeaway) in a short RESEARCH section; extract a page only when "
+			"a result is load-bearing. If you have no research tools, say so in one "
+			"line ('research: ungrounded — no search tool') instead of inventing "
+			"market claims. Then draft strategy & positioning: market "
 			"position, the core audience insight, the ONE differentiating idea, and a "
 			"crisp positioning statement. After the draft, call attach-deliverable "
 			"with project_name=\"{{ project }}\" and file_name=\"strategy.md\" passing "
@@ -420,6 +427,15 @@ PROFILES: list[dict] = [
 
 AGENT_ROLES = [p["discriminator_role"] for p in PROFILES]
 
+# Design 95 slice 4 — grounded research for the Strategist. These are the Skill
+# rows the Tavily MCP sync mints (mcp/sync.py naming: mcp_<server-slug>_<tool>;
+# server "Tavily" + tools "tavily-search"/"tavily-extract"). They exist only
+# AFTER an operator registers the MCP Server row (it holds the API key — config,
+# never repo) and sync runs; the grant below is therefore CONDITIONAL, so the
+# provisioner is a no-op on sites without the registration.
+RESEARCH_PROFILE = "Brand Strategist"
+RESEARCH_SKILLS = ("mcp_tavily_tavily_search", "mcp_tavily_tavily_extract")
+
 
 # ---------------------------------------------------------------------------
 # Provisioning (idempotent; safe to re-run).
@@ -457,6 +473,7 @@ def provision() -> dict:
 	# already exist by this point.
 	_ensure_bundle()
 	_ensure_profiles()
+	_ensure_research_grants()
 	_ensure_gateway_account()
 	_ensure_work_item_perms()
 	_ensure_connector()
@@ -773,6 +790,22 @@ def _ensure_profiles() -> None:
 		from frappe.friday_core.skills.loader import invalidate_for_profile
 
 		invalidate_for_profile(name)
+
+
+def _ensure_research_grants() -> None:
+	"""Grant the Tavily research skills to the Strategist — ONLY those whose
+	Skill rows exist (minted by the MCP sync after the operator registers the
+	server). Idempotent; a site without the Tavily registration is a no-op.
+	MCP skills declare no required_doctypes, so the permission matrix passes
+	without extra roles (unlike remember — the #190 lesson checked)."""
+	if not frappe.db.exists("Agent Profile", RESEARCH_PROFILE):
+		return
+	present = [s for s in RESEARCH_SKILLS if frappe.db.exists("Skill", s)]
+	if not present:
+		return
+	profile = frappe.get_doc("Agent Profile", RESEARCH_PROFILE)
+	_append_missing(profile, "permitted_skills", "skill", present)
+	profile.save(ignore_permissions=True)
 
 
 def _ensure_gateway_account() -> None:
