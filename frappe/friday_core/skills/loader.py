@@ -188,6 +188,9 @@ class SkillDefinition:
 	- `requires_approval` — if True, an invocation triggers a Workflow
 	  Request before execution (Phase-2 wiring; recorded here so the
 	  gateway knows what to do).
+	- `medium` — what kind of output the skill produces ("text" | "image" |
+	  "video" | "audio" | "doc-render", design 96). Classification for
+	  observability and provider routing; the LLM does not read it.
 
 	`frozen=True` makes these immutable so we can safely cache them.
 	"""
@@ -198,6 +201,7 @@ class SkillDefinition:
 	parameters_schema: dict
 	risk_level: str
 	requires_approval: bool
+	medium: str = "text"
 
 	def to_dict(self) -> dict:
 		"""Plain dict for caching and audit snapshots."""
@@ -208,6 +212,7 @@ class SkillDefinition:
 			"parameters_schema": self.parameters_schema,
 			"risk_level": self.risk_level,
 			"requires_approval": self.requires_approval,
+			"medium": self.medium,
 		}
 
 	def __json__(self) -> dict:
@@ -224,6 +229,7 @@ class SkillDefinition:
 			parameters_schema=data.get("parameters_schema") or {},
 			risk_level=data.get("risk_level") or "low",
 			requires_approval=bool(data.get("requires_approval", False)),
+			medium=data.get("medium") or "text",
 		)
 
 	@classmethod
@@ -242,6 +248,7 @@ class SkillDefinition:
 			parameters_schema=_parse_parameters_schema(skill.parameters_schema),
 			risk_level=skill.risk_level or "low",
 			requires_approval=bool(skill.requires_approval),
+			medium=getattr(skill, "medium", None) or "text",
 		)
 
 
