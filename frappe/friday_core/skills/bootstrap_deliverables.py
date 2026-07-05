@@ -49,8 +49,10 @@ _ROLE_PERMS = {
 }
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision the role, the Skill row, and profile wiring. Idempotent."""
+def ensure_definitions() -> None:
+	"""Role + perms + the Skill row only (no profile wiring) — the
+	after_migrate path (bootstrap_registry), so definition edits reach
+	existing sites."""
 	if not frappe.db.exists("Role", SHARER_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": SHARER_ROLE}).insert(ignore_permissions=True)
 
@@ -89,6 +91,11 @@ def provision(profile_name: str = "Friday") -> dict:
 		if frappe.db.exists("DocType", req["target_doctype"]):
 			skill.append("required_doctypes", req)
 	skill.save(ignore_permissions=True)
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision the role, the Skill row, and profile wiring. Idempotent."""
+	ensure_definitions()
 
 	if not frappe.db.exists("Agent Profile", profile_name):
 		frappe.throw(

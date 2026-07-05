@@ -140,11 +140,17 @@ _ROLE_PERMS: dict[str, dict] = {
 }
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision role, skill rows, profile wiring. Idempotent."""
+def ensure_definitions() -> None:
+	"""Role + perms + Skill rows only (no profile wiring) — the after_migrate
+	path (bootstrap_registry), so definition edits reach existing sites."""
 	_ensure_role_and_perms()
 	for skill_name in _SKILLS:
 		_ensure_skill_row(skill_name)
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision role, skill rows, profile wiring. Idempotent."""
+	ensure_definitions()
 	_wire_profile(profile_name)
 
 	from frappe.friday_core.skills.loader import invalidate_for_profile
@@ -181,20 +187,19 @@ def _ensure_skill_row(skill_name: str) -> None:
 	schema_json = json.dumps(spec["parameters_schema"])
 	if frappe.db.exists("Skill", skill_name):
 		doc = frappe.get_doc("Skill", skill_name)
-		doc.description = spec["description"]
-		doc.when_to_use = spec["when_to_use"]
-		doc.parameters_schema = schema_json
-		doc.save(ignore_permissions=True)
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Skill",
-			"skill_name": skill_name,
-			"description": spec["description"],
-			"when_to_use": spec["when_to_use"],
-			"parameters_schema": schema_json,
-		}
-	).insert(ignore_permissions=True)
+	else:
+		doc = frappe.new_doc("Skill")
+		doc.skill_name = skill_name
+	doc.description = spec["description"]
+	doc.when_to_use = spec["when_to_use"]
+	doc.parameters_schema = schema_json
+	doc.risk_level = "low"
+	doc.requires_approval = 0
+	# Active EXPLICITLY: the original create-only default left these rows Draft,
+	# which the loader hard-excludes — the E2E #179 finding. Forcing the full
+	# definition on every run kills that class.
+	doc.status = "Active"
+	doc.save(ignore_permissions=True)
 
 
 def _wire_profile(profile_name: str) -> None:

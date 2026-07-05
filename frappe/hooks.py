@@ -443,6 +443,10 @@ after_migrate = [
 	# provision() is CLI-only, so without this a schema edit (e.g. the scope
 	# param) never reaches existing sites.
 	"frappe.friday_core.skills.bootstrap_memory.ensure_memory_provisioned",
+	# The #19 class, killed for EVERY bootstrap: refresh all skill definitions
+	# (roles + perms + Skill rows) from code on every migrate. Failure-isolated
+	# per bootstrap; profile wiring stays with provision()/domain provisioners.
+	"frappe.friday_core.skills.bootstrap_registry.ensure_all_skill_definitions",
 	# Friday (design 82): ensure the 'Friday Operator' role exists so
 	# operator-tier gateway commands (/approve, /deny) have a gate to check.
 	# Idempotent.
