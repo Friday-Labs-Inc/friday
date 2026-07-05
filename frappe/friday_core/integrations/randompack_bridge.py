@@ -37,14 +37,32 @@ from frappe.friday_core.integrations import randompack_client as client
 # gate-prep phase → the gate label RandomPack's request_gate_open expects.
 _GATE_PREP = {"gate1_prep": "Gate 1", "gate2_prep": "Gate 2"}
 
+# gate-prep phase → the RP GATE TASK's subject. E2E finding #13: on RandomPack a
+# gate only actually OPENS (client card renders, gate.opened fires, the advisor's
+# action passes validation) when its Task flips to status="Working" —
+# request_gate_open alone is signal-only (a comment). The bridge now flips the
+# gate task itself, which the E2E had to do by hand at both gates.
+_GATE_TASK_SUBJECT = {"gate1_prep": "Gate 1 — choose direction", "gate2_prep": "Gate 2 — final review"}
+
+# gate-prep phase → the presentation file that gate reviews. E2E finding #6: the
+# client's gate opened over an EMPTY portal because the presentation only lived
+# on Friday's bench. The bridge now pushes it (branded, human-named,
+# customer-facing) BEFORE opening the gate.
+_GATE_DOC_PREFIX = {"gate1_prep": "gate1-client-presentation", "gate2_prep": "gate2-final-review"}
+_GATE_DOC_TITLE = {"gate1_prep": "Direction Presentation (Gate 1)", "gate2_prep": "Final Review (Gate 2)"}
+
 # Friday phase_key → RandomPack template-task SUBJECT (the stable display string
 # in the 'Essentials — 10 Day' template). RandomPack owns the docnames; we match
 # by subject. `naming` shares the strategy task; Intake/Delivery have no phase.
+# E2E finding #13 (second half): the Design-95 machine renamed the build phase to
+# `production` — the map spoke only the OLD vocabulary, so RP's "Build system"
+# task never advanced. Both vocabularies are mapped (buildout = legacy briefs).
 _SUBJECT_MAP = {
 	"strategy": "Strategy & naming",
 	"naming": "Strategy & naming",
 	"directions": "Three directions",
 	"gate1_prep": "Gate 1 — choose direction",
+	"production": "Build system",
 	"buildout": "Build system",
 	"gate2_prep": "Gate 2 — final review",
 	"guidelines": "Delivery & handoff",
@@ -109,9 +127,16 @@ def _engine_writeback(task, state: str) -> None:
 			client.post_project_note(rp_project, note=f"[{phase}] {summary[:2000]}", task_ref=rp_task)
 		gate = _GATE_PREP.get(phase)
 		if gate:
+			# E2E findings #6 + #13, in order: the client must have the document
+			# BEFORE the gate opens, and the gate only opens when its RP task
+			# flips to Working (request_gate_open is signal-only).
+			_push_gate_presentation(rp_project, brief_name, phase)
 			client.request_gate_open(
 				rp_project, gate=gate, summary=f"{task.get('title') or phase} is ready for client review."
 			)
+			gate_task = _resolve_rp_task_by_subject(rp_project, _GATE_TASK_SUBJECT.get(phase))
+			if gate_task:
+				client.update_task_progress(gate_task, status="Working")
 		# Design 77: _push_deliverables fires from on_brief_state_change when the
 		# brief reaches Delivered, NOT here, so the project-level materialize
 		# package (assemble_project_package) has time to land first.
@@ -120,7 +145,10 @@ def _engine_writeback(task, state: str) -> None:
 def _resolve_rp_task(rp_project: str, phase: str) -> str | None:
 	"""Map our phase to the backend's real Task docname by matching subjects from
 	get_project. Returns None if no match (write-back degrades to a project note)."""
-	subject = _SUBJECT_MAP.get(phase)
+	return _resolve_rp_task_by_subject(rp_project, _SUBJECT_MAP.get(phase))
+
+
+def _resolve_rp_task_by_subject(rp_project: str, subject: "str | None") -> str | None:
 	if not subject:
 		return None
 	state = client.get_project_state(rp_project) or {}
@@ -131,23 +159,71 @@ def _resolve_rp_task(rp_project: str, phase: str) -> str | None:
 	return None
 
 
-def _push_deliverables(rp_project: str, brief_name: str) -> None:
-	"""Send every deliverable file attached to either the Brand Brief OR the
-	linked local Friday Project to RandomPack as a deliverable.
+def _push_gate_presentation(rp_project: str, brief_name: str, phase: str) -> None:
+	"""Push the gate's review document to RP as a branded, human-named PDF —
+	BEFORE the gate opens (E2E finding #6). Best-effort: a render/push hiccup
+	must not block the gate-open signal; the operator can re-push."""
+	from frappe.friday_core.deliverables import materialize
 
-	Design 77 — files now land on two attachment targets: generate-image
-	attaches to the Brand Brief (images), while attach-deliverable (called by
-	agents in their per-phase prompt) and materialize.py both attach to the
-	local Friday Project (text/PDF deliverables). The bridge must push from
-	BOTH or the customer sees only the images.
+	prefix = _GATE_DOC_PREFIX.get(phase)
+	project = frappe.db.get_value("Brand Brief", brief_name, "project")
+	if not prefix or not project:
+		return
+	files = frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": "Project", "attached_to_name": project},
+		fields=["name", "file_name", "creation"],
+	)
+	candidates = [
+		f
+		for f in files
+		if str(f.get("file_name") or "").startswith(prefix) and str(f.get("file_name") or "").endswith(".md")
+	]
+	if not candidates:
+		return
+	latest = sorted(candidates, key=lambda f: str(f.get("creation") or ""))[-1]
+	try:
+		content = frappe.get_doc("File", latest["name"]).get_content()
+		if isinstance(content, bytes):
+			content = content.decode("utf-8")
+	except Exception:
+		return
+
+	ctx = materialize._brand_context_for(brief_name, project)
+	company = ctx.get("company") or ""
+	title = _GATE_DOC_TITLE.get(phase, "Gate Review")
+	display = f"{company} — {title}" if company else title
+	pdf = materialize._render_pdf(display, content, brand_context=ctx)
+	payload = pdf if pdf else content.encode("utf-8")
+	out_name = f"{display}.pdf" if pdf else f"{display}.md"
+	client.attach_deliverable(
+		rp_project, file_name=out_name, content=payload, description=display
+	)
+
+
+def _push_deliverables(rp_project: str, brief_name: str) -> None:
+	"""Send the CUSTOMER-FACING files attached to the Brand Brief or the linked
+	Friday Project to RandomPack as deliverables.
+
+	Design 96 Slice 2 — the push filters on `is_customer_facing=1`. The Friday
+	Labs E2E pushed EVERYTHING on both targets, which delivered the Creative
+	Director's internal refinement notes and raw hash-named drafts to the
+	customer. Now: the customer-materialize step flags its branded PDFs, the CD
+	flags his final assets (logo SVG/PNG) in Desk, and nothing else crosses.
 
 	Idempotency: a file is identified by its file_url; the union-dedup means
 	a file linked from both targets is pushed once.
 	"""
+	from frappe.friday_core.deliverables.materialize import CUSTOMER_FLAG_FIELD
+
 	collected: dict[str, dict] = {}  # file_url -> {name, file_name}
 	brief_files = frappe.get_all(
 		"File",
-		filters={"attached_to_doctype": "Brand Brief", "attached_to_name": brief_name},
+		filters={
+			"attached_to_doctype": "Brand Brief",
+			"attached_to_name": brief_name,
+			CUSTOMER_FLAG_FIELD: 1,
+		},
 		fields=["name", "file_name", "file_url"],
 	)
 	for f in brief_files:
@@ -159,7 +235,11 @@ def _push_deliverables(rp_project: str, brief_name: str) -> None:
 	if friday_project:
 		project_files = frappe.get_all(
 			"File",
-			filters={"attached_to_doctype": "Project", "attached_to_name": friday_project},
+			filters={
+				"attached_to_doctype": "Project",
+				"attached_to_name": friday_project,
+				CUSTOMER_FLAG_FIELD: 1,
+			},
 			fields=["name", "file_name", "file_url"],
 		)
 		for f in project_files:
@@ -173,9 +253,10 @@ def _push_deliverables(rp_project: str, brief_name: str) -> None:
 			continue
 		if isinstance(content, str):
 			content = content.encode("utf-8")
+		display = str(entry["file_name"] or "").rsplit(".", 1)[0]
 		client.attach_deliverable(
 			rp_project, file_name=entry["file_name"], content=content,
-			description=f"Brand deliverable: {entry['file_name']}",
+			description=display or entry["file_name"],
 		)
 
 
@@ -245,6 +326,14 @@ def on_brief_state_change(doc, method: str | None = None) -> None:
 		rp_project = doc.get("rp_project")
 		if not rp_project:
 			return  # brief did not originate from a RandomPack project — stay internal
+		# Design 96 Slice 2: render the customer package FIRST (branded PDFs with
+		# human names, flagged customer-facing), then push exactly the flagged set.
+		from frappe.friday_core.deliverables.materialize import materialize_for_customer
+
+		try:
+			materialize_for_customer(doc.name)
+		except Exception:
+			frappe.log_error(title="friday.randompack materialize_for_customer failed")
 		_push_deliverables(rp_project, doc.name)
 	except Exception:
 		frappe.log_error(title="friday.randompack on_brief_state_change failed")

@@ -458,6 +458,10 @@ after_migrate = [
 	# Friday (RandomPack project chat): ensure the 'randompack-project' Chat Platform
 	# row for the authenticated portal advisor surface (same Link requirement).
 	"frappe.friday_core.surfaces.randompack_project_chat.ensure_project_platform",
+	# Friday (Design 96 slice 2): the `is_customer_facing` flag on File — the
+	# boundary between internal working files and what the customer receives
+	# (the E2E pushed internal CD notes to the customer without it).
+	"frappe.friday_core.deliverables.materialize.ensure_customer_facing_field",
 	# Friday (design 60 / list-projects): provision the project command-loop
 	# skills (plan/status/list/update/pause) so they reliably reach every site
 	# instead of relying on a manual bench-execute. Guarded for fresh sites.
