@@ -1,0 +1,23 @@
+{
+ "content": null,
+ "creation": "2026-07-05 00:00:00",
+ "doctype": "Page",
+ "icon": "edit",
+ "idx": 0,
+ "modified": "2026-07-05 00:00:00",
+ "module": "Friday Core",
+ "name": "studio",
+ "page_name": "studio",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Brand Creative Director"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "title": "Studio"
+}

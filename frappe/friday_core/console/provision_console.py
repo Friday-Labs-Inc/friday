@@ -93,6 +93,7 @@ HUB_WORKSPACE_NAME = "Friday"
 # Shortcut tiles (the big buttons), in display order. Pages link by route slug,
 # DocTypes by name; ``doc_view`` picks the list view they open into.
 HUB_SHORTCUTS: list[dict] = [
+	{"type": "Page", "label": "Studio", "link_to": "studio", "color": "Cyan"},
 	{"type": "Page", "label": "Project Console", "link_to": "project-console", "color": "Green"},
 	{"type": "Page", "label": "Dispatcher Console", "link_to": "dispatcher-console", "color": "Red"},
 	{"type": "DocType", "label": "Projects", "link_to": "Project", "doc_view": "List", "color": "Blue"},
