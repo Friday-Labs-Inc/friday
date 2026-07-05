@@ -100,11 +100,17 @@ _SKILLS: dict[str, dict] = {
 }
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision role, skill rows, profile wiring. Idempotent."""
+def ensure_definitions() -> None:
+	"""Role + Skill rows only (no profile wiring) — the after_migrate path
+	(bootstrap_registry), so definition edits reach existing sites."""
 	_ensure_role()
 	for skill_name in _SKILLS:
 		_ensure_skill_row(skill_name)
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision role, skill rows, profile wiring. Idempotent."""
+	ensure_definitions()
 	_wire_profile(profile_name)
 
 	from frappe.friday_core.skills.loader import invalidate_for_profile
@@ -138,22 +144,18 @@ def _ensure_skill_row(skill_name: str) -> None:
 
 	schema_json = json.dumps(spec["parameters_schema"])
 	if frappe.db.exists("Skill", skill_name):
-		# Update description/schema if they drifted, in place.
 		doc = frappe.get_doc("Skill", skill_name)
-		doc.description = spec["description"]
-		doc.when_to_use = spec["when_to_use"]
-		doc.parameters_schema = schema_json
-		doc.save(ignore_permissions=True)
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Skill",
-			"skill_name": skill_name,
-			"description": spec["description"],
-			"when_to_use": spec["when_to_use"],
-			"parameters_schema": schema_json,
-		}
-	).insert(ignore_permissions=True)
+	else:
+		doc = frappe.new_doc("Skill")
+		doc.skill_name = skill_name
+	doc.description = spec["description"]
+	doc.when_to_use = spec["when_to_use"]
+	doc.parameters_schema = schema_json
+	doc.risk_level = "low"
+	doc.requires_approval = 0
+	# Active EXPLICITLY — the create-only Draft default is the #179 class.
+	doc.status = "Active"
+	doc.save(ignore_permissions=True)
 
 
 def _wire_profile(profile_name: str) -> None:

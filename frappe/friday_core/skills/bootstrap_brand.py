@@ -130,11 +130,17 @@ _ROLE_PERMS: dict[str, dict] = {
 }
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision role, permissions, skill rows, and profile wiring. Idempotent."""
+def ensure_definitions() -> None:
+	"""Role + perms + Skill rows only (no profile wiring) — the after_migrate
+	path (bootstrap_registry), so definition edits reach existing sites."""
 	_ensure_role_and_perms()
 	for skill_name in _SKILLS:
 		_ensure_skill_row(skill_name)
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision role, permissions, skill rows, and profile wiring. Idempotent."""
+	ensure_definitions()
 	_wire_profile(profile_name)
 
 	# The loader caches per-profile skill lists; new permissions must show up

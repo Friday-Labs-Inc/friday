@@ -44,7 +44,9 @@ Register once in Desk (or via bench):
 
 - **MCP Server** row: name `Tavily`, base_url `https://mcp.tavily.com/mcp/`,
   transport streamable-http, auth_token = the Tavily API key,
-  tool_include `tavily-search, tavily-extract`, enabled.
+  tool_include `tavily_search, tavily_extract` (UNDERSCORES — Tavily advertises
+  underscore names; a hyphenated include matches nothing and sync mints 0
+  skills, proven on prod), enabled.
 - Run **sync** → the two Skill rows appear (`mcp_tavily_*`).
 - Run **migrate** (or provision) → the conditional grant fires and the
   Strategist's tool menu gains both.
