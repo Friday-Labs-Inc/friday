@@ -269,6 +269,9 @@ doc_events = {
 		"on_update": [
 			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
 			"frappe.friday_core.integrations.randompack_bridge.on_brief_state_change",
+			# Design 95 slice 2 — the apprenticeship study loop: observe task when
+			# the human CD finishes creating; labeled memories on his gate decisions.
+			"frappe.friday_core.domains.randompack_study.on_brief_study_signal",
 		],
 	},
 }
