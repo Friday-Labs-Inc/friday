@@ -15,7 +15,8 @@
         "max_concurrent_turns",
         "memory_review_interval",
         "skill_review_interval",
-        "review_model"
+        "review_model",
+        "model_routes"
     ],
     "fields": [
         {
@@ -89,6 +90,13 @@
             "fieldtype": "Link",
             "label": "Review Model Provider",
             "options": "LLM Provider"
+        },
+        {
+            "description": "Design 96 — route non-text mediums (image, doc-render; video/audio when providers land) to a specific LLM Provider, independent of each agent's text provider. Example: agents chat on Codex but 'image' routes to an OpenAI gpt-image provider. A medium with no route falls through to the agent's own provider chain; the routed provider's Design-94 fallback chain still applies.",
+            "fieldname": "model_routes",
+            "fieldtype": "Table",
+            "label": "Model Routes (per medium)",
+            "options": "Model Route"
         }
     ],
     "links": [],

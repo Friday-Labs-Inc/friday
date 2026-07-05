@@ -96,7 +96,7 @@
             "fieldname": "image_model",
             "fieldtype": "Data",
             "label": "Image Model",
-            "description": "MiniMax image model for the generate-image skill (e.g. image-01). Empty falls back to image-01."
+            "description": "Image model for the generate-image skill — e.g. image-01 (MiniMax) or gpt-image-1 (OpenAI). Empty falls back to the provider's default."
         },
         {
             "default": "2048",

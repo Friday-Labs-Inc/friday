@@ -1,0 +1,38 @@
+{
+ "_comment": "Design 96 Pillar 1 — one row of the per-medium routing table on Agent Settings. A row says 'when an agent needs to produce THIS medium (an image, a rendered document, later video/audio), use THAT provider' — independent of the text provider each agent chats with. Kept as a child table on the Agent Settings singleton (same one-admin-surface pattern as default_provider) rather than per-profile fields, because a site typically has ONE image provider shared by every visual agent.",
+ "actions": [],
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["medium", "provider", "notes"],
+ "fields": [
+  {
+   "fieldname": "medium",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Medium",
+   "options": "text\nimage\nvideo\naudio\ndoc-render",
+   "reqd": 1,
+   "description": "What kind of output this route covers. 'text' rows are honored but rarely needed — text already resolves through each agent's own provider chain; leave text un-routed for the standard behaviour."
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "LLM Provider",
+   "options": "LLM Provider",
+   "reqd": 1,
+   "description": "The provider that handles this medium. Its own fallback_provider chain (Design 94) still applies — routing composes with failover."
+  },
+  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Notes"}
+ ],
+ "istable": 1,
+ "links": [],
+ "module": "Friday Core",
+ "name": "Model Route",
+ "naming_rule": "Autoincrement",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

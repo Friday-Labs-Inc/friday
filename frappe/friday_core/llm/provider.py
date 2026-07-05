@@ -1198,6 +1198,77 @@ def get_fallback_provider(provider: LLMProvider) -> "LLMProvider | None":
 
 
 # ---------------------------------------------------------------------------
+# Medium-based routing (design 96, Pillar 1)
+# ---------------------------------------------------------------------------
+
+# The mediums an agent can produce. "text" is the default and resolves through
+# the per-profile chain below; the others are looked up in the Model Route
+# child table on Agent Settings first.
+KNOWN_MEDIUMS = ("text", "image", "video", "audio", "doc-render")
+
+
+def resolve_provider_row_for_medium(profile_name: str, medium: str) -> dict | None:
+	"""Find the LLM Provider row for a profile producing a given MEDIUM.
+
+	This sits ABOVE `_resolve_provider_row` (design 96): a site-wide Model
+	Route row on Agent Settings wins; a medium with no route falls through to
+	the profile's own chain unchanged — which is why text behaviour cannot
+	regress (no route rows exist until an admin adds one).
+
+	Strictness mirrors the profile-link rule: a route that names an INACTIVE
+	provider raises rather than silently re-routing — the operator who
+	deactivated it meant "stop", not "use something else". A route whose
+	provider row was deleted is a stale link and falls through.
+	"""
+	target = _medium_route_target((medium or "text").strip().lower())
+	if target:
+		if frappe.db.exists("LLM Provider", target):
+			row = frappe.get_doc("LLM Provider", target)
+			if not row.is_active:
+				raise LLMError(
+					f"The Model Route for medium {medium!r} points at LLM Provider "
+					f"{target!r} which is currently inactive. Either reactivate it "
+					f"or change the route in Agent Settings."
+				)
+			return row.as_dict()
+		# Deleted provider row — stale route, fall through to the profile chain.
+	return _resolve_provider_row(profile_name)
+
+
+def get_provider_for_medium(profile_name: str, medium: str) -> LLMProvider:
+	"""Build the provider a profile should use for a given medium.
+
+	Same contract as `get_provider_for_profile` (raises `LLMError` when
+	nothing resolves) plus the medium-route step. The returned instance
+	carries `_attach_row_identity`, so the Design-94 failover chain of the
+	ROUTED provider applies — routing composes with failover.
+	"""
+	row = resolve_provider_row_for_medium(profile_name, medium)
+	if not row:
+		raise LLMError(
+			f"No LLM Provider resolves for Agent Profile {profile_name!r} and "
+			f"medium {medium!r}. Add a Model Route row in Agent Settings or "
+			f"configure the profile's provider."
+		)
+	return _attach_row_identity(_build_provider(row), row)
+
+
+def _medium_route_target(medium: str) -> str | None:
+	"""The provider name the Agent Settings Model Route table assigns to this
+	medium, or None when un-routed. First row wins (idx order)."""
+	if not frappe.db.exists(_SETTINGS, {"name": _SETTINGS_NAME}):
+		return None
+	rows = frappe.get_all(
+		"Model Route",
+		filters={"parenttype": _SETTINGS, "parent": _SETTINGS_NAME, "medium": medium},
+		fields=["provider"],
+		order_by="idx asc",
+		limit=1,
+	)
+	return rows[0]["provider"] if rows else None
+
+
+# ---------------------------------------------------------------------------
 # OpenAI Codex provider (Responses API, OAuth-only — design 63b-2)
 # ---------------------------------------------------------------------------
 
