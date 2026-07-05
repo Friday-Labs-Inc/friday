@@ -107,10 +107,15 @@ def ensure_memory_role() -> None:
 			).insert(ignore_permissions=True)
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision role, perms, the Skill row, and profile wiring. Idempotent."""
-	ensure_memory_role()
+def ensure_memory_skill() -> None:
+	"""UPSERT the remember Skill row from _SKILL — after_migrate entry.
 
+	Finding #19 (design 95 deploy verify): schema edits to _SKILL (e.g. the
+	scope param) never reached existing sites, because provision() is CLI-only
+	and nothing on the migrate path refreshed the row — the deployed skill
+	definition silently drifted from the code. This runs on every migrate so
+	the row always matches _SKILL, like every other provisioned artifact.
+	"""
 	skill_name = _SKILL["skill_name"]
 	if frappe.db.exists("Skill", skill_name):
 		skill = frappe.get_doc("Skill", skill_name)
@@ -127,6 +132,24 @@ def provision(profile_name: str = "Friday") -> dict:
 	for req in _SKILL["required_doctypes"]:
 		skill.append("required_doctypes", req)
 	skill.save(ignore_permissions=True)
+
+
+def ensure_memory_provisioned() -> None:
+	"""after_migrate entry: role + perms + the Skill row, failure-isolated.
+	Profile wiring stays in provision() (CLI) and the domain provisioners —
+	granting is an operator/domain decision, the definitions are not."""
+	try:
+		ensure_memory_role()
+		ensure_memory_skill()
+	except Exception:
+		frappe.log_error(title="bootstrap_memory: ensure_memory_provisioned failed")
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision role, perms, the Skill row, and profile wiring. Idempotent."""
+	ensure_memory_role()
+	ensure_memory_skill()
+	skill_name = _SKILL["skill_name"]
 
 	if not frappe.db.exists("Agent Profile", profile_name):
 		frappe.throw(
