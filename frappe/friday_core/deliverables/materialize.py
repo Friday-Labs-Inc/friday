@@ -34,6 +34,58 @@ _logger = frappe.logger("friday.deliverables")
 
 _PREFIX = "deliverable-"
 
+# ---------------------------------------------------------------------------
+# Design 96 Slice 2 — the CUSTOMER materialize layer.
+#
+# The internal deliverable-*.md/.pdf files above are working artifacts. What a
+# paying client receives is different: branded PDFs with HUMAN names ("Friday
+# Labs Inc — Brand Guidelines.pdf", not brand-guidelines8e02e8.md), and ONLY
+# the finished work — the Friday Labs E2E pushed the Creative Director's
+# internal refinement notes to the customer because nothing marked the
+# boundary. The boundary is the `is_customer_facing` flag on File (ensured by
+# after_migrate below); the bridge pushes only flagged files.
+# ---------------------------------------------------------------------------
+
+CUSTOMER_FLAG_FIELD = "is_customer_facing"
+
+# Phase-output file patterns → the human titles the customer sees. Matched by
+# file_name prefix against the Friday Project's attached files; for patterns
+# with multiple versions (refine rounds re-attach), the NEWEST wins. Anything
+# not in this map (working notes, the CD's system doc, drafts) stays internal
+# unless the CD flags it customer-facing in Desk himself.
+CUSTOMER_TITLE_MAP: list[tuple[str, str]] = [
+	("brand-guidelines", "Brand Guidelines"),
+	("production-package", "Brand System — Production Package"),
+	("gate2-final-review", "Final Review (Gate 2)"),
+	("gate1-client-presentation", "Direction Presentation (Gate 1)"),
+	("naming-candidates", "Naming Candidates"),
+	("strategy", "Brand Strategy"),
+]
+
+
+def ensure_customer_facing_field() -> None:
+	"""Idempotently add the `is_customer_facing` custom field to File. after_migrate-safe.
+
+	Default 0: every file is internal unless the customer-materialize step (or the
+	human CD, in Desk) marks it. The bridge's customer push filters on this flag.
+	"""
+	if frappe.db.exists("Custom Field", {"dt": "File", "fieldname": CUSTOMER_FLAG_FIELD}):
+		return
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+	create_custom_field(
+		"File",
+		{
+			"fieldname": CUSTOMER_FLAG_FIELD,
+			"fieldtype": "Check",
+			"label": "Customer Facing",
+			"default": "0",
+			"insert_after": "is_private",
+			"description": "Deliverables the customer receives. Set by the customer-materialize "
+			"step; set it manually on files (e.g. final logo assets) that should ship.",
+		},
+	)
+
 
 # ---------------------------------------------------------------------------
 # Hook entry points (enqueued after commit by the workflow / project hooks)
@@ -150,26 +202,159 @@ def _wrap_markdown(title: str, project: "str | None", task_name: str, content: s
 	return f"# {title}\n\n{meta}\n\n---\n\n{content}\n"
 
 
-def _render_pdf(title: str, markdown_content: str) -> "bytes | None":
+def _render_pdf(title: str, markdown_content: str, brand_context: "dict | None" = None) -> "bytes | None":
 	"""Render markdown to a PDF. Returns None if rendering is unavailable.
 
 	Uses Frappe's wkhtmltopdf wrapper; if that binary isn't installed the
 	deliverable still ships as Markdown (best-effort, never raises).
+
+	`brand_context` (Design 96) brands the render for the CUSTOMER:
+	  {"company": str, "accent": "#hex", "logo_data_uri": "data:image/...;base64,..."}
+	All keys optional — absent context = the plain internal render, unchanged.
 	"""
 	try:
 		from frappe.utils import md_to_html
 		from frappe.utils.pdf import get_pdf
 
-		html = (
-			"<div style='font-family: sans-serif; line-height: 1.5; padding: 24px;'>"
-			f"<h1>{escape_html(title)}</h1>"
-			f"{md_to_html(markdown_content)}"
-			"</div>"
-		)
+		html = _deliverable_html(title, str(md_to_html(markdown_content)), brand_context)
 		return get_pdf(html)
 	except Exception:
 		_logger.warning("PDF render unavailable for %s — shipping Markdown only", title, exc_info=True)
 		return None
+
+
+def _deliverable_html(title: str, body_html: str, brand_context: "dict | None" = None) -> str:
+	"""The HTML shell around a rendered deliverable. Pure — testable without wkhtmltopdf."""
+	ctx = brand_context or {}
+	accent = str(ctx.get("accent") or "#111111")
+	company = str(ctx.get("company") or "")
+	logo = str(ctx.get("logo_data_uri") or "")
+
+	header = ""
+	if company or logo:
+		logo_img = f"<img src='{logo}' style='height: 28px; vertical-align: middle; margin-right: 12px;'/>" if logo else ""
+		header = (
+			f"<div style='border-bottom: 2px solid {accent}; padding-bottom: 12px; margin-bottom: 24px;'>"
+			f"{logo_img}<span style='font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; "
+			f"color: #555;'>{escape_html(company)}</span></div>"
+		)
+	return (
+		"<div style='font-family: sans-serif; line-height: 1.6; padding: 32px; color: #1a1a1a;'>"
+		f"{header}"
+		f"<h1 style='font-weight: 500; letter-spacing: -0.01em;'>{escape_html(title)}</h1>"
+		f"{body_html}"
+		"</div>"
+	)
+
+
+# ---------------------------------------------------------------------------
+# Design 96 Slice 2 — materialize FOR THE CUSTOMER (branded PDFs, human names)
+# ---------------------------------------------------------------------------
+
+
+def select_customer_sources(files: "list[dict]") -> "list[tuple[str, dict]]":
+	"""Pick the customer-deliverable set from a Project's File rows. Pure.
+
+	`files` rows need {name, file_name, creation}. For each CUSTOMER_TITLE_MAP
+	pattern, the NEWEST matching .md wins (refine rounds re-attach new versions —
+	the customer gets the latest, once). Returns [(human_title, file_row)] in map
+	order. Anything unmatched (refinement notes, the CD's working docs, images)
+	is NOT selected — internal stays internal unless the CD flags it himself.
+	"""
+	out: list[tuple[str, dict]] = []
+	for prefix, human_title in CUSTOMER_TITLE_MAP:
+		candidates = [
+			f
+			for f in files
+			if str(f.get("file_name") or "").startswith(prefix)
+			and str(f.get("file_name") or "").endswith(".md")
+		]
+		if not candidates:
+			continue
+		latest = sorted(candidates, key=lambda f: str(f.get("creation") or ""))[-1]
+		out.append((human_title, latest))
+	return out
+
+
+def _brand_context_for(brief_name: str, project_name: str) -> dict:
+	"""Assemble the render branding: company name + the CD's logo if he flagged one."""
+	company = frappe.db.get_value("Brand Brief", brief_name, "business_name") or ""
+	ctx: dict = {"company": company}
+	# The CD's flagged logo (an image File he marked customer-facing) brands the PDFs.
+	logo_rows = frappe.get_all(
+		"File",
+		filters={
+			"attached_to_doctype": "Project",
+			"attached_to_name": project_name,
+			CUSTOMER_FLAG_FIELD: 1,
+		},
+		fields=["name", "file_name"],
+	)
+	for row in logo_rows:
+		fname = str(row.get("file_name") or "").lower()
+		if "logo" in fname and fname.rsplit(".", 1)[-1] in ("png", "jpg", "jpeg", "svg"):
+			try:
+				import base64
+
+				content = frappe.get_doc("File", row["name"]).get_content()
+				if isinstance(content, str):
+					content = content.encode("utf-8")
+				mime = "image/svg+xml" if fname.endswith(".svg") else f"image/{fname.rsplit('.', 1)[-1]}"
+				ctx["logo_data_uri"] = f"data:{mime};base64,{base64.b64encode(content).decode()}"
+				break
+			except Exception:
+				continue
+	return ctx
+
+
+def materialize_for_customer(brief_name: str) -> "dict | None":
+	"""Render the customer package: branded, human-named PDFs on the Project,
+	flagged `is_customer_facing` so the bridge push delivers them (and ONLY them,
+	plus whatever assets the CD flagged himself).
+
+	Called from the bridge when the brief reaches Delivered, BEFORE the push.
+	Idempotent: prior customer PDFs are replaced.
+	"""
+	project = frappe.db.get_value("Brand Brief", brief_name, "project")
+	if not project:
+		return None
+	files = frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": "Project", "attached_to_name": project},
+		fields=["name", "file_name", "creation"],
+	)
+	sources = select_customer_sources(files)
+	if not sources:
+		return None
+
+	ctx = _brand_context_for(brief_name, project)
+	company = ctx.get("company") or ""
+	created: dict = {}
+	for human_title, row in sources:
+		try:
+			content = frappe.get_doc("File", row["name"]).get_content()
+			if isinstance(content, bytes):
+				content = content.decode("utf-8")
+		except Exception:
+			continue
+		display = f"{company} — {human_title}" if company else human_title
+		pdf = _render_pdf(display, content, brand_context=ctx)
+		out_name = f"{display}.pdf" if pdf else f"{display}.md"
+		payload = pdf if pdf else content.encode("utf-8")
+		# Replace a prior render of the same deliverable (re-delivery, refine rounds).
+		for prior in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "Project", "attached_to_name": project, "file_name": out_name},
+			pluck="name",
+		):
+			try:
+				frappe.delete_doc("File", prior, force=True, ignore_permissions=True)
+			except Exception:
+				pass
+		file_id = _attach(out_name, payload, "Project", project)
+		frappe.db.set_value("File", file_id, CUSTOMER_FLAG_FIELD, 1, update_modified=False)
+		created[human_title] = file_id
+	return created or None
 
 
 def _attach(file_name: str, content: bytes, dt: str, dn: str) -> str:
