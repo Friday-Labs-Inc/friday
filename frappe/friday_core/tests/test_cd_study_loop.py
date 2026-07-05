@@ -295,6 +295,11 @@ class TestLedgerSnapshot(unittest.TestCase):
 				"source_session": "t",
 			},
 			{
+				"name": "m6",
+				"memory": "Given warm hospitality briefs, CD chose limestone (#FBF8F3) with IBM Plex Mono",
+				"source_session": "task::OBS-1",
+			},
+			{
 				"name": "m5",
 				"memory": "He pairs a grotesque typeface with generous spacing",
 				"source_session": "t",
@@ -307,16 +312,19 @@ class TestLedgerSnapshot(unittest.TestCase):
 
 		ledger = study.ledger_snapshot()
 
-		self.assertEqual(ledger["lessons_stored"], 2)
+		self.assertEqual(ledger["lessons_stored"], 3)
 		# R2 honesty metric: both lessons came from non-task sessions here → 0
-		self.assertEqual(ledger["observations"]["learned"], 0)
+		self.assertEqual(ledger["observations"]["learned"], 1)  # m6 came from an observe task session
 		self.assertEqual(ledger["gates"]["approvals"], 1)
 		self.assertEqual(ledger["gates"]["refinements"], 2)
 		self.assertEqual(ledger["gates"]["approve_rate"], 33)  # 1 of 3
 		self.assertTrue(ledger["flags"][study.GRADUATION_FLAG])
 		# dimensions count MENTIONS across lessons + refine corrections
-		self.assertEqual(ledger["dimensions"]["palette"], 2)  # m2 + m4
-		self.assertEqual(ledger["dimensions"]["typography"], 2)  # m3 + m5
+		# m2 + m4 + m6 (a hex code counts — concrete values, not just the word "palette")
+		self.assertEqual(ledger["dimensions"]["palette"], 3)
+		# m3 + m5 + m6 (mono) + m4 ("monochrome" also hits "mono" — the buckets are
+		# deliberately greedy MENTION heuristics, not a taxonomy; overlap is fine)
+		self.assertEqual(ledger["dimensions"]["typography"], 4)
 		self.assertEqual(ledger["dimensions"]["layout"], 1)  # m5 spacing
 		# per-brief trend rows
 		rows = {r["brief"]: r for r in ledger["briefs"]}
