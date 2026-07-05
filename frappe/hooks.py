@@ -437,6 +437,8 @@ after_migrate = [
 	# gateway). The generic engine is inert without a bundle, so every site
 	# (Legion, CI, fresh installs) needs it. Idempotent + failure-isolated.
 	"frappe.friday_core.domains.randompack_brand.after_migrate",
+	# Design 95 slice 3 — the graduation flag (Custom Field on Agent Profile).
+	"frappe.friday_core.domains.randompack_study.ensure_graduation_flags",
 	# Friday (design 82): ensure the 'Friday Operator' role exists so
 	# operator-tier gateway commands (/approve, /deny) have a gate to check.
 	# Idempotent.

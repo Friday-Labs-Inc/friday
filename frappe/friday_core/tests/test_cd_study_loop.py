@@ -65,6 +65,7 @@ class TestLockstepWithDomainMachine(unittest.TestCase):
 	def test_observe_phase_key_is_not_an_engine_phase(self):
 		engine_phases = {t[1] for t in randompack_brand.TRANSITIONS}  # action names
 		self.assertNotIn(study.OBSERVE_PHASE_KEY, engine_phases)
+		self.assertNotIn(study.DRAFT_PHASE_KEY, engine_phases)
 
 
 class TestObserveTask(unittest.TestCase):
@@ -122,7 +123,9 @@ class TestGateMemories(unittest.TestCase):
 		self.assertEqual(payload["doctype"], "Agent Memory")
 		self.assertEqual(payload["subject"], study.APPRENTICE_TAG)
 		self.assertEqual(payload["agent_profile"], "Creative Director")
-		self.assertEqual(payload["project"], "PROJ-1")
+		# GLOBAL on purpose: recall is project-scoped (design 73), and a
+		# project-tagged lesson would be invisible on every future brief.
+		self.assertIsNone(payload["project"])
 		self.assertEqual(payload["source_session"], "study::BB-1")
 		self.assertIn("APPROVE", payload["memory"])
 		self.assertIn("Friday Labs Inc", payload["memory"])
@@ -177,10 +180,139 @@ class TestGateMemories(unittest.TestCase):
 		mem_doc.insert.assert_called_once()
 
 
+class TestGraduatedDrafting(unittest.TestCase):
+	"""Slice 3 — entering CD Creative with the operator's flag ON spawns a
+	draft sidecar; OFF (the default) changes nothing."""
+
+	def _fr_with_flag(self, fr, flag: int):
+		# get_value serves both the flag read and the profile-active check.
+		def get_value(doctype, name_or_filters, field=None, **k):
+			if field == study.GRADUATION_FLAG:
+				return flag
+			return "Creative Director"
+
+		fr.db.get_value.side_effect = get_value
+		fr.db.exists.return_value = False
+
+	@patch(f"{_M}.frappe")
+	def test_flag_off_is_the_default_no_op(self, fr):
+		self._fr_with_flag(fr, 0)
+		study.on_brief_study_signal(_brief("Naming", "CD Creative"))
+		fr.get_doc.assert_not_called()
+
+	@patch(f"{_M}.frappe")
+	def test_flag_on_spawns_draft_sidecar(self, fr):
+		self._fr_with_flag(fr, 1)
+		task_doc = MagicMock()
+		fr.get_doc.return_value = task_doc
+
+		study.on_brief_study_signal(_brief("Naming", "CD Creative"))
+
+		payload = fr.get_doc.call_args[0][0]
+		self.assertEqual(payload["doctype"], "Task")
+		self.assertEqual(payload["phase_key"], study.DRAFT_PHASE_KEY)
+		# Same isolation properties as the observe task.
+		self.assertNotIn("work_item_doctype", payload)
+		self.assertNotIn("work_item_name", payload)
+		# The prompt keeps the human in charge and the drafts internal.
+		self.assertIn("curate", payload["description"])
+		self.assertIn("cd-apprentice", payload["description"])
+		self.assertIn("INTERNAL", payload["description"])
+		self.assertIn("Creative Ready", payload["description"])
+		task_doc.insert.assert_called_once()
+
+	@patch(f"{_M}.frappe")
+	def test_open_draft_task_deduped(self, fr):
+		self._fr_with_flag(fr, 1)
+		fr.db.exists.return_value = True
+		study.on_brief_study_signal(_brief("Naming", "CD Creative"))
+		fr.get_doc.assert_not_called()
+
+	@patch(f"{_M}.frappe")
+	def test_leaving_cd_creative_still_observes_when_flag_on(self, fr):
+		# Leaving CD Creative → observe fires (the draft branch only fires on ENTRY).
+		self._fr_with_flag(fr, 1)
+		task_doc = MagicMock()
+		fr.get_doc.return_value = task_doc
+		study.on_brief_study_signal(_brief("CD Creative", "Gate 1 Prep"))
+		payload = fr.get_doc.call_args[0][0]
+		self.assertEqual(payload["phase_key"], study.OBSERVE_PHASE_KEY)
+
+
+class TestEnsureGraduationFlags(unittest.TestCase):
+	@patch(f"{_M}.frappe")
+	def test_idempotent_when_field_exists(self, fr):
+		fr.db.exists.return_value = True
+		study.ensure_graduation_flags()  # must short-circuit before create
+		fr.db.exists.assert_called_once()
+
+
+class TestLedgerSnapshot(unittest.TestCase):
+	@patch(f"{_M}.frappe")
+	def test_counts_rates_dimensions_and_trend(self, fr):
+		fr.get_all.return_value = [
+			{
+				"name": "m1",
+				"memory": "[cd-apprentice] Gate APPROVE — A (x): ...",
+				"source_session": "study::BB-1",
+			},
+			{
+				"name": "m2",
+				"memory": "[cd-apprentice] Gate REFINE — B: palette too dark",
+				"source_session": "study::BB-2",
+			},
+			{
+				"name": "m3",
+				"memory": "[cd-apprentice] Gate REFINE — B: typeface too playful",
+				"source_session": "study::BB-2",
+			},
+			{
+				"name": "m4",
+				"memory": "Given tech-minimal briefs he chose a monochrome palette",
+				"source_session": "t",
+			},
+			{
+				"name": "m5",
+				"memory": "He pairs a grotesque typeface with generous spacing",
+				"source_session": "t",
+			},
+		]
+		fr.db.count.return_value = 3  # every Task count
+		fr.db.get_value.side_effect = lambda dt, name, field=None, **k: (
+			1 if field == study.GRADUATION_FLAG else "Biz " + str(name)
+		)
+
+		ledger = study.ledger_snapshot()
+
+		self.assertEqual(ledger["lessons_stored"], 2)
+		self.assertEqual(ledger["gates"]["approvals"], 1)
+		self.assertEqual(ledger["gates"]["refinements"], 2)
+		self.assertEqual(ledger["gates"]["approve_rate"], 33)  # 1 of 3
+		self.assertTrue(ledger["flags"][study.GRADUATION_FLAG])
+		# dimensions count MENTIONS across lessons + refine corrections
+		self.assertEqual(ledger["dimensions"]["palette"], 2)  # m2 + m4
+		self.assertEqual(ledger["dimensions"]["typography"], 2)  # m3 + m5
+		self.assertEqual(ledger["dimensions"]["layout"], 1)  # m5 spacing
+		# per-brief trend rows
+		rows = {r["brief"]: r for r in ledger["briefs"]}
+		self.assertTrue(rows["BB-1"]["approved"])
+		self.assertEqual(rows["BB-2"]["refinements"], 2)
+		self.assertFalse(rows["BB-2"]["approved"])
+
+	@patch(f"{_M}.frappe")
+	def test_no_gates_yet_means_no_rate(self, fr):
+		fr.get_all.return_value = []
+		fr.db.count.return_value = 0
+		fr.db.get_value.return_value = 0
+		ledger = study.ledger_snapshot()
+		self.assertIsNone(ledger["gates"]["approve_rate"])
+		self.assertEqual(ledger["briefs"], [])
+
+
 class TestNonSignals(unittest.TestCase):
 	@patch(f"{_M}.frappe")
 	def test_unwatched_transition_is_a_no_op(self, fr):
-		study.on_brief_study_signal(_brief("Naming", "CD Creative"))
+		study.on_brief_study_signal(_brief("Strategy", "Naming"))
 		fr.get_doc.assert_not_called()
 
 	@patch(f"{_M}.frappe")

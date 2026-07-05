@@ -86,6 +86,24 @@ class TestStudioSnapshot(unittest.TestCase):
 			studio_api.studio_snapshot()
 
 
+class TestApprenticeLedgerEndpoint(unittest.TestCase):
+	@patch("frappe.friday_core.domains.randompack_study.ledger_snapshot")
+	@patch(f"{_M}.frappe")
+	def test_wraps_ledger_with_envelope(self, fr, m_ledger):
+		m_ledger.return_value = {"lessons_stored": 3}
+		out = studio_api.apprentice_ledger()
+		self.assertNotIn("error", out)
+		self.assertEqual(out["ledger"], {"lessons_stored": 3})
+
+	@patch("frappe.friday_core.domains.randompack_study.ledger_snapshot")
+	@patch(f"{_M}.frappe")
+	def test_fail_loud_envelope(self, fr, m_ledger):
+		m_ledger.side_effect = RuntimeError("db down")
+		out = studio_api.apprentice_ledger()
+		self.assertIn("error", out)
+		self.assertIsNone(out["ledger"])
+
+
 class TestStudioAction(unittest.TestCase):
 	def _doc(self, state="CD Internal Gate", project="PROJ-1"):
 		doc = MagicMock()

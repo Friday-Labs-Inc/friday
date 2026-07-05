@@ -48,16 +48,38 @@ import frappe
 # name per design 95 Q2; the human holds the Brand Creative Director role).
 CD_AGENT_PROFILE = "Creative Director"
 
-# Marker phase for observe tasks. NOT an engine phase: no transition meta
-# carries it, and observe tasks carry no work_item — both advance.py and the
-# bridge ignore them. The ledger (Slice 3) counts observations by this key.
+# Marker phases for the study sidecars. NOT engine phases: no transition meta
+# carries them, and the tasks carry no work_item — both advance.py and the
+# bridge ignore them. The ledger counts observations/drafts by these keys.
 OBSERVE_PHASE_KEY = "cd_observe"
+DRAFT_PHASE_KEY = "cd_draft"
 
 APPRENTICE_TAG = "cd-apprentice"
+
+# Slice 3 — the graduation flag (design 95: "per-capability flags on the CD
+# agent's profile... flipped on, the CD Creative stage becomes agent drafts →
+# human curates"). A Custom Field so the DOMAIN concern stays out of the core
+# Agent Profile doctype (same pattern as File.is_customer_facing). The
+# operator flips it on the profile form; every flag is reversible.
+GRADUATION_FLAG = "may_draft_directions"
 
 _NOTES_PATTERN = "cd-refinement-notes-r%"
 _PACKAGE_PATTERN = "production-package%"
 _EXCERPT_CHARS = 400
+
+# Production phases whose Completed tasks count as "productions attempted"
+# in the ledger (buildout = the legacy name kept for in-flight briefs).
+_PRODUCTION_PHASES = ("production", "buildout")
+
+# Keyword buckets for the per-dimension ledger counts. Honest label: these
+# are MENTIONS in the stored lessons, not a taxonomy — cheap, deterministic,
+# and good enough to see where the apprentice's evidence is thin.
+_DIMENSIONS: dict[str, tuple[str, ...]] = {
+	"palette": ("palette", "color", "colour", "hex"),
+	"typography": ("typograph", "typeface", "font"),
+	"logo": ("logo", "mark", "symbol", "monogram"),
+	"layout": ("layout", "grid", "spacing", "composition"),
+}
 
 
 def on_brief_study_signal(doc, method: str | None = None) -> None:
@@ -82,6 +104,13 @@ def on_brief_study_signal(doc, method: str | None = None) -> None:
 			_record_gate_memory(doc, approved=True)
 		elif old == "CD Internal Gate" and new == "AI Production":
 			_record_gate_memory(doc, approved=False)
+
+		# Slice 3 — graduated capability: entering CD Creative with the flag ON
+		# spawns a DRAFT sidecar (agent drafts → human curates → human still
+		# fires Creative Ready). Independent of the branches above: a brief can
+		# leave one watched state and enter another in the same transition.
+		if new == "CD Creative":
+			_maybe_spawn_draft_task(doc)
 	except Exception:
 		# The study loop is an observer — it must never break the engine save.
 		frappe.log_error(title="friday.study on_brief_study_signal failed")
@@ -151,7 +180,8 @@ def _observe_prompt(doc) -> str:
 		"1. Call list-project-files, then get-project-file on the Creative Director's "
 		"uploads (the design system document, direction boards, logo files).\n"
 		"2. Distill 1-3 lessons about HIS choices, and store each with `remember` "
-		f'(subject: "{APPRENTICE_TAG}", memory_type: "general"). Each lesson pairs the '
+		f'(subject: "{APPRENTICE_TAG}", memory_type: "general", scope: "global" — these '
+		"are craft lessons you must recall on FUTURE projects). Each lesson pairs the "
 		"brief with the choice: 'Given <personality/industry/audience>, he chose "
 		"<palette / typography / logo route / layout rule>; notes: <his stated reasoning "
 		"if any>'. Name concrete values (hex codes, typeface names) when his files give "
@@ -159,6 +189,92 @@ def _observe_prompt(doc) -> str:
 		"Rules: no judgment, no advice, no production — pairing only. Do not attach "
 		"files, do not advance anything. If you cannot read his files, remember nothing "
 		"and complete with a note saying what was unreadable."
+	)
+
+
+# ---------------------------------------------------------------------------
+# Slice 3, signal 3 — the graduated draft task (flag-gated)
+# ---------------------------------------------------------------------------
+
+
+def _may_draft() -> bool:
+	"""The operator's graduation decision, read live from the profile flag."""
+	return bool(frappe.db.get_value("Agent Profile", CD_AGENT_PROFILE, GRADUATION_FLAG))
+
+
+def _maybe_spawn_draft_task(doc) -> None:
+	"""When a brief ENTERS CD Creative and the operator has flipped
+	`may_draft_directions` on, the apprentice drafts direction concepts FOR the
+	human to curate. Same sidecar isolation as the observe task: no work_item,
+	so nothing advances and nothing crosses the customer seam. The human still
+	creates/edits/decides and still fires Creative Ready — this changes what is
+	on his desk when he sits down, not who holds the pen."""
+	if not _may_draft():
+		return
+	profile = _apprentice_profile()
+	if not profile:
+		return
+
+	title = f"Draft {doc.name} — direction concepts for the human CD to curate"
+	if frappe.db.exists(
+		"Task",
+		{
+			"phase_key": DRAFT_PHASE_KEY,
+			"title": title,
+			"workflow_state": ["not in", ["Completed", "Cancelled"]],
+		},
+	):
+		return
+
+	task = frappe.get_doc(
+		{
+			"doctype": "Task",
+			"title": title,
+			"description": _draft_prompt(doc),
+			"phase_key": DRAFT_PHASE_KEY,
+			"project": doc.get("project"),
+			"assigned_to_profile": profile,
+			"workflow_state": "Assigned",
+			"assigned_at": frappe.utils.now_datetime(),
+			"execution_mode": "agentic",
+			"priority": "normal",
+		}
+	)
+	task.insert(ignore_permissions=True)
+
+
+def _draft_prompt(doc) -> str:
+	brief_facts = "\n".join(
+		f"- {label}: {doc.get(field)}"
+		for label, field in (
+			("Business", "business_name"),
+			("Industry", "industry"),
+			("What they do", "what_they_do"),
+			("Audience", "target_audience"),
+			("Personality", "brand_personality"),
+			("Color preferences", "color_preferences"),
+			("Inspirations", "inspirations"),
+		)
+		if doc.get(field)
+	)
+	return (
+		"DRAFT TASK (design 95 — graduated capability: the operator has enabled "
+		"may_draft_directions; you draft, the human Creative Director decides).\n\n"
+		f"A new brief just reached his creative stage: {doc.name}.\n"
+		f"The brief:\n{brief_facts}\n\n"
+		"Do this:\n"
+		"1. Ground yourself in the human CD's accumulated taste — your cd-apprentice "
+		"memories (his past choices and every correction he has given). Where his "
+		"taste is unknown for this kind of brief, stay conservative and say so.\n"
+		"2. Draft 2-3 DIRECTION CONCEPTS. Each: a name, the concept in two sentences, "
+		"palette (hex values), typography (typeface names + roles), logo route, and "
+		"1-2 layout principles.\n"
+		f"3. Attach ONE markdown file named draft-directions-{doc.name}.md to the "
+		"project with attach-deliverable. This is INTERNAL working material for the "
+		"human CD to curate, edit, or discard.\n\n"
+		"Rules: you are drafting FOR his review, not deciding — he still creates the "
+		"identity and fires Creative Ready. Never present drafts as client material, "
+		"and do not advance anything."
 	)
 
 
@@ -193,12 +309,16 @@ def _record_gate_memory(doc, approved: bool) -> None:
 			f"(full notes: {notes_name or 'n/a'}; package: {package})."
 		)
 
+	# project=None ON PURPOSE (design 95): recall is project-scoped (design 73),
+	# and a project-tagged lesson would be invisible on every FUTURE brief —
+	# defeating the apprenticeship. Gate lessons are the CD's craft, not one
+	# client's private facts; the brief stays traceable via source_session.
 	row = frappe.get_doc(
 		{
 			"doctype": "Agent Memory",
 			"memory": memory,
 			"agent_profile": profile,
-			"project": project,
+			"project": None,
 			"subject": APPRENTICE_TAG,
 			"memory_type": "general",
 			"source_session": f"study::{doc.name}",
@@ -280,3 +400,113 @@ def _latest_notes(project: str | None) -> tuple[str | None, str | None]:
 		return row["file_name"], excerpt
 	except Exception:
 		return row["file_name"], None
+
+
+# ---------------------------------------------------------------------------
+# Slice 3 — provisioning (after_migrate) + the confidence ledger
+# ---------------------------------------------------------------------------
+
+
+def ensure_graduation_flags() -> None:
+	"""Create the graduation Custom Field on Agent Profile (idempotent;
+	after_migrate). A Custom Field keeps the domain concern out of the core
+	doctype — the operator flips it on the apprentice's profile form."""
+	if frappe.db.exists("Custom Field", {"dt": "Agent Profile", "fieldname": GRADUATION_FLAG}):
+		return
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+	create_custom_field(
+		"Agent Profile",
+		{
+			"fieldname": GRADUATION_FLAG,
+			"label": "May Draft Directions (design 95 graduation)",
+			"fieldtype": "Check",
+			"default": "0",
+			"insert_after": "system_prompt",
+			"description": (
+				"Apprenticeship graduation flag — an OPERATOR decision, evidence-informed "
+				"(see the Studio ledger), never automatic. ON: when a brief enters CD "
+				"Creative, this agent drafts direction concepts for the human Creative "
+				"Director to curate; the human still creates, edits, and fires Creative "
+				"Ready. Reversible at any time."
+			),
+		},
+	)
+
+
+def ledger_snapshot() -> dict:
+	"""The confidence ledger (design 95: 'is it ready?' must be a number you
+	can look at, not a feeling). Counted live from Agent Memory + Tasks —
+	no new machinery, no model calls."""
+	mems = frappe.get_all(
+		"Agent Memory",
+		filters={"agent_profile": CD_AGENT_PROFILE, "subject": APPRENTICE_TAG, "status": "Active"},
+		fields=["name", "memory", "source_session", "creation"],
+		order_by="creation asc",
+		limit_page_length=0,
+	)
+	approvals = [m for m in mems if "Gate APPROVE" in (m.get("memory") or "")]
+	refines = [m for m in mems if "Gate REFINE" in (m.get("memory") or "")]
+	gate_names = {m["name"] for m in approvals} | {m["name"] for m in refines}
+	lessons = [m for m in mems if m["name"] not in gate_names]
+
+	decided = len(approvals) + len(refines)
+	approve_rate = round(100 * len(approvals) / decided) if decided else None
+
+	return {
+		"flags": {GRADUATION_FLAG: _may_draft()},
+		"observations": {
+			"completed": _task_count(OBSERVE_PHASE_KEY, ("Completed",)),
+			"open": _task_count(OBSERVE_PHASE_KEY, None),
+		},
+		"drafts_completed": _task_count(DRAFT_PHASE_KEY, ("Completed",)),
+		"productions_attempted": sum(_task_count(phase, ("Completed",)) for phase in _PRODUCTION_PHASES),
+		"lessons_stored": len(lessons),
+		"gates": {
+			"approvals": len(approvals),
+			"refinements": len(refines),
+			"approve_rate": approve_rate,
+		},
+		"dimensions": _dimension_mentions(lessons + refines),
+		"briefs": _per_brief_rows(approvals, refines),
+	}
+
+
+def _task_count(phase_key: str, states: tuple[str, ...] | None) -> int:
+	"""Count study tasks by phase. states=None counts OPEN (non-terminal)."""
+	filters: dict = {"phase_key": phase_key}
+	if states:
+		filters["workflow_state"] = ["in", list(states)]
+	else:
+		filters["workflow_state"] = ["not in", ["Completed", "Cancelled"]]
+	return frappe.db.count("Task", filters)
+
+
+def _dimension_mentions(memories: list[dict]) -> dict[str, int]:
+	texts = [(m.get("memory") or "").lower() for m in memories]
+	return {
+		dim: sum(1 for t in texts if any(k in t for k in keywords)) for dim, keywords in _DIMENSIONS.items()
+	}
+
+
+def _per_brief_rows(approvals: list[dict], refines: list[dict]) -> list[dict]:
+	"""One row per brief that reached the CD gate: refinement rounds + outcome.
+	The refinement-loop TREND is this list read newest-first."""
+	briefs: dict[str, dict] = {}
+	for m in refines:
+		brief = (m.get("source_session") or "").removeprefix("study::")
+		if not brief:
+			continue
+		row = briefs.setdefault(brief, {"brief": brief, "refinements": 0, "approved": False})
+		row["refinements"] += 1
+	for m in approvals:
+		brief = (m.get("source_session") or "").removeprefix("study::")
+		if not brief:
+			continue
+		row = briefs.setdefault(brief, {"brief": brief, "refinements": 0, "approved": False})
+		row["approved"] = True
+	for row in briefs.values():
+		row["business_name"] = (
+			frappe.db.get_value("Brand Brief", row["brief"], "business_name") or row["brief"]
+		)
+	return sorted(briefs.values(), key=lambda r: r["brief"], reverse=True)

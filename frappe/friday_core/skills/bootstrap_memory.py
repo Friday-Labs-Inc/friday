@@ -62,6 +62,16 @@ _SKILL = {
 				"type": "string",
 				"description": "Optional grouping tag: a client name or record ID like 'BB-0001'.",
 			},
+			"scope": {
+				"type": "string",
+				"enum": ["project", "global"],
+				"description": (
+					"'project' (default) ties the memory to the current project — "
+					"recalled only there. 'global' makes it recallable on EVERY future "
+					"project — use for cross-project lessons (craft, conventions, "
+					"taste), never for one client's private facts."
+				),
+			},
 		},
 		"required": ["memory"],
 	},

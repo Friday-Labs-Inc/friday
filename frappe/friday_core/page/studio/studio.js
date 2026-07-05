@@ -51,9 +51,12 @@ class StudioBench {
 			<div class="friday-studio">
 				<div class="fs-intro">${__("Work waiting on the Creative Director")}</div>
 				<div class="fs-queue" data-zone="queue"></div>
+				<div class="fs-ledger-title">${__("Apprentice ledger")}</div>
+				<div class="fs-ledger" data-zone="ledger"></div>
 			</div>
 		`).appendTo(this.page.body);
 		this.$queue = this.$body.find('[data-zone="queue"]');
+		this.$ledger = this.$body.find('[data-zone="ledger"]');
 	}
 
 	refresh() {
@@ -64,6 +67,64 @@ class StudioBench {
 				this._render(r.message);
 			},
 		});
+		frappe.call({
+			method: "frappe.friday_core.console.studio_api.apprentice_ledger",
+			callback: (r) => {
+				if (!r || !r.message) return;
+				this._render_ledger(r.message);
+			},
+		});
+	}
+
+	_render_ledger(snap) {
+		const esc = frappe.utils.escape_html;
+		if (snap.error || !snap.ledger) {
+			this.$ledger.html(
+				`<div class="fs-empty fs-error">${__("Ledger error")}: ${esc(snap.error || "no data")}</div>`
+			);
+			return;
+		}
+		const L = snap.ledger;
+		const rate =
+			L.gates.approve_rate === null ? __("no gates yet") : `${L.gates.approve_rate}%`;
+		const drafting = L.flags.may_draft_directions;
+		const stat = (label, value) => `
+			<div class="fs-stat">
+				<div class="fs-stat-value">${value}</div>
+				<div class="fs-stat-label">${label}</div>
+			</div>`;
+		const dims = Object.entries(L.dimensions || {})
+			.map(([d, n]) => `${esc(d)} <b>${n}</b>`)
+			.join(" · ");
+		const briefs = (L.briefs || [])
+			.map(
+				(b) => `
+			<div class="fs-brief-row">
+				<span>${esc(b.business_name || b.brief)}</span>
+				<span>${__("{0} refinement(s)", [b.refinements])} — ${
+					b.approved ? __("approved") : __("in refinement")
+				}</span>
+			</div>`
+			)
+			.join("");
+
+		this.$ledger.html(`
+			<div class="fs-stats">
+				${stat(__("lessons stored"), L.lessons_stored)}
+				${stat(__("observations"), L.observations.completed)}
+				${stat(__("gate approve rate"), rate)}
+				${stat(__("productions"), L.productions_attempted)}
+				${stat(
+					__("drafting"),
+					drafting ? `<span class="fs-flag-on">${__("ON")}</span>` : __("off")
+				)}
+			</div>
+			${dims ? `<div class="fs-dims">${__("evidence by dimension")}: ${dims}</div>` : ""}
+			${briefs ? `<div class="fs-briefs">${briefs}</div>` : ""}
+			<div class="fs-ledger-note">${__(
+				"Graduation is an operator decision — the flag lives on the Creative Director agent profile."
+			)}</div>
+		`);
 	}
 
 	_render(snap) {
