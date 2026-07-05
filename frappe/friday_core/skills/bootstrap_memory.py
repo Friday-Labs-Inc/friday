@@ -72,8 +72,13 @@ _SKILL = {
 _ROLE_PERMS = {"Agent Memory": {"create": 1, "read": 1}}
 
 
-def provision(profile_name: str = "Friday") -> dict:
-	"""Provision role, perms, the Skill row, and profile wiring. Idempotent."""
+def ensure_memory_role() -> None:
+	"""Ensure the Memory Agent role + its Agent Memory perms exist. Idempotent
+	and safe from after_migrate (no prints, no manual commit). Split out of
+	provision() so DOMAIN provisioners can grant the role to their profiles:
+	the loader's permission-matrix filter DROPS an allow-listed `remember`
+	unless the profile holds create-on-Agent-Memory (design 95 finding — the
+	CD apprentice had remember in permitted_skills but never saw the tool)."""
 	if not frappe.db.exists("Role", MEMORY_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": MEMORY_ROLE}).insert(ignore_permissions=True)
 
@@ -90,6 +95,11 @@ def provision(profile_name: str = "Friday") -> dict:
 					**ptypes,
 				}
 			).insert(ignore_permissions=True)
+
+
+def provision(profile_name: str = "Friday") -> dict:
+	"""Provision role, perms, the Skill row, and profile wiring. Idempotent."""
+	ensure_memory_role()
 
 	skill_name = _SKILL["skill_name"]
 	if frappe.db.exists("Skill", skill_name):
