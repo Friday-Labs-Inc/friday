@@ -75,6 +75,25 @@ def studio_snapshot() -> dict:
 
 
 @frappe.whitelist()
+def apprentice_ledger() -> dict:
+	"""The design-95 confidence ledger — the evidence behind the graduation
+	decision ('is the apprentice ready?' as numbers, not a feeling). Counted
+	live by the study module; same fail-loud envelope as the snapshot."""
+	_require_brief_read()
+	try:
+		from frappe.friday_core.domains.randompack_study import ledger_snapshot
+
+		return {"generated_at": frappe.utils.now(), "ledger": ledger_snapshot()}
+	except Exception as exc:
+		frappe.log_error(title="friday.studio apprentice_ledger failed")
+		return {
+			"generated_at": frappe.utils.now(),
+			"error": f"{type(exc).__name__}: {str(exc)[:300]}",
+			"ledger": None,
+		}
+
+
+@frappe.whitelist()
 def package_preview(brief: str) -> dict:
 	"""Every production-package version on the brief's project, rendered
 	md→html, newest first — the CD's review material, refine rounds side

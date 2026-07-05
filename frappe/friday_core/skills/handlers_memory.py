@@ -40,14 +40,20 @@ def remember(skill_name: str, parameters: dict) -> dict:
 	session_id = ctx.get("session_id") or ""
 	# Design 73 — tag the memory with the project it was learned in (if any), so
 	# recall in a project room stays scoped to that project. Blank = global.
+	# Design 95 — scope="global" stores the memory UNTAGGED so it is recallable
+	# on every future project: for cross-project lessons (craft, conventions,
+	# taste), never for one client's private facts.
 	from frappe.friday_core.llm.memory import project_for_session
+
+	scope = (parameters.get("scope") or "project").strip().lower()
+	project = None if scope == "global" else project_for_session(session_id)
 
 	doc = frappe.get_doc(
 		{
 			"doctype": "Agent Memory",
 			"memory": memory,
 			"agent_profile": profile,
-			"project": project_for_session(session_id),
+			"project": project,
 			"subject": (parameters.get("subject") or "").strip(),
 			"memory_type": memory_type,
 			"source_session": session_id,

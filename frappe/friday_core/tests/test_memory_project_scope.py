@@ -184,6 +184,11 @@ class TestRememberTagsProject(unittest.TestCase):
 			out = remember("remember", {"memory": "a durable fact for this project"})
 			tagged = frappe.db.get_value("Agent Memory", out["record_name"], "project")
 			self.assertEqual(tagged, proj)
+
+			# Design 95: scope="global" stores UNTAGGED even in a project session,
+			# so cross-project lessons (the apprenticeship) recall everywhere.
+			out2 = remember("remember", {"memory": "a cross-project craft lesson", "scope": "global"})
+			self.assertIsNone(frappe.db.get_value("Agent Memory", out2["record_name"], "project"))
 		finally:
 			frappe.flags.friday_dispatch_context = None
 			frappe.db.sql("DELETE FROM `tabAgent Memory` WHERE agent_profile = %s", (profile,))
