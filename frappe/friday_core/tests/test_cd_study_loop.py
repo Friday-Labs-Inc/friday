@@ -102,7 +102,19 @@ class TestObserveTask(unittest.TestCase):
 		self.assertIn("remember", payload["description"])
 		self.assertIn(study.APPRENTICE_TAG, payload["description"])
 		self.assertIn("Friday Labs Inc", payload["description"])
+		# Finding R2: the prompt must NAME the Friday project the files live on
+		# (the agent guessed the RP id and read nothing) and warn off external ids.
+		self.assertIn('named "PROJ-1"', payload["description"])
+		self.assertIn("Do NOT use any RP/external", payload["description"])
 		task_doc.insert.assert_called_once()
+
+	@patch(f"{_M}.frappe")
+	def test_no_project_skips_observe_loudly(self, fr):
+		# Finding R2 guard: no Friday Project = nothing readable; skip + log.
+		fr.db.get_value.return_value = "Creative Director"
+		study.on_brief_study_signal(_brief("CD Creative", "Gate 1 Prep", project=None))
+		fr.get_doc.assert_not_called()
+		fr.log_error.assert_called()
 
 	@patch(f"{_M}.frappe")
 	def test_open_observe_task_deduped(self, fr):
@@ -296,6 +308,8 @@ class TestLedgerSnapshot(unittest.TestCase):
 		ledger = study.ledger_snapshot()
 
 		self.assertEqual(ledger["lessons_stored"], 2)
+		# R2 honesty metric: both lessons came from non-task sessions here → 0
+		self.assertEqual(ledger["observations"]["learned"], 0)
 		self.assertEqual(ledger["gates"]["approvals"], 1)
 		self.assertEqual(ledger["gates"]["refinements"], 2)
 		self.assertEqual(ledger["gates"]["approve_rate"], 33)  # 1 of 3

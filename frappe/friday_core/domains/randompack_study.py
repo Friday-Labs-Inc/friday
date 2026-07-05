@@ -124,6 +124,14 @@ def on_brief_study_signal(doc, method: str | None = None) -> None:
 def _spawn_observe_task(doc) -> None:
 	"""One side-study task for the apprentice: read what the human made and
 	remember the pairing. Deliberately NO work_item fields — see module doc."""
+	if not doc.get("project"):
+		# No Friday Project = nowhere the CD's uploads can live; an observe
+		# task would just fail to read anything (finding R2). Loud skip.
+		frappe.log_error(
+			title="friday.study observe skipped — brief has no project",
+			message=f"Brand Brief {doc.name} reached CD Creative exit with no linked Project.",
+		)
+		return
 	profile = _apprentice_profile()
 	if not profile:
 		return
@@ -178,7 +186,11 @@ def _observe_prompt(doc) -> str:
 		f"The brief:\n{brief_facts}\n\n"
 		"Do this:\n"
 		"1. Call list-project-files, then get-project-file on the Creative Director's "
-		"uploads (the design system document, direction boards, logo files).\n"
+		"uploads (the design system document, direction boards, logo files). His uploads "
+		f'are Files on the Friday Project named "{doc.get("project")}" — pass EXACTLY '
+		"that as the project name to both file tools. Do NOT use any RP/external "
+		"reference id (like PROJ-…) — that is a different system's key and the file "
+		"tools cannot resolve it.\n"
 		"2. Distill 1-3 lessons about HIS choices, and store each with `remember` "
 		f'(subject: "{APPRENTICE_TAG}", memory_type: "general", scope: "global" — these '
 		"are craft lessons you must recall on FUTURE projects). Each lesson pairs the "
@@ -453,11 +465,19 @@ def ledger_snapshot() -> dict:
 	decided = len(approvals) + len(refines)
 	approve_rate = round(100 * len(approvals) / decided) if decided else None
 
+	# "learned" counts observe sessions that actually stored ≥1 lesson —
+	# finding R2: an observe task that could not read the CD's files still
+	# COMPLETES (it reports why), so completed-count alone overcounts learning.
+	learned_sessions = {
+		m.get("source_session") for m in lessons if (m.get("source_session") or "").startswith("task::")
+	}
+
 	return {
 		"flags": {GRADUATION_FLAG: _may_draft()},
 		"observations": {
 			"completed": _task_count(OBSERVE_PHASE_KEY, ("Completed",)),
 			"open": _task_count(OBSERVE_PHASE_KEY, None),
+			"learned": len(learned_sessions),
 		},
 		"drafts_completed": _task_count(DRAFT_PHASE_KEY, ("Completed",)),
 		"productions_attempted": sum(_task_count(phase, ("Completed",)) for phase in _PRODUCTION_PHASES),
