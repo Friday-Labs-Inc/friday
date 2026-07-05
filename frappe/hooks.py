@@ -439,6 +439,10 @@ after_migrate = [
 	"frappe.friday_core.domains.randompack_brand.after_migrate",
 	# Design 95 slice 3 — the graduation flag (Custom Field on Agent Profile).
 	"frappe.friday_core.domains.randompack_study.ensure_graduation_flags",
+	# Design 95 (#19): keep the remember Skill row in lockstep with the code —
+	# provision() is CLI-only, so without this a schema edit (e.g. the scope
+	# param) never reaches existing sites.
+	"frappe.friday_core.skills.bootstrap_memory.ensure_memory_provisioned",
 	# Friday (design 82): ensure the 'Friday Operator' role exists so
 	# operator-tier gateway commands (/approve, /deny) have a gate to check.
 	# Idempotent.
