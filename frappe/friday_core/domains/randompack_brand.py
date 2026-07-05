@@ -399,6 +399,8 @@ PROFILES: list[dict] = [
 			"list-project-files",
 			"get-project-file",
 			"attach-deliverable",
+			# Design 95 slice 2 — the observe task stores lessons via remember.
+			"remember",
 		],
 		"system_prompt": (
 			"You are the studio's production designer — the apprentice seat of the "
