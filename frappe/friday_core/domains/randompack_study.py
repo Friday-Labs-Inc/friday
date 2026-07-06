@@ -74,10 +74,13 @@ _PRODUCTION_PHASES = ("production", "buildout")
 # Keyword buckets for the per-dimension ledger counts. Honest label: these
 # are MENTIONS in the stored lessons, not a taxonomy — cheap, deterministic,
 # and good enough to see where the apprentice's evidence is thin.
+# Widened after the Reezort run: real lessons name CONCRETE values ("#2F5E54",
+# "IBM Plex Mono") without ever saying "palette" or "typeface" — the abstract
+# words alone counted a palette+type lesson as 0 mentions.
 _DIMENSIONS: dict[str, tuple[str, ...]] = {
-	"palette": ("palette", "color", "colour", "hex"),
-	"typography": ("typograph", "typeface", "font"),
-	"logo": ("logo", "mark", "symbol", "monogram"),
+	"palette": ("palette", "color", "colour", "hex", "#", "accent"),
+	"typography": ("typograph", "typeface", "font", "sans", "serif", "mono"),
+	"logo": ("logo", "mark", "symbol", "monogram", "wordmark"),
 	"layout": ("layout", "grid", "spacing", "composition"),
 }
 
