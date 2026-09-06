@@ -69,7 +69,7 @@ class TestRaiseFailureIssue(unittest.TestCase):
 		raise_failure_issue("T1", error_type="SandboxTimeout", execution_log="EL-1")
 
 		payload = mock_frappe.get_doc.call_args.args[0]
-		self.assertEqual(payload["doctype"], "Issue")
+		self.assertEqual(payload["doctype"], "Agent Issue")
 		self.assertEqual(payload["source"], "Agent-raised")
 		self.assertEqual(payload["reason"], "Failure")
 		self.assertEqual(payload["status"], "Open")

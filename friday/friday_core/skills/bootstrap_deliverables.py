@@ -37,14 +37,14 @@ _SKILL = {
 	"schema": {"type": "object", "properties": {}, "required": []},
 	"docs": [
 		{"target_doctype": "File", "operation": "read"},
-		{"target_doctype": "Project", "operation": "read"},
+		{"target_doctype": "Agent Project", "operation": "read"},
 		{"target_doctype": "Raven Message", "operation": "create"},
 	],
 }
 
 _ROLE_PERMS = {
 	"File": {"read": 1},
-	"Project": {"read": 1},
+	"Agent Project": {"read": 1},
 	"Raven Message": {"create": 1, "read": 1},
 }
 

@@ -30,10 +30,10 @@ from __future__ import annotations
 
 import frappe
 
-# The Task DocType these Issues point at — renamed from "Agent Task" to "Task"
+# The Task DocType these Issues point at — renamed from "Agent Task" to "Agent Task"
 # in Phase B (doc 53 §7). Kept as a single constant for the dependency lookups
 # below; the Link `options` live in issue.json (related_task, waiting_on).
-TASK_DOCTYPE = "Task"
+TASK_DOCTYPE = "Agent Task"
 
 # A dependency stops blocking once it reaches one of these terminal states.
 # Ported from ERPNext Task.validate_status, which refuses to complete a task
@@ -81,7 +81,7 @@ def raise_failure_issue(
 
 	issue = frappe.get_doc(
 		{
-			"doctype": "Issue",
+			"doctype": "Agent Issue",
 			"source": "Agent-raised",
 			"reason": "Failure",
 			"status": "Open",
@@ -121,7 +121,7 @@ def raise_dependency_wait_issue(task_name: str, blocking_task: str) -> str:
 	"""
 	issue = frappe.get_doc(
 		{
-			"doctype": "Issue",
+			"doctype": "Agent Issue",
 			"source": "Agent-raised",
 			"reason": "Dependency-Wait",
 			"status": "Open",

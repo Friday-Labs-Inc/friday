@@ -176,7 +176,7 @@ def _has_active_task(doc, phase_key: str) -> bool:
 	re-entering a state) correctly spawn fresh work."""
 	return bool(
 		frappe.db.exists(
-			"Task",
+			"Agent Task",
 			{
 				"work_item_doctype": doc.doctype,
 				"work_item_name": doc.name,

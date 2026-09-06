@@ -125,7 +125,7 @@ def materialize_task_deliverable(task_name: str) -> "dict | None":
 	Returns a dict of created File names, or None if the task has no
 	materializable content (gate / error / empty).
 	"""
-	task = frappe.get_doc("Task", task_name)
+	task = frappe.get_doc("Agent Task", task_name)
 	content = _extract_markdown(task.get("result"))
 	if not content:
 		return None
@@ -134,36 +134,36 @@ def materialize_task_deliverable(task_name: str) -> "dict | None":
 	slug = _slug(task_name)
 	body = _wrap_markdown(title, task.get("project"), task_name, content)
 
-	_clear_prior(task_name, "Task")
-	created = {"md": _attach(f"{_PREFIX}{slug}.md", body.encode("utf-8"), "Task", task_name)}
+	_clear_prior(task_name, "Agent Task")
+	created = {"md": _attach(f"{_PREFIX}{slug}.md", body.encode("utf-8"), "Agent Task", task_name)}
 	pdf = _render_pdf(title, content)
 	if pdf:
-		created["pdf"] = _attach(f"{_PREFIX}{slug}.pdf", pdf, "Task", task_name)
+		created["pdf"] = _attach(f"{_PREFIX}{slug}.pdf", pdf, "Agent Task", task_name)
 	return created
 
 
 def assemble_project_package(project_name: str) -> "dict | None":
 	"""Concatenate every task's deliverable into one package on the Project."""
 	tasks = frappe.get_all(
-		"Task", filters={"project": project_name}, fields=["name", "title"], order_by="creation asc"
+		"Agent Task", filters={"project": project_name}, fields=["name", "title"], order_by="creation asc"
 	)
 	sections = []
 	for t in tasks:
-		content = _extract_markdown(frappe.db.get_value("Task", t["name"], "result"))
+		content = _extract_markdown(frappe.db.get_value("Agent Task", t["name"], "result"))
 		if content:
 			sections.append(f"## {t['title'] or t['name']}\n\n{content}")
 	if not sections:
 		return None
 
-	project_title = frappe.db.get_value("Project", project_name, "project_name") or project_name
+	project_title = frappe.db.get_value("Agent Project", project_name, "project_name") or project_name
 	body = f"# {project_title} — Deliverable Package\n\n" + "\n\n---\n\n".join(sections)
 	slug = _slug(project_name)
 
-	_clear_prior(project_name, "Project")
-	created = {"md": _attach(f"{_PREFIX}{slug}.md", body.encode("utf-8"), "Project", project_name)}
+	_clear_prior(project_name, "Agent Project")
+	created = {"md": _attach(f"{_PREFIX}{slug}.md", body.encode("utf-8"), "Agent Project", project_name)}
 	pdf = _render_pdf(f"{project_title} — Deliverable Package", body)
 	if pdf:
-		created["pdf"] = _attach(f"{_PREFIX}{slug}.pdf", pdf, "Project", project_name)
+		created["pdf"] = _attach(f"{_PREFIX}{slug}.pdf", pdf, "Agent Project", project_name)
 	return created
 
 
@@ -288,7 +288,7 @@ def _work_item_context_for(work_item_doctype: str, work_item_name: str, project_
 	logo_rows = frappe.get_all(
 		"File",
 		filters={
-			"attached_to_doctype": "Project",
+			"attached_to_doctype": "Agent Project",
 			"attached_to_name": project_name,
 			CUSTOMER_FLAG_FIELD: 1,
 		},
@@ -328,7 +328,7 @@ def materialize_for_customer(work_item_doctype: str, work_item_name: str) -> "di
 		return None
 	files = frappe.get_all(
 		"File",
-		filters={"attached_to_doctype": "Project", "attached_to_name": project},
+		filters={"attached_to_doctype": "Agent Project", "attached_to_name": project},
 		fields=["name", "file_name", "creation"],
 	)
 	sources = select_customer_sources(files)
@@ -352,14 +352,14 @@ def materialize_for_customer(work_item_doctype: str, work_item_name: str) -> "di
 		# Replace a prior render of the same deliverable (re-delivery, refine rounds).
 		for prior in frappe.get_all(
 			"File",
-			filters={"attached_to_doctype": "Project", "attached_to_name": project, "file_name": out_name},
+			filters={"attached_to_doctype": "Agent Project", "attached_to_name": project, "file_name": out_name},
 			pluck="name",
 		):
 			try:
 				frappe.delete_doc("File", prior, force=True, ignore_permissions=True)
 			except Exception:
 				pass
-		file_id = _attach(out_name, payload, "Project", project)
+		file_id = _attach(out_name, payload, "Agent Project", project)
 		frappe.db.set_value("File", file_id, CUSTOMER_FLAG_FIELD, 1, update_modified=False)
 		created[human_title] = file_id
 	return created or None

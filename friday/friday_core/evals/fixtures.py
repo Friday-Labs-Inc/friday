@@ -26,10 +26,10 @@ EVAL_PROJECT = "Eval Sample Project"
 def ensure_eval_fixtures() -> dict:
 	"""Create the fixtures the seed suite references. Idempotent. Returns a summary."""
 	created: list[str] = []
-	if not frappe.db.exists("Project", EVAL_PROJECT):
+	if not frappe.db.exists("Agent Project", EVAL_PROJECT):
 		frappe.get_doc(
 			{
-				"doctype": "Project",
+				"doctype": "Agent Project",
 				"project_name": EVAL_PROJECT,
 				"status": "Open",
 				"description": "Fixture for the Friday eval harness (Design 91). Safe to delete.",

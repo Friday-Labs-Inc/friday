@@ -80,11 +80,11 @@ def recompute_project_rollup(project_name: str | None) -> None:
 	Idempotent and side-effect-free beyond the single Project write. No-ops when
 	the project doesn't exist (e.g. a task with no project, or mid-delete).
 	"""
-	if not project_name or not frappe.db.exists("Project", project_name):
+	if not project_name or not frappe.db.exists("Agent Project", project_name):
 		return
 
 	tasks = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={"project": project_name},
 		fields=["workflow_state", "cost_usd", "started_at", "completed_at"],
 	)
@@ -105,7 +105,7 @@ def recompute_project_rollup(project_name: str | None) -> None:
 	actual_end = frappe.utils.getdate(max(ends)) if (all_done and ends) else None
 
 	frappe.db.set_value(
-		"Project",
+		"Agent Project",
 		project_name,
 		{
 			"total_tasks": total,

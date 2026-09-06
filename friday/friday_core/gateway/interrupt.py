@@ -93,7 +93,7 @@ def collect_active_subtree(session_id: str) -> list[str]:
 	(`handlers_delegate.py:132,138`).
 	"""
 	roots = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={"originating_session": session_id, "workflow_state": ("in", _ACTIVE_STATES)},
 		pluck="name",
 	)
@@ -105,7 +105,7 @@ def collect_active_subtree(session_id: str) -> list[str]:
 			continue
 		seen.append(name)
 		children = frappe.get_all(
-			"Task",
+			"Agent Task",
 			filters={"parent_task": name, "workflow_state": ("in", _ACTIVE_STATES)},
 			pluck="name",
 		)
@@ -124,7 +124,7 @@ def cascade_interrupt(session_id: str) -> int:
 	names = collect_active_subtree(session_id)
 	for name in names:
 		request_interrupt(f"task::{name}")
-		if frappe.db.get_value("Task", name, "workflow_state") != "Executing":
+		if frappe.db.get_value("Agent Task", name, "workflow_state") != "Executing":
 			_cancel_task(name)
 	return len(names)
 
@@ -137,7 +137,7 @@ def _cancel_task(task_name: str) -> None:
 	"""
 	try:
 		frappe.db.set_value(
-			"Task",
+			"Agent Task",
 			task_name,
 			{"workflow_state": "Cancelled", "blocked_reason": "interrupted"},
 			update_modified=False,
@@ -205,7 +205,7 @@ def force_kill_session(session_id: str, user: str) -> dict:
 		# Mark ForceKilled + audit now; the task path won't override it (it checks
 		# force_killed_by). A not-yet-running task is simply terminal and skipped.
 		frappe.db.set_value(
-			"Task",
+			"Agent Task",
 			task_name,
 			{
 				"workflow_state": FORCE_KILLED_STATE,

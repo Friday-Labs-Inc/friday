@@ -57,8 +57,8 @@
   {
    "fieldname": "project",
    "fieldtype": "Link",
-   "label": "Project",
-   "options": "Project"
+   "label": "Agent Project",
+   "options": "Agent Project"
   },
   {
    "fieldname": "assigned_to_profile",
@@ -130,7 +130,7 @@
    "options": "Task Dependency"
   },
   {
-   "description": "Set by the dispatcher at Pending → Assigned. The reconciler uses this + a 30s grace to detect Assigned-but-never-picked-up tasks (lost enqueue) and re-fire the runner trigger.",
+   "description": "Set by the dispatcher at Pending \u2192 Assigned. The reconciler uses this + a 30s grace to detect Assigned-but-never-picked-up tasks (lost enqueue) and re-fire the runner trigger.",
    "fieldname": "assigned_at",
    "fieldtype": "Datetime",
    "label": "Assigned At",
@@ -144,7 +144,7 @@
    "read_only": 1
   },
   {
-   "description": "Idempotent claim token written by the runner in a single check-and-set transaction (Assigned → Executing). A duplicate trigger sees a non-empty token and exits cleanly — the runner becomes at-least-once-trigger / exactly-once-effect.",
+   "description": "Idempotent claim token written by the runner in a single check-and-set transaction (Assigned \u2192 Executing). A duplicate trigger sees a non-empty token and exits cleanly \u2014 the runner becomes at-least-once-trigger / exactly-once-effect.",
    "fieldname": "executing_token",
    "fieldtype": "Data",
    "label": "Executing Token",
@@ -180,11 +180,11 @@
    "read_only": 1
   },
   {
-   "description": "The parent Task that delegated this one (design 69). NULL for top-level tasks and chat-originated delegations. The chain parent_task → parent_task forms the delegation graph, queryable via a recursive CTE.",
+   "description": "The parent Task that delegated this one (design 69). NULL for top-level tasks and chat-originated delegations. The chain parent_task \u2192 parent_task forms the delegation graph, queryable via a recursive CTE.",
    "fieldname": "parent_task",
    "fieldtype": "Link",
    "label": "Parent Task",
-   "options": "Task",
+   "options": "Agent Task",
    "read_only": 1,
    "search_index": 1
   },
@@ -212,7 +212,7 @@
    "options": "work_item_doctype"
   },
   {
-   "description": "Design 75: the Friday Workflow Transition Meta phase_key this task executes. On completion the engine resolves the transition by (workflow, from_state, action) via this key and fires the next state — never keyed on the target state (back-edge safe).",
+   "description": "Design 75: the Friday Workflow Transition Meta phase_key this task executes. On completion the engine resolves the transition by (workflow, from_state, action) via this key and fires the next state \u2014 never keyed on the target state (back-edge safe).",
    "fieldname": "phase_key",
    "fieldtype": "Data",
    "label": "Phase Key"
@@ -264,7 +264,7 @@
    "read_only": 1
   },
   {
-   "description": "LLM spend for this task's run, from the result envelope (design 65d). Renders blank when usage telemetry is absent — never a fabricated 0.",
+   "description": "LLM spend for this task's run, from the result envelope (design 65d). Renders blank when usage telemetry is absent \u2014 never a fabricated 0.",
    "fieldname": "cost_usd",
    "fieldtype": "Currency",
    "label": "Cost (USD)",
@@ -296,7 +296,7 @@
  ],
  "links": [],
  "module": "Friday Core",
- "name": "Task",
+ "name": "Agent Task",
  "naming_rule": "Autoincrement",
  "permissions": [
   {

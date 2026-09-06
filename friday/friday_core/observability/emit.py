@@ -99,7 +99,7 @@ def emit(
 		project_name = project
 		if task and not project_name:
 			try:
-				project_name = frappe.db.get_value("Task", task, "project")
+				project_name = frappe.db.get_value("Agent Task", task, "project")
 				# Defence-in-depth: get_value may return a Mock when the DB is
 				# stubbed by a test — only keep it if it's a real string.
 				if not isinstance(project_name, str):

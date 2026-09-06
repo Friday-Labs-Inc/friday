@@ -46,7 +46,7 @@ def get_phase_outputs(skill_name: str, parameters: dict) -> dict:
 		if session.startswith("task::"):
 			task_name = session.removeprefix("task::")
 			row = frappe.db.get_value(
-				"Task", task_name, ["work_item_doctype", "work_item_name"], as_dict=True
+				"Agent Task", task_name, ["work_item_doctype", "work_item_name"], as_dict=True
 			)
 			if row:
 				work_item_doctype = work_item_doctype or row.work_item_doctype
@@ -65,7 +65,7 @@ def get_phase_outputs(skill_name: str, parameters: dict) -> dict:
 	if work_item_doctype:
 		filters["work_item_doctype"] = work_item_doctype
 	rows = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters=filters,
 		fields=["phase_key", "assigned_to_profile", "result"],
 		order_by="creation asc",

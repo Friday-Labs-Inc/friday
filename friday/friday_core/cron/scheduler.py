@@ -110,7 +110,7 @@ def _fire(job_name: str, now: datetime) -> None:
 	# with a profile is what makes the runner pick it up (tasks/workflow.py).
 	frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": f"[cron] {job.job_name}",
 			"description": _frame_cron_prompt(job.prompt),
 			"assigned_to_profile": job.agent_profile,

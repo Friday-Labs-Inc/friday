@@ -69,7 +69,7 @@ class TestConsoleSnapshot(unittest.TestCase):
 		state_filters = [
 			c.kwargs.get("filters", {}).get("workflow_state")
 			for c in mock_frappe.get_all.call_args_list
-			if c.args and c.args[0] == "Task"
+			if c.args and c.args[0] == "Agent Task"
 		]
 		self.assertIn(["in", list(ACTIVE_STATES)], state_filters)
 

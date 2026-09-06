@@ -24,18 +24,18 @@ import frappe
 
 
 def _project() -> str:
-	existing = frappe.get_all("Project", limit=1, pluck="name")
+	existing = frappe.get_all("Agent Project", limit=1, pluck="name")
 	if existing:
 		return existing[0]
 	return frappe.get_doc(
-		{"doctype": "Project", "project_name": "Deliverables Test Project", "status": "Open"}
+		{"doctype": "Agent Project", "project_name": "Deliverables Test Project", "status": "Open"}
 	).insert(ignore_permissions=True).name
 
 
 def _task(project: str, title: str, result: "dict | None") -> str:
 	doc = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": title,
 			"project": project,
 			"workflow_state": "Pending",
@@ -54,10 +54,10 @@ def _deliverable_files(dt: str, dn: str) -> list[str]:
 
 
 def _cleanup_task(task_name: str) -> None:
-	for f in frappe.get_all("File", filters={"attached_to_doctype": "Task", "attached_to_name": task_name}, pluck="name"):
+	for f in frappe.get_all("File", filters={"attached_to_doctype": "Agent Task", "attached_to_name": task_name}, pluck="name"):
 		frappe.delete_doc("File", f, force=True, ignore_permissions=True)
-	if frappe.db.exists("Task", task_name):
-		frappe.delete_doc("Task", task_name, force=True, ignore_permissions=True)
+	if frappe.db.exists("Agent Task", task_name):
+		frappe.delete_doc("Agent Task", task_name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
 
@@ -112,7 +112,7 @@ class TestMaterializeTask(unittest.TestCase):
 		frappe.db.commit()
 		self.assertIsNotNone(created)
 		self.assertIn("md", created)
-		files = _deliverable_files("Task", self.task)
+		files = _deliverable_files("Agent Task", self.task)
 		self.assertTrue(any(f.endswith(".md") for f in files))
 
 	def test_markdown_includes_summary_and_title(self):
@@ -132,11 +132,11 @@ class TestMaterializeTask(unittest.TestCase):
 
 		materialize_task_deliverable(self.task)
 		frappe.db.commit()
-		first = set(_deliverable_files("Task", self.task))
+		first = set(_deliverable_files("Agent Task", self.task))
 		materialize_task_deliverable(self.task)
 		frappe.db.commit()
 		# Same logical files, not doubled.
-		count_md = sum(1 for f in _deliverable_files("Task", self.task) if f.endswith(".md"))
+		count_md = sum(1 for f in _deliverable_files("Agent Task", self.task) if f.endswith(".md"))
 		self.assertEqual(count_md, 1)
 
 
@@ -153,7 +153,7 @@ class TestNoArtifactForNonDeliverable(unittest.TestCase):
 		task = _task(self.project, "Gate 1 — client picks", None)
 		try:
 			self.assertIsNone(materialize_task_deliverable(task))
-			self.assertEqual(_deliverable_files("Task", task), [])
+			self.assertEqual(_deliverable_files("Agent Task", task), [])
 		finally:
 			_cleanup_task(task)
 
@@ -163,7 +163,7 @@ class TestNoArtifactForNonDeliverable(unittest.TestCase):
 		task = _task(self.project, "Failed task", {"status": "error", "error_type": "LLMError"})
 		try:
 			self.assertIsNone(materialize_task_deliverable(task))
-			self.assertEqual(_deliverable_files("Task", task), [])
+			self.assertEqual(_deliverable_files("Agent Task", task), [])
 		finally:
 			_cleanup_task(task)
 
@@ -175,7 +175,7 @@ class TestProjectPackage(unittest.TestCase):
 		from friday.friday_core.deliverables.materialize import assemble_project_package
 
 		project = frappe.get_doc(
-			{"doctype": "Project", "project_name": "Pkg Test Project", "status": "Open"}
+			{"doctype": "Agent Project", "project_name": "Pkg Test Project", "status": "Open"}
 		).insert(ignore_permissions=True).name
 		t1 = _task(project, "Strategy", {"status": "success", "summary": "Strategy content ABC"})
 		t2 = _task(project, "Naming", {"status": "success", "summary": "Naming content XYZ"})
@@ -193,9 +193,9 @@ class TestProjectPackage(unittest.TestCase):
 		finally:
 			_cleanup_task(t1)
 			_cleanup_task(t2)
-			for f in frappe.get_all("File", filters={"attached_to_doctype": "Project", "attached_to_name": project}, pluck="name"):
+			for f in frappe.get_all("File", filters={"attached_to_doctype": "Agent Project", "attached_to_name": project}, pluck="name"):
 				frappe.delete_doc("File", f, force=True, ignore_permissions=True)
-			frappe.delete_doc("Project", project, force=True, ignore_permissions=True)
+			frappe.delete_doc("Agent Project", project, force=True, ignore_permissions=True)
 			frappe.db.commit()
 
 

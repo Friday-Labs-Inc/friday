@@ -64,10 +64,10 @@ _SKILL = {
         },
         "required": ["agent_profile", "instruction"],
     },
-    "required_doctypes": [{"target_doctype": "Task", "operation": "create"}],
+    "required_doctypes": [{"target_doctype": "Agent Task", "operation": "create"}],
 }
 
-_ROLE_PERMS = {"Task": {"create": 1, "read": 1, "write": 1}}
+_ROLE_PERMS = {"Agent Task": {"create": 1, "read": 1, "write": 1}}
 
 
 def ensure_definitions() -> None:

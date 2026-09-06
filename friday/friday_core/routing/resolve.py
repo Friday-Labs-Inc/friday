@@ -88,7 +88,7 @@ def _project_lead_for(chat_id: str | None) -> str | None:
 	project = project_for_session(chat_id)
 	if not project:
 		return None
-	lead = frappe.db.get_value("Project", project, "project_lead_profile")
+	lead = frappe.db.get_value("Agent Project", project, "project_lead_profile")
 	if not lead:
 		return None
 	if frappe.db.get_value("Agent Profile", lead, "status") != "Active":

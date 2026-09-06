@@ -258,7 +258,7 @@ def _attach_target(params: dict, ctx: dict):
 	if session.startswith("task::"):
 		task_name = session.removeprefix("task::")
 		wi = frappe.db.get_value(
-			"Task", task_name, ["work_item_doctype", "work_item_name"], as_dict=True
+			"Agent Task", task_name, ["work_item_doctype", "work_item_name"], as_dict=True
 		)
 		if wi and wi.work_item_doctype and wi.work_item_name:
 			return wi.work_item_doctype, wi.work_item_name

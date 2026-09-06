@@ -33,19 +33,19 @@ def _clear_events_for_task(task_name: str) -> None:
 
 
 def _ensure_test_task() -> str:
-	existing = frappe.get_all("Task", limit=1, pluck="name")
+	existing = frappe.get_all("Agent Task", limit=1, pluck="name")
 	if existing:
 		return existing[0]
-	project = frappe.get_all("Project", limit=1, pluck="name")
+	project = frappe.get_all("Agent Project", limit=1, pluck="name")
 	project_name = project[0] if project else None
 	if not project_name:
 		proj = frappe.get_doc(
-			{"doctype": "Project", "project_name": "Test Retention Project"}
+			{"doctype": "Agent Project", "project_name": "Test Retention Project"}
 		).insert(ignore_permissions=True)
 		project_name = proj.name
 	task = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": "Test Retention Task",
 			"project": project_name,
 			"workflow_state": "Pending",
@@ -118,7 +118,7 @@ class TestWriteTaskCompletionSummary(unittest.TestCase):
 		emit("runner.complete", task=self.task_name)
 		frappe.db.commit()
 
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Completed"
 		task.completed_at = now_datetime()
 		task.save(ignore_permissions=True)
@@ -136,7 +136,7 @@ class TestWriteTaskCompletionSummary(unittest.TestCase):
 		"""A second call on the same task overwrites in place."""
 		from friday.friday_core.observability.retention import write_task_completion_summary
 
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Completed"
 		task.completed_at = now_datetime()
 		task.save(ignore_permissions=True)
@@ -157,7 +157,7 @@ class TestWriteTaskCompletionSummary(unittest.TestCase):
 		"""A failed write logs and returns None — never propagates."""
 		from friday.friday_core.observability.retention import write_task_completion_summary
 
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Completed"
 
 		with patch("frappe.get_doc") as mock_get_doc:

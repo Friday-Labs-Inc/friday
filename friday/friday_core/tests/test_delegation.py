@@ -36,14 +36,14 @@ class TestDelegationFields(unittest.TestCase):
     """New fields required for delegation are present on the right DocTypes."""
 
     def test_task_has_parent_task_link(self):
-        spec = _load_json(FRIDAY_CORE / "doctype" / "task" / "task.json")
+        spec = _load_json(FRIDAY_CORE / "doctype" / "agent_task" / "agent_task.json")
         f = _field(spec, "parent_task")
         self.assertIsNotNone(f, "Task must have a parent_task field")
         self.assertEqual(f["fieldtype"], "Link")
-        self.assertEqual(f["options"], "Task")
+        self.assertEqual(f["options"], "Agent Task")
 
     def test_parent_task_in_field_order(self):
-        spec = _load_json(FRIDAY_CORE / "doctype" / "task" / "task.json")
+        spec = _load_json(FRIDAY_CORE / "doctype" / "agent_task" / "agent_task.json")
         order = spec["field_order"]
         self.assertIn("parent_task", order)
         self.assertIn("originating_platform", order)
@@ -329,7 +329,7 @@ class TestChildTaskCreation(unittest.TestCase):
         captured_task = {}
 
         def mock_get_doc(spec):
-            if isinstance(spec, dict) and spec.get("doctype") == "Task":
+            if isinstance(spec, dict) and spec.get("doctype") == "Agent Task":
                 captured_task.update(spec)
                 doc = MagicMock()
                 doc.name = "T-101"

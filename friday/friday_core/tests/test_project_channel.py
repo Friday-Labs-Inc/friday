@@ -30,7 +30,7 @@ def _raven_installed() -> bool:
 def _make_project(name: str, backend_ref: str | None = None) -> str:
 	doc = frappe.get_doc(
 		{
-			"doctype": "Project",
+			"doctype": "Agent Project",
 			"project_name": name,
 			"status": "Open",
 			"backend_ref": backend_ref,
@@ -41,15 +41,15 @@ def _make_project(name: str, backend_ref: str | None = None) -> str:
 
 def _cleanup_project(project_name: str) -> None:
 	"""Delete the project + any channel it provisioned (and the channel's rows)."""
-	ch = frappe.db.get_value("Project", project_name, "conversation_channel") if frappe.db.exists(
-		"Project", project_name
+	ch = frappe.db.get_value("Agent Project", project_name, "conversation_channel") if frappe.db.exists(
+		"Agent Project", project_name
 	) else None
 	if ch and frappe.db.exists("Raven Channel", ch):
 		frappe.db.sql("DELETE FROM `tabRaven Message` WHERE channel_id = %s", (ch,))
 		frappe.db.sql("DELETE FROM `tabRaven Channel Member` WHERE channel_id = %s", (ch,))
 		frappe.delete_doc("Raven Channel", ch, force=True, ignore_permissions=True)
-	if frappe.db.exists("Project", project_name):
-		frappe.delete_doc("Project", project_name, force=True, ignore_permissions=True)
+	if frappe.db.exists("Agent Project", project_name):
+		frappe.delete_doc("Agent Project", project_name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
 
@@ -68,7 +68,7 @@ class TestProjectChannelProvision(unittest.TestCase):
 		project = _make_project(self.pname, backend_ref="D73-ALPHA")
 		frappe.db.commit()
 
-		channel = frappe.db.get_value("Project", project, "conversation_channel")
+		channel = frappe.db.get_value("Agent Project", project, "conversation_channel")
 		self.assertTrue(channel, "Project should be linked to a conversation channel")
 		self.assertTrue(frappe.db.exists("Raven Channel", channel))
 
@@ -76,13 +76,13 @@ class TestProjectChannelProvision(unittest.TestCase):
 		linked = frappe.db.get_value(
 			"Raven Channel", channel, ["linked_doctype", "linked_document"], as_dict=True
 		)
-		self.assertEqual(linked["linked_doctype"], "Project")
+		self.assertEqual(linked["linked_doctype"], "Agent Project")
 		self.assertEqual(linked["linked_document"], project)
 
 	def test_channel_name_uses_backend_ref(self):
 		project = _make_project(self.pname, backend_ref="D73-ALPHA")
 		frappe.db.commit()
-		channel = frappe.db.get_value("Project", project, "conversation_channel")
+		channel = frappe.db.get_value("Agent Project", project, "conversation_channel")
 		# Raven lowercases + hyphenates; slug is proj-<backend_ref>.
 		cname = frappe.db.get_value("Raven Channel", channel, "channel_name")
 		self.assertIn("d73-alpha", cname)
@@ -92,7 +92,7 @@ class TestProjectChannelProvision(unittest.TestCase):
 
 		project = _make_project(self.pname, backend_ref="D73-ALPHA")
 		frappe.db.commit()
-		channel = frappe.db.get_value("Project", project, "conversation_channel")
+		channel = frappe.db.get_value("Agent Project", project, "conversation_channel")
 		bot_user = frappe.db.get_value("Raven Bot", FRIDAY_BOT_NAME, "raven_user")
 		if bot_user:  # bot only exists if the Raven surface was bootstrapped
 			self.assertTrue(
@@ -106,7 +106,7 @@ class TestProjectChannelProvision(unittest.TestCase):
 
 		project = _make_project(self.pname, backend_ref="D73-ALPHA")
 		frappe.db.commit()
-		first = frappe.db.get_value("Project", project, "conversation_channel")
+		first = frappe.db.get_value("Agent Project", project, "conversation_channel")
 		# Call again explicitly — must return the same channel, create no new one.
 		second = provision_project_channel(project)
 		self.assertEqual(first, second)
@@ -128,10 +128,10 @@ class TestProjectChannelArchive(unittest.TestCase):
 	def test_completing_project_archives_channel(self):
 		project = _make_project(self.pname, backend_ref="D73-BETA")
 		frappe.db.commit()
-		channel = frappe.db.get_value("Project", project, "conversation_channel")
+		channel = frappe.db.get_value("Agent Project", project, "conversation_channel")
 		self.assertFalse(frappe.db.get_value("Raven Channel", channel, "is_archived"))
 
-		doc = frappe.get_doc("Project", project)
+		doc = frappe.get_doc("Agent Project", project)
 		doc.status = "Completed"
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -140,9 +140,9 @@ class TestProjectChannelArchive(unittest.TestCase):
 	def test_on_hold_does_not_archive(self):
 		project = _make_project(self.pname, backend_ref="D73-BETA")
 		frappe.db.commit()
-		channel = frappe.db.get_value("Project", project, "conversation_channel")
+		channel = frappe.db.get_value("Agent Project", project, "conversation_channel")
 
-		doc = frappe.get_doc("Project", project)
+		doc = frappe.get_doc("Agent Project", project)
 		doc.status = "On Hold"
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -172,6 +172,6 @@ class TestProjectChannelGraceful(unittest.TestCase):
 				# must be swallowed and the Project must persist.
 				project = _make_project(pname)
 				frappe.db.commit()
-				self.assertTrue(frappe.db.exists("Project", project))
+				self.assertTrue(frappe.db.exists("Agent Project", project))
 		finally:
 			_cleanup_project(pname)

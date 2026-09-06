@@ -29,7 +29,7 @@ _SKILLS: dict[str, dict] = {
 			"properties": {"project": {"type": "string", "description": "The Friday Project name."}},
 			"required": ["project"],
 		},
-		"docs": [{"target_doctype": "Project", "operation": "read"}],
+		"docs": [{"target_doctype": "Agent Project", "operation": "read"}],
 	},
 	"list-projects": {
 		"description": "List ALL Friday Projects at a glance — name, status, %complete, task counts. Answers 'what projects exist / are there any (new) projects / list projects'.",
@@ -41,7 +41,7 @@ _SKILLS: dict[str, dict] = {
 			},
 			"required": [],
 		},
-		"docs": [{"target_doctype": "Project", "operation": "read"}],
+		"docs": [{"target_doctype": "Agent Project", "operation": "read"}],
 	},
 	"update-task": {
 		"description": "Complete or cancel ONE pipeline task on a human's instruction (completing a gate milestone unblocks its dependents).",
@@ -54,7 +54,7 @@ _SKILLS: dict[str, dict] = {
 			},
 			"required": ["task", "action"],
 		},
-		"docs": [{"target_doctype": "Task", "operation": "write"}],
+		"docs": [{"target_doctype": "Agent Task", "operation": "write"}],
 	},
 	"pause-project": {
 		"description": "Pause (or resume) a whole pipeline — no further tasks dispatch while a project is On Hold.",
@@ -67,13 +67,13 @@ _SKILLS: dict[str, dict] = {
 			},
 			"required": ["project"],
 		},
-		"docs": [{"target_doctype": "Project", "operation": "write"}],
+		"docs": [{"target_doctype": "Agent Project", "operation": "write"}],
 	},
 }
 
 _ROLE_PERMS = {
-	"Project": {"create": 1, "read": 1, "write": 1},
-	"Task": {"create": 1, "read": 1, "write": 1},
+	"Agent Project": {"create": 1, "read": 1, "write": 1},
+	"Agent Task": {"create": 1, "read": 1, "write": 1},
 }
 
 

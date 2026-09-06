@@ -96,8 +96,8 @@ HUB_SHORTCUTS: list[dict] = [
 	{"type": "Page", "label": "Studio", "link_to": "studio", "color": "Cyan"},
 	{"type": "Page", "label": "Project Console", "link_to": "project-console", "color": "Green"},
 	{"type": "Page", "label": "Dispatcher Console", "link_to": "dispatcher-console", "color": "Red"},
-	{"type": "DocType", "label": "Projects", "link_to": "Project", "doc_view": "List", "color": "Blue"},
-	{"type": "DocType", "label": "Tasks", "link_to": "Task", "doc_view": "List", "color": "Cyan"},
+	{"type": "DocType", "label": "Projects", "link_to": "Agent Project", "doc_view": "List", "color": "Blue"},
+	{"type": "DocType", "label": "Tasks", "link_to": "Agent Task", "doc_view": "List", "color": "Cyan"},
 	{"type": "DocType", "label": "Agents", "link_to": "Agent Profile", "doc_view": "List", "color": "Purple"},
 	{"type": "Page", "label": "Setup Friday", "link_to": "friday-setup", "color": "Orange"},
 ]
@@ -105,7 +105,7 @@ HUB_SHORTCUTS: list[dict] = [
 # Navigation cards: each is a titled group of DocType links. The link label is
 # the DocType name itself — one source of truth, no separate display string.
 HUB_CARDS: list[dict] = [
-	{"label": "Work", "links": ["Project", "Task", "Issue", "Task Dependency"]},
+	{"label": "Work", "links": ["Agent Project", "Agent Task", "Agent Issue", "Task Dependency"]},
 	{"label": "Agents", "links": ["Agent Profile", "Agent Settings", "Agent Memory"]},
 	{"label": "Models & Skills", "links": ["LLM Provider", "LLM Usage Log", "Skill", "MCP Server"]},
 	{"label": "Conversations & Surfaces", "links": ["Chat Message", "Chat Platform", "Connector", "Connector Event"]},
@@ -124,26 +124,26 @@ HUB_CARDS: list[dict] = [
 NUMBER_CARDS: list[dict] = [
 	{
 		"label": "Friday Active Projects",
-		"document_type": "Project",
-		"filters_json": json.dumps([["Project", "status", "in", ["Open", "In Progress"], False]]),
+		"document_type": "Agent Project",
+		"filters_json": json.dumps([["Agent Project", "status", "in", ["Open", "In Progress"], False]]),
 		"color": "#29CD42",
 	},
 	{
 		"label": "Friday Tasks Executing",
-		"document_type": "Task",
-		"filters_json": json.dumps([["Task", "workflow_state", "=", "Executing", False]]),
+		"document_type": "Agent Task",
+		"filters_json": json.dumps([["Agent Task", "workflow_state", "=", "Executing", False]]),
 		"color": "#1890FF",
 	},
 	{
 		"label": "Friday Tasks Blocked",
-		"document_type": "Task",
-		"filters_json": json.dumps([["Task", "workflow_state", "=", "Blocked", False]]),
+		"document_type": "Agent Task",
+		"filters_json": json.dumps([["Agent Task", "workflow_state", "=", "Blocked", False]]),
 		"color": "#FF5858",
 	},
 	{
 		"label": "Friday Open Issues",
-		"document_type": "Issue",
-		"filters_json": json.dumps([["Issue", "status", "=", "Open", False]]),
+		"document_type": "Agent Issue",
+		"filters_json": json.dumps([["Agent Issue", "status", "=", "Open", False]]),
 		"color": "#FFA00A",
 	},
 ]
@@ -152,7 +152,7 @@ DASHBOARD_CHARTS: list[dict] = [
 	{
 		"chart_name": "Friday Tasks by State",
 		"chart_type": "Group By",
-		"document_type": "Task",
+		"document_type": "Agent Task",
 		"group_by_type": "Count",
 		"group_by_based_on": "workflow_state",
 		"type": "Bar",
@@ -162,7 +162,7 @@ DASHBOARD_CHARTS: list[dict] = [
 	{
 		"chart_name": "Friday Tasks Completed",
 		"chart_type": "Count",
-		"document_type": "Task",
+		"document_type": "Agent Task",
 		"timeseries": 1,
 		"based_on": "completed_at",
 		"timespan": "Last Month",
@@ -278,7 +278,7 @@ def _ensure_kanban_board() -> bool:
 		{
 			"doctype": "Kanban Board",
 			"kanban_board_name": KANBAN_NAME,
-			"reference_doctype": "Task",
+			"reference_doctype": "Agent Task",
 			"field_name": "workflow_state",
 			"private": 0,
 			"filters": "[]",
@@ -333,13 +333,13 @@ def _ensure_workspace() -> bool:
 	)
 	ws.append(
 		"shortcuts",
-		{"type": "DocType", "link_to": "Project", "label": "Projects", "doc_view": "List", "color": "Blue"},
+		{"type": "DocType", "link_to": "Agent Project", "label": "Projects", "doc_view": "List", "color": "Blue"},
 	)
 	ws.append(
 		"shortcuts",
 		{
 			"type": "DocType",
-			"link_to": "Task",
+			"link_to": "Agent Task",
 			"label": "Task Pipeline",
 			"doc_view": "Kanban",
 			"kanban_board": KANBAN_NAME,
@@ -351,16 +351,16 @@ def _ensure_workspace() -> bool:
 	ws.append("links", {"type": "Card Break", "label": "Work", "hidden": 0})
 	ws.append(
 		"links",
-		{"type": "Link", "label": "Project", "link_type": "DocType", "link_to": "Project", "hidden": 0},
+		{"type": "Link", "label": "Agent Project", "link_type": "DocType", "link_to": "Agent Project", "hidden": 0},
 	)
 	ws.append(
 		"links",
-		{"type": "Link", "label": "Task", "link_type": "DocType", "link_to": "Task", "hidden": 0},
+		{"type": "Link", "label": "Agent Task", "link_type": "DocType", "link_to": "Agent Task", "hidden": 0},
 	)
 	ws.append("links", {"type": "Card Break", "label": "Monitoring", "hidden": 0})
 	ws.append(
 		"links",
-		{"type": "Link", "label": "Issue", "link_type": "DocType", "link_to": "Issue", "hidden": 0},
+		{"type": "Link", "label": "Agent Issue", "link_type": "DocType", "link_to": "Agent Issue", "hidden": 0},
 	)
 
 	ws.insert(ignore_permissions=True)

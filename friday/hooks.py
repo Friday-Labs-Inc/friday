@@ -57,7 +57,7 @@ doc_events = {
 	# Design 73 — each project gets a dedicated Raven conversation channel,
 	# provisioned on creation and archived when the project closes. Both handlers
 	# are savepoint-guarded so a Raven hiccup never blocks a Project save.
-	"Project": {
+	"Agent Project": {
 		"after_insert": "friday.friday_core.conversation.project_channel.on_project_after_insert",
 		"on_update": [
 			"friday.friday_core.conversation.project_channel.on_project_update",
@@ -78,7 +78,7 @@ doc_events = {
 		# Design 58 — a human DM / @mention becomes an inbound Chat Message.
 		"after_insert": "friday.friday_core.surfaces.raven_adapter.handle_raven_message",
 	},
-	"Task": {
+	"Agent Task": {
 		# Order matters: on_state_change settles the row (dispatchable, timestamps,
 		# executing_token), then advance enqueues the work-item's next phase after
 		# commit.

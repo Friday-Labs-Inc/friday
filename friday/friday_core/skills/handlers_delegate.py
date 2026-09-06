@@ -81,7 +81,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 	max_concurrent = getattr(parent_profile, "max_concurrent_delegations", 5) or 5
 	if parent_task_name:
 		active = frappe.db.count(
-			"Task",
+			"Agent Task",
 			filters={
 				"parent_task": parent_task_name,
 				"workflow_state": ("in", _ACTIVE_STATES),
@@ -89,7 +89,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 		)
 	else:
 		active = frappe.db.count(
-			"Task",
+			"Agent Task",
 			filters={
 				"originating_session": parent_session,
 				"parent_task": ("is", "not set"),
@@ -121,12 +121,12 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 	# ── inherit project from parent task ──────────────────────────────
 	project = (parameters.get("project") or "").strip() or None
 	if not project and parent_task_name:
-		project = frappe.db.get_value("Task", parent_task_name, "project")
+		project = frappe.db.get_value("Agent Task", parent_task_name, "project")
 
 	# ── create child Task ─────────────────────────────────────────────
 	child = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": title,
 			"description": instruction,
 			"parent_task": parent_task_name,
@@ -151,7 +151,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 		"child_task_name": child.name,
 		"status": "queued",
 		"assigned_profile": target_profile_name,
-		"doctype": "Task",
+		"doctype": "Agent Task",
 		"record_name": child.name,
 	}
 
@@ -159,7 +159,7 @@ def delegate_task(skill_name: str, parameters: dict) -> dict:
 def _delegation_depth(task_name: str, *, _get_parent=None) -> int:
 	"""Walk the parent_task chain and return the depth (0 = root)."""
 	if _get_parent is None:
-		_get_parent = lambda name: frappe.db.get_value("Task", name, "parent_task")
+		_get_parent = lambda name: frappe.db.get_value("Agent Task", name, "parent_task")
 
 	depth = 0
 	current = task_name

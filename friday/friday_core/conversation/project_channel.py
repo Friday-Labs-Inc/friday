@@ -33,7 +33,7 @@ _CLOSED_STATUSES = frozenset({"Completed", "Cancelled"})
 
 
 # ---------------------------------------------------------------------------
-# doc_events hooks (registered in hooks.py for "Project")
+# doc_events hooks (registered in hooks.py for "Agent Project")
 # ---------------------------------------------------------------------------
 
 
@@ -63,7 +63,7 @@ def provision_project_channel(project_name: str) -> "str | None":
 	if not frappe.db.table_exists("Raven Channel"):
 		return None
 
-	project = frappe.get_doc("Project", project_name)
+	project = frappe.get_doc("Agent Project", project_name)
 
 	existing = project.get("conversation_channel")
 	if existing and frappe.db.exists("Raven Channel", existing):
@@ -92,7 +92,7 @@ def provision_project_channel(project_name: str) -> "str | None":
 			"type": "Open",
 			"workspace": workspace,
 			# Raven's native back-link so the channel knows its Project.
-			"linked_doctype": "Project",
+			"linked_doctype": "Agent Project",
 			"linked_document": project.name,
 		}
 	)
@@ -101,7 +101,7 @@ def provision_project_channel(project_name: str) -> "str | None":
 	# Reverse link on the Project (console nav + idempotency). db_set fires no
 	# document hooks — no second on_update, no recursion.
 	frappe.db.set_value(
-		"Project", project.name, "conversation_channel", channel.name, update_modified=False
+		"Agent Project", project.name, "conversation_channel", channel.name, update_modified=False
 	)
 
 	_ensure_bot_member(channel.name, FRIDAY_BOT_NAME)
@@ -130,15 +130,15 @@ def post_seed_welcome(channel_id: str, project_name: str) -> None:
 	"""
 	if not frappe.db.exists("Raven Channel", channel_id):
 		return
-	if not frappe.db.exists("Project", project_name):
+	if not frappe.db.exists("Agent Project", project_name):
 		return
-	project = frappe.get_doc("Project", project_name)
+	project = frappe.get_doc("Agent Project", project_name)
 	_seed_welcome(channel_id, project)
 
 
 def archive_project_channel(project_name: str) -> None:
 	"""Archive the project's channel when the project closes (best-effort)."""
-	channel = frappe.db.get_value("Project", project_name, "conversation_channel")
+	channel = frappe.db.get_value("Agent Project", project_name, "conversation_channel")
 	if not channel or not frappe.db.exists("Raven Channel", channel):
 		return
 	if not frappe.db.get_value("Raven Channel", channel, "is_archived"):

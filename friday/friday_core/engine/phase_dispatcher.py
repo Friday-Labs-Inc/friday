@@ -64,7 +64,7 @@ def dispatch(work_item, meta_name: str) -> str | None:
 
 	task = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": _title(work_item, meta),
 			"description": _render(meta.prompt_template, work_item),
 			"work_item_doctype": work_item.doctype,

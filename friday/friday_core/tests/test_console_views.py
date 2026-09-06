@@ -12,7 +12,7 @@ configure what Frappe already renders.
 Two couplings matter and are pinned by tests here:
   1. The Kanban columns MUST equal the Task ``workflow_state`` Select options,
      or cards land in no column. ``test_kanban_columns_match_task_state_options``
-     reads the real ``task.json`` and asserts equality.
+     reads the real ``agent_task.json`` and asserts equality.
   2. The Workspace ``content`` blob references cards/charts by the label of
      their child rows; ``test_workspace_content_references_children`` parses the
      blob and checks every reference resolves.
@@ -51,7 +51,7 @@ class _FakeDoc(dict):
 
 def _task_json_path():
 	here = os.path.dirname(__file__)
-	return os.path.normpath(os.path.join(here, "..", "doctype", "task", "task.json"))
+	return os.path.normpath(os.path.join(here, "..", "doctype", "agent_task", "agent_task.json"))
 
 
 class TestTaskStateField(unittest.TestCase):
@@ -87,7 +87,7 @@ class TestNumberCards(unittest.TestCase):
 		# Each card targets a real DocType + Count function with a filter blob.
 		for c in built:
 			self.assertEqual(c["function"], "Count")
-			self.assertIn(c["document_type"], {"Project", "Task", "Issue"})
+			self.assertIn(c["document_type"], {"Agent Project", "Agent Task", "Agent Issue"})
 			json.loads(c["filters_json"])  # must be valid JSON
 
 	@patch("friday.friday_core.console.provision_console.frappe")
@@ -147,7 +147,7 @@ class TestKanbanBoard(unittest.TestCase):
 
 		k = built["k"]
 		self.assertEqual(k["kanban_board_name"], KANBAN_NAME)
-		self.assertEqual(k["reference_doctype"], "Task")
+		self.assertEqual(k["reference_doctype"], "Agent Task")
 		self.assertEqual(k["field_name"], "workflow_state")
 		columns = [c["column_name"] for c in k["columns"]]
 		self.assertEqual(columns, TASK_STATES)
@@ -194,8 +194,8 @@ class TestWorkspace(unittest.TestCase):
 		self.assertEqual(chart_refs, {c["chart_name"] for c in DASHBOARD_CHARTS})
 		# Shortcuts to the Task Kanban + Project list at minimum.
 		shortcut_targets = {(s["type"], s["link_to"]) for s in ws["shortcuts"]}
-		self.assertIn(("DocType", "Project"), shortcut_targets)
-		self.assertIn(("DocType", "Task"), shortcut_targets)
+		self.assertIn(("DocType", "Agent Project"), shortcut_targets)
+		self.assertIn(("DocType", "Agent Task"), shortcut_targets)
 
 	@patch("friday.friday_core.console.provision_console.frappe")
 	def test_workspace_content_references_children(self, mock_frappe):

@@ -135,8 +135,8 @@ _SKILLS: dict[str, dict] = {
 
 _ROLE_PERMS: dict[str, dict] = {
 	"File": {"create": 1, "read": 1, "write": 1},
-	"Project": {"read": 1, "write": 1},  # write needed for has_permission on attach
-	"Task": {"read": 1, "write": 1},
+	"Agent Project": {"read": 1, "write": 1},  # write needed for has_permission on attach
+	"Agent Task": {"read": 1, "write": 1},
 }
 
 

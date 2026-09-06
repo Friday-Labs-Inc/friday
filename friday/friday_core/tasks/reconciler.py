@@ -173,7 +173,7 @@ def _reconcile_assigned_orphans() -> int:
 	rows = frappe.db.sql(
 		"""
 		SELECT name, assigned_to_profile
-		FROM `tabTask`
+		FROM `tabAgent Task`
 		WHERE workflow_state = 'Assigned'
 		  AND assigned_to_profile IS NOT NULL
 		  AND (executing_token IS NULL OR executing_token = '')
@@ -236,7 +236,7 @@ def _reconcile_executing_stale() -> int:
 	rows = frappe.db.sql(
 		"""
 		SELECT name
-		FROM `tabTask`
+		FROM `tabAgent Task`
 		WHERE workflow_state = 'Executing'
 		  AND (last_heartbeat_at IS NULL OR last_heartbeat_at < %(cutoff)s)
 		  AND COALESCE(started_at, modified) < %(cutoff)s
@@ -256,7 +256,7 @@ def _reconcile_executing_stale() -> int:
 		job_name = TASK_JOB_NAME.format(name=row["name"])
 		if job_name in in_flight:
 			continue  # genuinely running, just slow on heartbeats — leave it
-		task = frappe.get_doc("Task", row["name"])
+		task = frappe.get_doc("Agent Task", row["name"])
 		frappe.db.savepoint(_ROW_SAVEPOINT)
 		frappe.flags.dispatcher_event_source = "reconciler_runner_lost"
 		try:
@@ -301,7 +301,7 @@ def _reconcile_transient_blocked() -> int:
 	rows = frappe.db.sql(
 		"""
 		SELECT name, retry_count
-		FROM `tabTask`
+		FROM `tabAgent Task`
 		WHERE workflow_state = 'Blocked'
 		  AND blocked_reason IN %(reasons)s
 		  AND retry_count < %(budget)s
@@ -318,7 +318,7 @@ def _reconcile_transient_blocked() -> int:
 
 	acted = 0
 	for row in rows:
-		task = frappe.get_doc("Task", row["name"])
+		task = frappe.get_doc("Agent Task", row["name"])
 		old_blocked_reason = task.blocked_reason
 		frappe.db.savepoint(_ROW_SAVEPOINT)
 		frappe.flags.dispatcher_event_source = "reconciler_reset"

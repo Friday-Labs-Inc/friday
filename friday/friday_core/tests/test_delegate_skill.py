@@ -191,7 +191,7 @@ class TestHappyPath(unittest.TestCase):
 
 		# Child Task row shape.
 		payload = mock_frappe.get_doc.call_args[0][0]
-		self.assertEqual(payload["doctype"], "Task")
+		self.assertEqual(payload["doctype"], "Agent Task")
 		self.assertEqual(payload["workflow_state"], "Pending")
 		self.assertEqual(payload["execution_mode"], "agentic")
 		self.assertEqual(payload["assigned_to_profile"], "Copywriter")
@@ -240,7 +240,7 @@ class TestRegistrationAndBootstrap(unittest.TestCase):
 		_json.dumps(schema)
 		for required_field in schema["required"]:
 			self.assertIn(required_field, schema["properties"])
-		self.assertEqual(_SKILL["required_doctypes"], [{"target_doctype": "Task", "operation": "create"}])
+		self.assertEqual(_SKILL["required_doctypes"], [{"target_doctype": "Agent Task", "operation": "create"}])
 
 
 if __name__ == "__main__":

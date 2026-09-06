@@ -33,7 +33,7 @@ frappe.pages["project-console"].on_page_load = function (wrapper) {
 
 	// A header button to jump to the Projects workspace / Kanban (65b).
 	page.set_secondary_action(__("Task Pipeline"), () => {
-		frappe.set_route("List", "Task", "Kanban", "Task Pipeline");
+		frappe.set_route("List", "Agent Task", "Kanban", "Task Pipeline");
 	});
 };
 

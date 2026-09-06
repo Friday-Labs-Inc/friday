@@ -199,7 +199,7 @@ def _claim_task(task_name: str) -> str | None:
 	# older row (pre-migration) does not falsely lock the task.
 	frappe.db.sql(
 		"""
-		UPDATE `tabTask`
+		UPDATE `tabAgent Task`
 		SET workflow_state = 'Executing',
 		    executing_token = %s,
 		    started_at = COALESCE(started_at, NOW()),
@@ -213,7 +213,7 @@ def _claim_task(task_name: str) -> str | None:
 	# frappe.db.sql returns a list of rows for SELECT; for UPDATE the affected
 	# row count comes via the underlying cursor. The simple, portable test:
 	# re-read the token. If it matches, we won.
-	current = frappe.db.get_value("Task", task_name, "executing_token")
+	current = frappe.db.get_value("Agent Task", task_name, "executing_token")
 	return token if current == token else None
 
 
@@ -233,7 +233,7 @@ def _heartbeat(task_name: str) -> None:
 	never break the actual work.
 	"""
 	try:
-		frappe.db.set_value("Task", task_name, "last_heartbeat_at", now_datetime(), update_modified=False)
+		frappe.db.set_value("Agent Task", task_name, "last_heartbeat_at", now_datetime(), update_modified=False)
 	except Exception:
 		_logger.warning("heartbeat update failed for %s", task_name)
 
@@ -255,7 +255,7 @@ def _run_task(task_name: str, profile_name: str) -> None:
 		)
 		return
 
-	task = frappe.get_doc("Task", task_name)
+	task = frappe.get_doc("Agent Task", task_name)
 
 	# Design 60, Q2 — agentic tasks run a REAL governed turn instead of the
 	# mechanical skill sequence. Milestones never reach here (the dispatcher
@@ -310,7 +310,7 @@ def _run_task(task_name: str, profile_name: str) -> None:
 	)
 
 
-def _execute_skill_in_sandbox(skill_name: str, task: "Task", profile_name: str) -> "SandboxResult":
+def _execute_skill_in_sandbox(skill_name: str, task: "AgentTask", profile_name: str) -> "SandboxResult":
 	"""
 	Execute one skill from a task's required_skills in a Docker sandbox.
 
@@ -343,7 +343,7 @@ def _execute_skill_in_sandbox(skill_name: str, task: "Task", profile_name: str) 
 	)
 
 
-def _parse_task_parameters(task: "Task", skill_name: str) -> dict:
+def _parse_task_parameters(task: "AgentTask", skill_name: str) -> dict:
 	"""
 	Extract parameters for ``skill_name`` from the task document.
 
@@ -363,7 +363,7 @@ def _parse_task_parameters(task: "Task", skill_name: str) -> dict:
 	return {"description": task.description or ""}
 
 
-def _block_task(task: "Task", results: list) -> None:
+def _block_task(task: "AgentTask", results: list) -> None:
 	"""
 	Mark a task as blocked after a skill execution failure.
 
@@ -426,7 +426,7 @@ def _build_result_envelope(results: list, status: str) -> dict:
 	}
 
 
-def _run_task_agentic(task: "Task", profile_name: str) -> None:
+def _run_task_agentic(task: "AgentTask", profile_name: str) -> None:
 	"""Run one queued task as a real governed agent turn (design 60, Q2).
 
 	Same isolation contract as delegation (design 57): a fresh
@@ -493,7 +493,7 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 			_logger.exception("rollback failed before _run_task_agentic interrupt save")
 		# Design 83b — if the operator `/stop force`d this task, the kill path
 		# already set ForceKilled + audit fields; don't downgrade it to Cancelled.
-		if frappe.db.get_value("Task", task.name, "force_killed_by"):
+		if frappe.db.get_value("Agent Task", task.name, "force_killed_by"):
 			return
 		task.result = frappe.as_json({"status": "interrupted"})
 		task.workflow_state = "Cancelled"
@@ -565,7 +565,7 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 
 	# Design 83b — if the operator `/stop force`d this task while it was finishing,
 	# the kill path already set ForceKilled; don't override it with Completed.
-	if frappe.db.get_value("Task", task.name, "force_killed_by"):
+	if frappe.db.get_value("Agent Task", task.name, "force_killed_by"):
 		return
 	task.result = frappe.as_json({"status": "success", "summary": summary})
 	task.workflow_state = "Completed"
@@ -595,7 +595,7 @@ def _run_task_agentic(task: "Task", profile_name: str) -> None:
 	)
 
 
-def _task_transition(task: "Task", target_state: str) -> None:
+def _task_transition(task: "AgentTask", target_state: str) -> None:
 	"""
 	Transition an Task to a new workflow state.
 

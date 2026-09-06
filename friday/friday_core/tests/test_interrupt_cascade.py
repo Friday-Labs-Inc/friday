@@ -111,7 +111,7 @@ class TestTaskPathInterrupted(unittest.TestCase):
 	def _run_interrupted(self, force_killed_by):
 		"""Run _run_task_agentic with run_turn raising TurnInterrupted.
 
-		`force_killed_by` is what `frappe.db.get_value("Task", …, "force_killed_by")`
+		`force_killed_by` is what `frappe.db.get_value("Agent Task", …, "force_killed_by")`
 		returns — None for a plain cascade `/stop`, a user for `/stop force`.
 		"""
 		from friday.friday_core.tasks import runner

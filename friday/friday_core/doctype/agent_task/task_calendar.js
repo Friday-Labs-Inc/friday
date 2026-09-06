@@ -12,7 +12,7 @@
 // `gantt: true` activates BOTH the Calendar and Gantt views from one
 // registration (the same pattern core uses for ToDo and Event).
 
-frappe.views.calendar["Task"] = {
+frappe.views.calendar["Agent Task"] = {
 	field_map: {
 		start: "exp_start_date",
 		end: "exp_end_date",

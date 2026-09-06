@@ -62,16 +62,16 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		# use a kernel one (Project) on purpose: this test must pass on a bare
 		# kernel install with no domain app present.
 		return frappe.get_doc(
-			{"doctype": "Project", "project_name": "PhaseOut Co"}
+			{"doctype": "Agent Project", "project_name": "PhaseOut Co"}
 		).insert(ignore_permissions=True)
 
 	def _completed(self, item_name, phase_key, summary):
 		return frappe.get_doc(
 			{
-				"doctype": "Task",
+				"doctype": "Agent Task",
 				"title": f"t-{phase_key}",
 				"priority": "normal",
-				"work_item_doctype": "Project",
+				"work_item_doctype": "Agent Project",
 				"work_item_name": item_name,
 				"phase_key": phase_key,
 				"workflow_state": "Completed",
@@ -84,7 +84,7 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		self._completed(item.name, "strategy", "STRAT_BODY_123")
 		self._completed(item.name, "naming", "NAME_BODY_456")
 		out = get_phase_outputs(
-			"get-phase-outputs", {"work_item": item.name, "work_item_doctype": "Project"}
+			"get-phase-outputs", {"work_item": item.name, "work_item_doctype": "Agent Project"}
 		)
 		self.assertIn("STRAT_BODY_123", out["result"])
 		self.assertIn("NAME_BODY_456", out["result"])
@@ -95,10 +95,10 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		self._completed(item.name, "strategy", "CTX_BODY_789")
 		current = frappe.get_doc(
 			{
-				"doctype": "Task",
+				"doctype": "Agent Task",
 				"title": "cur",
 				"priority": "normal",
-				"work_item_doctype": "Project",
+				"work_item_doctype": "Agent Project",
 				"work_item_name": item.name,
 				"phase_key": "gate1_prep",
 				"workflow_state": "Executing",

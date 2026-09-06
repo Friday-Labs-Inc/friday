@@ -46,7 +46,7 @@ def project_snapshot_block(project: str) -> "str | None":
 	deliverables.
 	"""
 	row = frappe.db.get_value(
-		"Project",
+		"Agent Project",
 		project,
 		["project_name", "status", "percent_complete", "total_tasks", "completed_tasks"],
 		as_dict=True,
@@ -88,7 +88,7 @@ def _progress_suffix(row) -> str:
 def _open_tasks_section(project: str) -> str:
 	"""The non-terminal tasks, newest-work-last, capped and labelled by state."""
 	tasks = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={"project": project, "workflow_state": ("in", _OPEN_STATES)},
 		fields=["title", "workflow_state"],
 		order_by="creation asc",
@@ -128,7 +128,7 @@ def _deliverable_file_names(project: str) -> list:
 		for f in frappe.get_all(
 			"File",
 			filters={
-				"attached_to_doctype": "Project",
+				"attached_to_doctype": "Agent Project",
 				"attached_to_name": project,
 				"file_name": ("like", "deliverable-%"),
 			},
@@ -137,7 +137,7 @@ def _deliverable_file_names(project: str) -> list:
 		)
 	]
 	task_names = [
-		t.name for t in frappe.get_all("Task", filters={"project": project}, fields=["name"])
+		t.name for t in frappe.get_all("Agent Task", filters={"project": project}, fields=["name"])
 	]
 	if task_names:
 		names += [
@@ -145,7 +145,7 @@ def _deliverable_file_names(project: str) -> list:
 			for f in frappe.get_all(
 				"File",
 				filters={
-					"attached_to_doctype": "Task",
+					"attached_to_doctype": "Agent Task",
 					"attached_to_name": ("in", task_names),
 					"file_name": ("like", "deliverable-%"),
 				},

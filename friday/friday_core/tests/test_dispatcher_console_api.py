@@ -37,20 +37,20 @@ def _clear_events_for_task(task_name: str) -> None:
 
 def _ensure_test_task() -> str:
 	"""Reuse the first Task or create one for testing."""
-	existing = frappe.get_all("Task", limit=1, pluck="name")
+	existing = frappe.get_all("Agent Task", limit=1, pluck="name")
 	if existing:
 		return existing[0]
-	project = frappe.get_all("Project", limit=1, pluck="name")
+	project = frappe.get_all("Agent Project", limit=1, pluck="name")
 	if not project:
 		proj = frappe.get_doc(
-			{"doctype": "Project", "project_name": "Test API Project"}
+			{"doctype": "Agent Project", "project_name": "Test API Project"}
 		).insert(ignore_permissions=True)
 		project_name = proj.name
 	else:
 		project_name = project[0]
 	task = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": "Test API Task",
 			"project": project_name,
 			"workflow_state": "Pending",
@@ -220,7 +220,7 @@ class TestLifecycleTrace(unittest.TestCase):
 		from friday.friday_core.console.dispatcher_console_api import lifecycle_trace
 
 		# The test task was set to Pending in setUp — should be live.
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Pending"
 		task.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -229,7 +229,7 @@ class TestLifecycleTrace(unittest.TestCase):
 		self.assertTrue(result["task_state"].get("is_live"))
 
 		# Move to Completed — no longer live.
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Completed"
 		task.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -241,7 +241,7 @@ class TestLifecycleTrace(unittest.TestCase):
 		from friday.friday_core.console.dispatcher_console_api import lifecycle_trace
 		from friday.friday_core.observability.retention import write_task_completion_summary
 
-		task = frappe.get_doc("Task", self.task_name)
+		task = frappe.get_doc("Agent Task", self.task_name)
 		task.workflow_state = "Completed"
 		task.completed_at = now_datetime()
 		task.save(ignore_permissions=True)

@@ -219,7 +219,7 @@ class TestFixtures(unittest.TestCase):
 			out = fixtures.ensure_eval_fixtures()
 		fr.get_doc.assert_called_once()
 		payload = fr.get_doc.call_args[0][0]
-		self.assertEqual(payload["doctype"], "Project")
+		self.assertEqual(payload["doctype"], "Agent Project")
 		self.assertEqual(payload["project_name"], fixtures.EVAL_PROJECT)
 		self.assertEqual(out["created"], [fixtures.EVAL_PROJECT])
 

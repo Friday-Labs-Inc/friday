@@ -89,7 +89,7 @@ def read_record(skill_name: str, parameters: dict) -> dict:
 	doctype = (parameters.get("doctype") or "").strip()
 	name = (parameters.get("name") or "").strip()
 	if not doctype:
-		raise ValueError("read-record requires a 'doctype' parameter (e.g. 'Task')")
+		raise ValueError("read-record requires a 'doctype' parameter (e.g. 'Agent Task')")
 	if not name:
 		raise ValueError("read-record requires a 'name' parameter (the record's ID)")
 
@@ -165,7 +165,7 @@ def list_records(skill_name: str, parameters: dict) -> dict:
 	"""
 	doctype = (parameters.get("doctype") or "").strip()
 	if not doctype:
-		raise ValueError("list-records requires a 'doctype' parameter (e.g. 'Task')")
+		raise ValueError("list-records requires a 'doctype' parameter (e.g. 'Agent Task')")
 
 	profile = _calling_profile()
 	if not profile:

@@ -74,9 +74,9 @@ def _resolve_parent(parameters: dict) -> tuple[str, str]:
 	if project_name and task_name:
 		raise ValueError("attach-deliverable: pass either project_name OR task_name, not both")
 	if project_name:
-		return "Project", project_name
+		return "Agent Project", project_name
 	if task_name:
-		return "Task", task_name
+		return "Agent Task", task_name
 	raise ValueError(
 		"attach-deliverable requires either 'project_name' (e.g. 'PRJ-1') or 'task_name' (e.g. 'TSK-42')"
 	)
@@ -163,14 +163,14 @@ def list_project_files(skill_name: str, parameters: dict) -> dict:
 	if not profile:
 		raise ValueError("list-project-files could not determine the calling agent profile")
 
-	if not frappe.db.exists("Project", project_name):
+	if not frappe.db.exists("Agent Project", project_name):
 		return {
 			"result": f"Project '{project_name}' is not reachable (missing or not permitted).",
 			"error": "denied_or_unreachable",
 			"project_name": project_name,
 		}
 
-	if not frappe.has_permission("Project", "read", doc=project_name):
+	if not frappe.has_permission("Agent Project", "read", doc=project_name):
 		return {
 			"result": f"You don't have permission to list files on project '{project_name}'.",
 			"project_name": project_name,
@@ -182,7 +182,7 @@ def list_project_files(skill_name: str, parameters: dict) -> dict:
 	rows = frappe.db.get_all(
 		"File",
 		filters={
-			"attached_to_doctype": "Project",
+			"attached_to_doctype": "Agent Project",
 			"attached_to_name": project_name,
 		},
 		fields=["name", "file_name", "file_url", "is_private", "file_size", "creation"],
@@ -242,7 +242,7 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 	# Refuse permission denial AND not-found AND "this file belongs to a
 	# different project" all with the same error shape — the agent cannot
 	# probe.
-	if not frappe.has_permission("Project", "read", doc=project_name):
+	if not frappe.has_permission("Agent Project", "read", doc=project_name):
 		return {
 			"result": (
 				f"File '{file_name}' is not readable on project '{project_name}' "
@@ -264,7 +264,7 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 		resolved_name = frappe.db.get_value(
 			"File",
 			{
-				"attached_to_doctype": "Project",
+				"attached_to_doctype": "Agent Project",
 				"attached_to_name": project_name,
 				"file_name": file_name,
 			},
@@ -297,7 +297,7 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 		}
 
 	if (
-		getattr(file_doc, "attached_to_doctype", None) != "Project"
+		getattr(file_doc, "attached_to_doctype", None) != "Agent Project"
 		or getattr(file_doc, "attached_to_name", None) != project_name
 	):
 		return {

@@ -97,13 +97,13 @@ def project_for_session(session_id: str) -> "str | None":
 			link = frappe.db.get_value(
 				"Raven Channel", session_id, ["linked_doctype", "linked_document"], as_dict=True
 			)
-			if link and link.linked_doctype == "Project" and link.linked_document:
+			if link and link.linked_doctype == "Agent Project" and link.linked_document:
 				return link.linked_document
 	except Exception:
 		pass
 	if session_id.startswith("task::"):
 		try:
-			return frappe.db.get_value("Task", session_id.split("::", 1)[1], "project")
+			return frappe.db.get_value("Agent Task", session_id.split("::", 1)[1], "project")
 		except Exception:
 			return None
 	return None

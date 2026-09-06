@@ -19,7 +19,7 @@ class TestIssueDocTypeContract(unittest.TestCase):
 	"""The migrated `Issue` DocType matches doc 53 §3.3."""
 
 	def test_doctype_exists_with_doc53_fields(self):
-		have = {df.fieldname for df in frappe.get_meta("Issue").fields}
+		have = {df.fieldname for df in frappe.get_meta("Agent Issue").fields}
 		expected = {
 			"subject",
 			"source",
@@ -38,7 +38,7 @@ class TestIssueDocTypeContract(unittest.TestCase):
 		self.assertEqual(expected - have, set(), f"Issue is missing fields: {expected - have}")
 
 	def test_source_status_reason_options(self):
-		opts = {df.fieldname: (df.options or "") for df in frappe.get_meta("Issue").fields}
+		opts = {df.fieldname: (df.options or "") for df in frappe.get_meta("Agent Issue").fields}
 		self.assertIn("Agent-raised", opts["source"])
 		self.assertIn("Human-raised", opts["source"])
 		for s in ("Open", "In Progress", "Resolved", "Closed", "Reopened"):

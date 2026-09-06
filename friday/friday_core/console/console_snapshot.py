@@ -82,7 +82,7 @@ def _build(project: str | None) -> dict:
 def _projects(project: str | None) -> list[dict]:
 	filters = {"name": project} if project else {}
 	return frappe.get_all(
-		"Project",
+		"Agent Project",
 		filters=filters,
 		fields=[
 			"name",
@@ -132,7 +132,7 @@ def _tiles_for_bundle(b: dict) -> list[dict]:
 	# aggregate in Python. This both filters out work-items the engine never
 	# touched (no noise) and gives us the per-item "last activity" for ordering.
 	tasks = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={"work_item_doctype": doctype},
 		fields=["work_item_name", "workflow_state", "modified"],
 	)
@@ -187,7 +187,7 @@ def _tiles_for_bundle(b: dict) -> list[dict]:
 
 def _active_tasks(task_filter: dict) -> list[dict]:
 	return frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={**task_filter, "workflow_state": ["in", list(ACTIVE_STATES)]},
 		fields=["name", "title", "project", "assigned_to_profile", "workflow_state", "started_at"],
 		order_by="started_at asc",
@@ -196,7 +196,7 @@ def _active_tasks(task_filter: dict) -> list[dict]:
 
 def _recent_activity(task_filter: dict) -> list[dict]:
 	return frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={**task_filter, "workflow_state": ["in", list(TERMINAL_STATES)]},
 		fields=[
 			"name",

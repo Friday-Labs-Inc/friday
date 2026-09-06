@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class Task(Document):
+class AgentTask(Document):
 	pass

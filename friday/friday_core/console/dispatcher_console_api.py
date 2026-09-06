@@ -113,7 +113,7 @@ def _cell_active_leases() -> dict:
 		rows = frappe.db.sql(
 			"""
 			SELECT name, last_heartbeat_at
-			FROM `tabTask`
+			FROM `tabAgent Task`
 			WHERE workflow_state = 'Executing'
 			""",
 			as_dict=True,
@@ -148,7 +148,7 @@ def _cell_dispatchable() -> dict:
 		rows = frappe.db.sql(
 			"""
 			SELECT name, creation
-			FROM `tabTask`
+			FROM `tabAgent Task`
 			WHERE dispatchable = 1
 			  AND assigned_to_profile IS NULL
 			  AND workflow_state = 'Pending'
@@ -158,7 +158,7 @@ def _cell_dispatchable() -> dict:
 			as_dict=True,
 		)
 		count = frappe.db.count(
-			"Task",
+			"Agent Task",
 			{
 				"dispatchable": 1,
 				"assigned_to_profile": ["is", "not set"],
@@ -282,7 +282,7 @@ def lifecycle_trace(task: str, since_cursor: "str | None" = None, limit: int = 2
 	task_state = {}
 	try:
 		t = frappe.db.get_value(
-			"Task",
+			"Agent Task",
 			task,
 			[
 				"workflow_state",
@@ -338,7 +338,7 @@ def recent_tasks(limit: int = 20) -> list[dict]:
 	# Order by modified DESC — gives the most recently touched tasks across all
 	# projects, which is what the operator usually wants to inspect.
 	return frappe.get_all(
-		"Task",
+		"Agent Task",
 		fields=["name", "title", "workflow_state", "project", "modified"],
 		order_by="modified desc",
 		limit=limit,

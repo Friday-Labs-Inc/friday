@@ -76,7 +76,7 @@ def share_deliverables(skill_name: str, parameters: dict) -> dict:
 	files = frappe.get_all(
 		"File",
 		filters={
-			"attached_to_doctype": "Project",
+			"attached_to_doctype": "Agent Project",
 			"attached_to_name": project,
 			"file_name": ["like", f"{_DELIVERABLE_PREFIX}%"],
 		},

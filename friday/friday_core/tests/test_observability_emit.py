@@ -45,21 +45,21 @@ def _as_dict(payload):
 
 def _ensure_test_task() -> str:
 	"""Return a Task name to attach events to — finds or creates one."""
-	existing = frappe.get_all("Task", limit=1, pluck="name")
+	existing = frappe.get_all("Agent Task", limit=1, pluck="name")
 	if existing:
 		return existing[0]
 	# No tasks on this site — create one minimal task for the test.
 	# Tasks usually belong to a Project; create one of those too if needed.
-	project = frappe.get_all("Project", limit=1, pluck="name")
+	project = frappe.get_all("Agent Project", limit=1, pluck="name")
 	project_name = project[0] if project else None
 	if not project_name:
 		proj = frappe.get_doc(
-			{"doctype": "Project", "project_name": "Test Emit Project"}
+			{"doctype": "Agent Project", "project_name": "Test Emit Project"}
 		).insert(ignore_permissions=True)
 		project_name = proj.name
 	task = frappe.get_doc(
 		{
-			"doctype": "Task",
+			"doctype": "Agent Task",
 			"title": "Test Emit Task",
 			"project": project_name,
 			"workflow_state": "Pending",
@@ -102,7 +102,7 @@ class TestEmitBasics(unittest.TestCase):
 		"""If caller omits project, emit looks it up from the task."""
 		from friday.friday_core.observability import emit
 
-		expected_project = frappe.db.get_value("Task", self.task_name, "project")
+		expected_project = frappe.db.get_value("Agent Task", self.task_name, "project")
 		name = emit("runner.start", task=self.task_name, summary="started")
 		frappe.db.commit()
 		doc = frappe.get_doc("Dispatcher Event", name)
@@ -207,7 +207,7 @@ class TestEmitSafetyContract(unittest.TestCase):
 		# After the savepoint rollback, the outer transaction must still be usable.
 		# A direct read here would fail with InFailedSqlTransaction if the savepoint
 		# rollback didn't happen.
-		val = frappe.db.get_value("Task", self.task_name, "title")
+		val = frappe.db.get_value("Agent Task", self.task_name, "title")
 		self.assertIsNotNone(val)
 
 

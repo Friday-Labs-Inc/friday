@@ -62,7 +62,7 @@ def advance_work_item(task_name: str) -> None:
 	"""Fire the workflow transition that leaves the completed phase's state,
 	acting as the agent that did the work. Idempotent: a duplicate job finds the
 	work-item already past the phase's from_state and no-ops."""
-	task = frappe.get_doc("Task", task_name)
+	task = frappe.get_doc("Agent Task", task_name)
 	if task.workflow_state != "Completed":
 		return
 

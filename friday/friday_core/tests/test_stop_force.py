@@ -59,7 +59,7 @@ class TestForceKillSession(unittest.TestCase):
 		req.assert_any_call("task::T1")
 		req.assert_any_call("task::T2")
 		self.assertEqual(set(result["tasks_now_forcekilled"]), {"T1", "T2"})
-		task_writes = [c for c in fr.db.set_value.call_args_list if c.args[0] == "Task"]
+		task_writes = [c for c in fr.db.set_value.call_args_list if c.args[0] == "Agent Task"]
 		self.assertEqual(len(task_writes), 2)
 		payload = task_writes[0].args[2]
 		self.assertEqual(payload["workflow_state"], "ForceKilled")

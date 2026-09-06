@@ -24,12 +24,12 @@ def project_status(skill_name: str, parameters: dict) -> dict:
 	project = (parameters.get("project") or "").strip()
 	if not project:
 		raise ValueError("project-status requires a 'project' parameter")
-	if not frappe.db.exists("Project", project):
+	if not frappe.db.exists("Agent Project", project):
 		raise ValueError(f"Project {project!r} not found")
 
-	status = frappe.db.get_value("Project", project, "status")
+	status = frappe.db.get_value("Agent Project", project, "status")
 	tasks = frappe.get_all(
-		"Task",
+		"Agent Task",
 		filters={"project": project},
 		fields=["name", "title", "workflow_state", "execution_mode", "backend_ref"],
 		order_by="creation asc",
@@ -47,7 +47,7 @@ def project_status(skill_name: str, parameters: dict) -> dict:
 			)
 		)
 		lines.append(f"{marker} [{t.name}] {t.title} — {t.workflow_state} ({t.execution_mode})")
-	return {"result": "\n".join(lines), "doctype": "Project", "record_name": project}
+	return {"result": "\n".join(lines), "doctype": "Agent Project", "record_name": project}
 
 
 def update_task(skill_name: str, parameters: dict) -> dict:
@@ -58,10 +58,10 @@ def update_task(skill_name: str, parameters: dict) -> dict:
 		raise ValueError("update-task requires a 'task' parameter (the Task ID)")
 	if action not in ("complete", "cancel"):
 		raise ValueError("update-task 'action' must be 'complete' or 'cancel'")
-	if not frappe.db.exists("Task", task_name):
+	if not frappe.db.exists("Agent Task", task_name):
 		raise ValueError(f"Task {task_name!r} not found")
 
-	task = frappe.get_doc("Task", task_name)
+	task = frappe.get_doc("Agent Task", task_name)
 	target = "Completed" if action == "complete" else "Cancelled"
 	if task.workflow_state == target:
 		return {"result": f"Task {task_name} is already {target}."}
@@ -72,7 +72,7 @@ def update_task(skill_name: str, parameters: dict) -> dict:
 	return {
 		"result": f"Task {task_name} ({task.title}) → {target}. Dependent tasks "
 		f"{'unblock on the next dispatch cycle' if target == 'Completed' else 'stay parked'}.",
-		"doctype": "Task",
+		"doctype": "Agent Task",
 		"record_name": task_name,
 	}
 
@@ -83,15 +83,15 @@ def pause_project(skill_name: str, parameters: dict) -> dict:
 	resume = bool(parameters.get("resume"))
 	if not project:
 		raise ValueError("pause-project requires a 'project' parameter")
-	if not frappe.db.exists("Project", project):
+	if not frappe.db.exists("Agent Project", project):
 		raise ValueError(f"Project {project!r} not found")
 
 	new_status = "Open" if resume else "On Hold"
-	frappe.db.set_value("Project", project, "status", new_status, update_modified=False)
+	frappe.db.set_value("Agent Project", project, "status", new_status, update_modified=False)
 	return {
 		"result": f"Project {project} → {new_status}. "
 		+ ("Dispatching resumes next cycle." if resume else "No further tasks will dispatch until resumed."),
-		"doctype": "Project",
+		"doctype": "Agent Project",
 		"record_name": project,
 	}
 
@@ -105,7 +105,7 @@ def list_projects(skill_name: str, parameters: dict) -> dict:
 	"""
 	status = (parameters.get("status") or "").strip()
 	rows = frappe.get_all(
-		"Project",
+		"Agent Project",
 		filters={"status": status} if status else None,
 		fields=[
 			"name", "status", "priority", "percent_complete",

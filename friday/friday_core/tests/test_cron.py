@@ -89,7 +89,7 @@ class TestTick(unittest.TestCase):
 		self.assertEqual(job.next_run_at, datetime(2026, 6, 24, 18, 10, 0))
 		self.assertTrue(job.save.called)
 		# exactly one Task, assigned to the profile, linked to the job, runnable.
-		self.assertEqual(created["task"]["doctype"], "Task")
+		self.assertEqual(created["task"]["doctype"], "Agent Task")
 		self.assertEqual(created["task"]["assigned_to_profile"], "Friday")
 		self.assertEqual(created["task"]["cron_job"], "CRON-1")
 		self.assertEqual(created["task"]["workflow_state"], "Assigned")

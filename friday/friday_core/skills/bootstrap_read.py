@@ -49,7 +49,7 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType, e.g. 'Task', 'Project', 'Issue'.",
+					"description": "The Frappe DocType, e.g. 'Agent Task', 'Agent Project', 'Agent Issue'.",
 				},
 				"name": {
 					"type": "string",
@@ -82,7 +82,7 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType to list, e.g. 'Task'.",
+					"description": "The Frappe DocType to list, e.g. 'Agent Task'.",
 				},
 				"filters": {
 					"type": "object",

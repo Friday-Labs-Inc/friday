@@ -64,7 +64,7 @@ def _build_snapshot() -> dict:
 	}
 
 	tasks_by_state = {
-		state: frappe.db.count("Task", {"workflow_state": state})
+		state: frappe.db.count("Agent Task", {"workflow_state": state})
 		for state in ("Pending", "Assigned", "Executing", "Blocked", "Review", "Completed", "Cancelled")
 	}
 
@@ -84,21 +84,21 @@ def _build_snapshot() -> dict:
 	executing_cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-EXECUTING_STALE_MINUTES)
 	stuck = {
 		"assigned_orphaned": frappe.db.count(
-			"Task",
+			"Agent Task",
 			{
 				"workflow_state": "Assigned",
 				"assigned_at": ("<", assigned_cutoff),
 			},
 		),
 		"executing_stale": frappe.db.count(
-			"Task",
+			"Agent Task",
 			{
 				"workflow_state": "Executing",
 				"last_heartbeat_at": ("<", executing_cutoff),
 			},
 		),
 		"transient_blocked_pending_retry": frappe.db.count(
-			"Task",
+			"Agent Task",
 			{
 				"workflow_state": "Blocked",
 				"blocked_reason": ("in", TRANSIENT_BLOCKED_REASONS),
@@ -127,7 +127,7 @@ def _build_snapshot() -> dict:
 		and frappe.db.get_single_value("Raven Settings", "enable_ai_integration")
 	)
 
-	open_issues = frappe.db.count("Issue", {"status": "Open"})
+	open_issues = frappe.db.count("Agent Issue", {"status": "Open"})
 
 	verdict = _verdict(
 		tick_age=tick_age,

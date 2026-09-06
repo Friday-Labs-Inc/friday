@@ -72,7 +72,7 @@ class TestAttachDeliverableParameterValidation(unittest.TestCase):
 
 
 class TestAttachDeliverablePermissions(unittest.TestCase):
-	"""Attach checks write permission on the parent (Project/Task)."""
+	"""Attach checks write permission on the parent (Agent Project/Agent Task)."""
 
 	@patch(f"{_H}.frappe")
 	def test_permission_denied_returns_structured_error(self, mock_frappe):
@@ -127,11 +127,11 @@ class TestAttachDeliverableSuccess(unittest.TestCase):
 		# Linkage: save_file(fname, content, dt, dn, ...) — Project, PRJ-1
 		args, kwargs = mock_save.call_args
 		self.assertEqual(args[0], "x.txt")
-		self.assertEqual(args[2], "Project")
+		self.assertEqual(args[2], "Agent Project")
 		self.assertEqual(args[3], "PRJ-1")
 		self.assertEqual(kwargs.get("is_private"), 1)  # default private
 		self.assertEqual(out["file_name"], "f-abc")
-		self.assertEqual(out["attached_to"], "Project/PRJ-1")
+		self.assertEqual(out["attached_to"], "Agent Project/PRJ-1")
 
 	@patch(f"{_H}.save_file")
 	@patch(f"{_H}.frappe")
@@ -149,7 +149,7 @@ class TestAttachDeliverableSuccess(unittest.TestCase):
 			{"task_name": "TSK-1", "file_name": "out.txt", "content": "result"},
 		)
 		args, _ = mock_save.call_args
-		self.assertEqual(args[2], "Task")
+		self.assertEqual(args[2], "Agent Task")
 		self.assertEqual(args[3], "TSK-1")
 
 	@patch(f"{_H}.save_file")
@@ -195,7 +195,7 @@ class TestListProjectFiles(unittest.TestCase):
 		# The query filters by attached_to_doctype=Project, attached_to_name=PRJ-1.
 		call = mock_frappe.db.get_all.call_args
 		filters = call.kwargs["filters"]
-		self.assertEqual(filters["attached_to_doctype"], "Project")
+		self.assertEqual(filters["attached_to_doctype"], "Agent Project")
 		self.assertEqual(filters["attached_to_name"], "PRJ-1")
 
 	@patch(f"{_H}.frappe")
@@ -234,7 +234,7 @@ class TestGetProjectFile(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True  # docname resolves
 
 		file_doc = MagicMock()
-		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_doctype = "Agent Project"
 		file_doc.attached_to_name = "PRJ-1"
 		file_doc.file_name = "naming.txt"
 		file_doc.is_private = 1
@@ -256,7 +256,7 @@ class TestGetProjectFile(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 
 		file_doc = MagicMock()
-		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_doctype = "Agent Project"
 		file_doc.attached_to_name = "PRJ-SOMETHING-ELSE"  # not the one asked
 		mock_frappe.get_doc.return_value = file_doc
 
@@ -290,7 +290,7 @@ class TestGetProjectFile(unittest.TestCase):
 		mock_frappe.db.get_value.return_value = "a1d916290f"
 
 		file_doc = MagicMock()
-		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_doctype = "Agent Project"
 		file_doc.attached_to_name = "PRJ-1"
 		file_doc.file_name = "friday-labs-design-system.md"
 		file_doc.is_private = 1
@@ -305,7 +305,7 @@ class TestGetProjectFile(unittest.TestCase):
 		# guess a filename from a different project and read across boundaries.
 		gv_call = mock_frappe.db.get_value.call_args
 		self.assertEqual(gv_call.args[0], "File")
-		self.assertEqual(gv_call.args[1]["attached_to_doctype"], "Project")
+		self.assertEqual(gv_call.args[1]["attached_to_doctype"], "Agent Project")
 		self.assertEqual(gv_call.args[1]["attached_to_name"], "PRJ-1")
 		self.assertEqual(gv_call.args[1]["file_name"], "friday-labs-design-system.md")
 		# And the get_doc call used the RESOLVED docname, not the human string.
@@ -398,7 +398,7 @@ class TestDispatcherResultContract(unittest.TestCase):
 		mock_frappe.has_permission.return_value = True
 		mock_frappe.db.exists.return_value = True
 		file_doc = MagicMock()
-		file_doc.attached_to_doctype = "Project"
+		file_doc.attached_to_doctype = "Agent Project"
 		file_doc.attached_to_name = "PRJ-1"
 		file_doc.file_name = "friday-labs-design-system.md"
 		file_doc.is_private = 1

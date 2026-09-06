@@ -38,7 +38,7 @@ class TestProjectAwareRouting(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.db.get_value.side_effect = _get_value_router(
 			{
-				("Project", "project_lead_profile"): "Commander",
+				("Agent Project", "project_lead_profile"): "Commander",
 				("Agent Profile", "status"): "Active",
 				("Chat Platform", "default_agent_profile"): "PlatformDefault",
 			}
@@ -60,7 +60,7 @@ class TestProjectAwareRouting(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.db.get_value.side_effect = _get_value_router(
 			{
-				("Project", "project_lead_profile"): None,  # no lead set
+				("Agent Project", "project_lead_profile"): None,  # no lead set
 				("Chat Platform", "default_agent_profile"): "PlatformDefault",
 			}
 		)
@@ -72,7 +72,7 @@ class TestProjectAwareRouting(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.db.get_value.side_effect = _get_value_router(
 			{
-				("Project", "project_lead_profile"): "OldLead",
+				("Agent Project", "project_lead_profile"): "OldLead",
 				("Agent Profile", "status"): "Retired",  # not Active
 				("Chat Platform", "default_agent_profile"): "PlatformDefault",
 			}

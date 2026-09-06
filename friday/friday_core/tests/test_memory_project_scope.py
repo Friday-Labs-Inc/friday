@@ -48,9 +48,9 @@ def _mem(profile: str, text: str, project: str | None) -> str:
 
 
 def _project(name: str) -> str:
-	if not frappe.db.exists("Project", name):
+	if not frappe.db.exists("Agent Project", name):
 		frappe.get_doc(
-			{"doctype": "Project", "project_name": name, "status": "Open"}
+			{"doctype": "Agent Project", "project_name": name, "status": "Open"}
 		).insert(ignore_permissions=True)
 	return name
 
@@ -61,12 +61,12 @@ class TestProjectForSession(unittest.TestCase):
 
 		proj = _project("D73 Mem Proj A")
 		task = frappe.get_doc(
-			{"doctype": "Task", "title": "mem-scope task", "project": proj, "workflow_state": "Pending"}
+			{"doctype": "Agent Task", "title": "mem-scope task", "project": proj, "workflow_state": "Pending"}
 		).insert(ignore_permissions=True)
 		try:
 			self.assertEqual(project_for_session(f"task::{task.name}"), proj)
 		finally:
-			frappe.delete_doc("Task", task.name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Agent Task", task.name, force=True, ignore_permissions=True)
 
 	def test_unknown_session_returns_none(self):
 		from friday.friday_core.llm.memory import project_for_session
@@ -87,7 +87,7 @@ class TestProjectForSession(unittest.TestCase):
 				"channel_name": "d73-mem-scope-test",
 				"type": "Open",
 				"workspace": ws,
-				"linked_doctype": "Project",
+				"linked_doctype": "Agent Project",
 				"linked_document": proj,
 			}
 		).insert(ignore_permissions=True)
@@ -153,7 +153,7 @@ class TestBuildInjectsProjectContext(unittest.TestCase):
 				"channel_name": "d73-build-ctx-test",
 				"type": "Open",
 				"workspace": ws,
-				"linked_doctype": "Project",
+				"linked_doctype": "Agent Project",
 				"linked_document": proj,
 			}
 		).insert(ignore_permissions=True)
@@ -174,7 +174,7 @@ class TestRememberTagsProject(unittest.TestCase):
 		profile = _profile()
 		proj = _project("D73 Remember Proj")
 		task = frappe.get_doc(
-			{"doctype": "Task", "title": "remember-scope task", "project": proj, "workflow_state": "Pending"}
+			{"doctype": "Agent Task", "title": "remember-scope task", "project": proj, "workflow_state": "Pending"}
 		).insert(ignore_permissions=True)
 		frappe.flags.friday_dispatch_context = {
 			"agent_profile": profile,
@@ -192,5 +192,5 @@ class TestRememberTagsProject(unittest.TestCase):
 		finally:
 			frappe.flags.friday_dispatch_context = None
 			frappe.db.sql("DELETE FROM `tabAgent Memory` WHERE agent_profile = %s", (profile,))
-			frappe.delete_doc("Task", task.name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Agent Task", task.name, force=True, ignore_permissions=True)
 			frappe.db.commit()
