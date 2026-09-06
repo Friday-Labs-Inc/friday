@@ -31,7 +31,7 @@
    "label": "Description"
   },
   {
-   "description": "The work-item DocType this domain governs (e.g. Brand Brief). The Frappe Workflow is attached to THIS doctype; the engine reacts to its on_update.",
+   "description": "The work-item DocType this domain governs (e.g. a Brand Brief). The Frappe Workflow is attached to THIS doctype; the engine reacts to its on_update.",
    "fieldname": "domain_doctype",
    "fieldtype": "Link",
    "in_list_view": 1,

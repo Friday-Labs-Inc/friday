@@ -23,7 +23,7 @@ import os
 import frappe
 
 # Matches the timeout used in workflow.on_state_change and
-# integrations/randompack_client.enqueue_send so the queue config and the
+# the connector client's enqueue_send so the queue config and the
 # enqueue call stay aligned. 600s is generous: agentic LLM runs + sandbox
 # starts can be slow on a cold worker.
 FRIDAY_QUEUE_TIMEOUT_SECONDS = 600

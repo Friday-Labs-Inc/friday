@@ -22,7 +22,7 @@ Hermes has to hand-write a read tool per record type. Friday sits on
 Frappe — a permissioned database — so **one generic ``read-record`` tool,
 scoped by the agent's permissions and audited like every write, gives an
 agent read access to every DocType it can already write to**. No per-type
-read skill needed. Brand Direction, Task, Project, Issue, Brand Brief —
+read skill needed. Task, Project, Issue, a domain app's work-item —
 all readable through the same tool, all gated by the same Frappe
 permission machinery the rest of the framework already trusts.
 
@@ -89,7 +89,7 @@ def read_record(skill_name: str, parameters: dict) -> dict:
 	doctype = (parameters.get("doctype") or "").strip()
 	name = (parameters.get("name") or "").strip()
 	if not doctype:
-		raise ValueError("read-record requires a 'doctype' parameter (e.g. 'Brand Direction')")
+		raise ValueError("read-record requires a 'doctype' parameter (e.g. 'Task')")
 	if not name:
 		raise ValueError("read-record requires a 'name' parameter (the record's ID)")
 
@@ -165,7 +165,7 @@ def list_records(skill_name: str, parameters: dict) -> dict:
 	"""
 	doctype = (parameters.get("doctype") or "").strip()
 	if not doctype:
-		raise ValueError("list-records requires a 'doctype' parameter (e.g. 'Brand Direction')")
+		raise ValueError("list-records requires a 'doctype' parameter (e.g. 'Task')")
 
 	profile = _calling_profile()
 	if not profile:

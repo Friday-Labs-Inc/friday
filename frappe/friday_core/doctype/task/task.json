@@ -117,7 +117,7 @@
    "options": "mechanical\nagentic\nmilestone"
   },
   {
-   "description": "The RandomPack backend's reference for this task/phase (write-back key). Empty = no write-back.",
+   "description": "The external backend's reference for this task/phase (write-back key). Empty = no write-back.",
    "fieldname": "backend_ref",
    "fieldtype": "Data",
    "label": "Backend Ref"
@@ -198,7 +198,7 @@
    "search_index": 1
   },
   {
-   "description": "Design 75: the domain work-item DocType this task advances (e.g. Brand Brief). With work_item_name it links the Task to the record whose Frappe Workflow drives the pipeline. Empty for freeform / chat-originated tasks.",
+   "description": "Design 75: the domain work-item DocType this task advances (e.g. a domain work-item). With work_item_name it links the Task to the record whose Frappe Workflow drives the pipeline. Empty for freeform / chat-originated tasks.",
    "fieldname": "work_item_doctype",
    "fieldtype": "Link",
    "label": "Work Item DocType",

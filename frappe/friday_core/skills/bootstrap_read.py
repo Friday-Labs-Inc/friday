@@ -30,7 +30,7 @@ READ_ROLE = "Friday Reader"
 _SKILLS: dict[str, dict] = {
 	"read-record": {
 		"description": (
-			"Fetch ONE record by its DocType and name (e.g. Brand Direction "
+			"Fetch ONE record by its DocType and name (e.g. a work-item "
 			"BD-0001, Task TASK-42, Project PRJ-7). Returns the record's "
 			"fields. Use this whenever someone asks 'what does X say' or "
 			"'show me record X' or 'fetch the saved Y' — instead of "
@@ -49,7 +49,7 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType, e.g. 'Brand Direction', 'Task', 'Project'.",
+					"description": "The Frappe DocType, e.g. 'Task', 'Project', 'Issue'.",
 				},
 				"name": {
 					"type": "string",
@@ -64,7 +64,7 @@ _SKILLS: dict[str, dict] = {
 	},
 	"list-records": {
 		"description": (
-			"List rows of one DocType (e.g. 'all Brand Direction rows for "
+			"List rows of one DocType (e.g. 'all Task rows for "
 			"brief BB-0001', 'all open Tasks on PRJ-7'). Supports filters as "
 			"a dict of field → value (or [operator, value] tuples). Capped "
 			"at 100 rows. Use this whenever someone asks 'what are the X "
@@ -82,7 +82,7 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType to list, e.g. 'Brand Direction'.",
+					"description": "The Frappe DocType to list, e.g. 'Task'.",
 				},
 				"filters": {
 					"type": "object",
