@@ -81,7 +81,18 @@ def setup_status() -> dict:
 			"has_system_prompt": bool(profile and profile.get("system_prompt")),
 			"active": bool(profile and profile.get("status") == "Active"),
 		},
-		"surfaces": {"raven_installed": raven_installed, "war_room": war_room},
+		"surfaces": {
+			"raven_installed": raven_installed,
+			"war_room": war_room,
+			# Locked: Raven is the surface, Friday is the engine. Surfaced here so
+			# an operator can SEE that Raven's own AI is off by design, rather than
+			# discovering the toggle later and quietly splitting the audit trail.
+			"raven_ai_enabled": bool(
+				raven_installed
+				and frappe.db.get_single_value("Raven Settings", "enable_ai_integration")
+			),
+			"engine": "friday",
+		},
 		"tools": {
 			"read": bool(frappe.db.exists("Skill", "read-record")),
 			"files": bool(frappe.db.exists("Skill", "attach-deliverable")),
