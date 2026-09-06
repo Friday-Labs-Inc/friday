@@ -111,25 +111,18 @@ class DispatchResult:
 # dict with at minimum `{"result": "human-readable string"}`.
 # Additional keys like `note_name`, `doctype`, `record_name` are allowed and
 # returned in the Execution Log `result` JSON.
-_SKILL_HANDLERS: dict[str, callable] = {}
-
-
-def register_skill_handler(skill_name: str, handler: callable) -> None:
-	"""Register a skill handler. Raises ValueError if a handler already exists for this skill.
-
-	Usage:
-	    @register_skill_handler("create_note")
-	    def _handle_create_note(skill_name, parameters):
-	        ...
-
-	Or call directly:
-	    register_skill_handler("create_note", some_function)
-	"""
-	if skill_name in _SKILL_HANDLERS:
-		raise ValueError(
-			f"A handler for {skill_name!r} is already registered: {_SKILL_HANDLERS[skill_name]!r}"
-		)
-	_SKILL_HANDLERS[skill_name] = handler
+#
+# The registry itself lives in skills/registry.py (a kernel seam): apps declare
+# the modules that register handlers in their hooks.py under
+# `friday_skill_handlers`, and they are imported lazily on first lookup.
+# `register_skill_handler` and `_SKILL_HANDLERS` are re-exported here because
+# every handler module imports them from this path.
+from frappe.friday_core.skills.registry import (  # noqa: E402
+	_SKILL_HANDLERS,
+	get_skill_handler,
+	load_handler_modules,
+	register_skill_handler,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +299,7 @@ def dispatch(
 
 	start_ms = int(time.time() * 1000)
 	try:
-		handler = _SKILL_HANDLERS.get(skill_name)
+		handler = get_skill_handler(skill_name)
 		if handler is None:
 			# MCP skills (design 67) have dynamic names, so they aren't in the
 			# static registry — fall back to the generic MCP handler when the
@@ -541,23 +534,13 @@ def _handle_create_note(skill_name: str, parameters: dict) -> dict:
 # Register the handler.
 register_skill_handler("slice6-create-note", _handle_create_note)
 
-# Business-skill handlers register themselves on import (design 56). Imported
-# at the BOTTOM so `register_skill_handler` above already exists when the
-# module's import-time registration runs.
-from frappe.friday_core.skills import handlers_brand as _handlers_brand
-from frappe.friday_core.skills import handlers_cron as _handlers_cron  # design 87 slice 2
-from frappe.friday_core.skills import handlers_delegate as _handlers_delegate
-from frappe.friday_core.skills import handlers_deliverables as _handlers_deliverables  # design 73 #5
-from frappe.friday_core.skills import handlers_engine as _handlers_engine  # design 75: get-phase-outputs
-from frappe.friday_core.skills import handlers_files as _handlers_files  # design 66b
-from frappe.friday_core.skills import handlers_memory as _handlers_memory
-from frappe.friday_core.skills import handlers_project as _handlers_project
-from frappe.friday_core.skills import (
-	handlers_propose_skill as _handlers_propose_skill,
-)  # design 79 slice 2
-from frappe.friday_core.skills import handlers_read as _handlers_read  # design 66a
-from frappe.friday_core.skills import handlers_session_search as _handlers_session_search  # design 89
-from frappe.friday_core.skills import handlers_visual as _handlers_visual  # design 76 f/u: generate-image
+# Handler modules are declared by apps in the `friday_skill_handlers` hook
+# (see frappe/hooks.py for the kernel's own list) and imported lazily by
+# skills/registry.py. When a site is already bound at import time (tests,
+# bench execute) load them now so `_SKILL_HANDLERS` is complete for code
+# that inspects it directly.
+if getattr(getattr(frappe, "local", None), "site", None):
+	load_handler_modules()
 
 # ---------------------------------------------------------------------------
 # Internal helpers

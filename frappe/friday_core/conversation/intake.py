@@ -229,7 +229,17 @@ def _default_history(session_id: str) -> list[dict]:
 	]
 
 
-def _default_persist(session_id: str, message: str, reply: str) -> None:
+# Chat Platform the default persister files transcript rows under. A surface
+# that owns its own platform passes its own persist_fn (or `persist_for`).
+DEFAULT_INTAKE_PLATFORM = "friday-intake"
+
+
+def persist_for(platform: str):
+	"""A persist_fn bound to `platform` — for surfaces that own a Chat Platform."""
+	return lambda session_id, message, reply: _default_persist(session_id, message, reply, platform=platform)
+
+
+def _default_persist(session_id: str, message: str, reply: str, platform: str = DEFAULT_INTAKE_PLATFORM) -> None:
 	"""Write the inbound + outbound transcript rows for this turn (session continuity)."""
 	import frappe
 
@@ -240,7 +250,7 @@ def _default_persist(session_id: str, message: str, reply: str) -> None:
 				"doctype": "Chat Message",
 				"session_id": session_id,
 				"direction": direction,
-				"platform": "randompack-intake",
+				"platform": platform,
 				"content": content,
 				"timestamp": now,
 				"processed": 1,  # the streaming path already handled it; no worker pickup
@@ -248,8 +258,8 @@ def _default_persist(session_id: str, message: str, reply: str) -> None:
 		).insert(ignore_permissions=True)
 
 
-# A sample brand-intake wizard vocabulary — illustrative until RandomPack sends its real
-# `frontend/src/wizard/` field map (which the surface will inject, not hardcode).
+# A sample intake vocabulary for the demo below — illustrative only. A real
+# surface injects its own field map; the kernel never hardcodes a domain's.
 _DEMO_FIELDS = [
 	{"name": "business_name", "description": "the company / brand name"},
 	{"name": "industry", "description": "what the business does / its sector"},
@@ -257,9 +267,9 @@ _DEMO_FIELDS = [
 	{"name": "personality", "description": "the desired brand personality / vibe"},
 ]
 _DEMO_SYSTEM = (
-	"You are Friday's friendly brand-intake assistant for RandomPack. In 1-2 warm "
+	"You are Friday's friendly intake assistant for a design studio. In 1-2 warm "
 	"sentences, acknowledge what the customer told you and ask the single most useful "
-	"next question to scope their brand. Never ask more than one question at a time."
+	"next question to scope their project. Never ask more than one question at a time."
 )
 
 

@@ -92,6 +92,40 @@ CD_ROLE = "Brand Creative Director"
 # it, or the RandomPack webhook does). Holds GATE_ROLE and nothing else.
 GATEWAY_USER = "gateway+brand@friday.local"
 
+# @-reference registry for this domain's work-items (kernel hook
+# `friday_reference_registry`): prefix → (doctype, content fields the model may see).
+REFERENCE_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {
+	"BB-": (
+		"Brand Brief",
+		(
+			"business_name",
+			"industry",
+			"what_they_do",
+			"target_audience",
+			"brand_personality",
+			"competitors",
+			"color_preferences",
+			"inspirations",
+			"notes",
+			"status",
+		),
+	),
+	"BD-": (
+		"Brand Direction",
+		(
+			"brief",
+			"direction_name",
+			"concept_story",
+			"personality_keywords",
+			"color_palette",
+			"typography",
+			"logo_concept",
+			"tagline_options",
+			"status",
+		),
+	),
+}
+
 # ---------------------------------------------------------------------------
 # The state machine — DATA. (state, allow_edit role). All doc_status = 0
 # (Brand Brief is not submittable). allow_edit on a state is the role that
@@ -863,6 +897,11 @@ def _ensure_bundle() -> None:
 	bundle.description = "RandomPack brand identity pipeline (the first Design 75 domain)."
 	bundle.domain_doctype = DOMAIN_DOCTYPE
 	bundle.workflow_name = WORKFLOW_NAME
+	# The field names the kernel reads off this work-item (console tiles, pause
+	# announcements, deliverable branding, the Project link) — data, not code.
+	bundle.display_name_field = "business_name"
+	bundle.project_field = "project"
+	bundle.external_ref_field = "rp_project"
 	bundle.version = "1.0"
 	bundle.is_active = 1
 	bundle.tags = "brand, randompack"

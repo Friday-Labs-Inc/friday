@@ -276,9 +276,13 @@ def select_customer_sources(files: "list[dict]") -> "list[tuple[str, dict]]":
 	return out
 
 
-def _brand_context_for(brief_name: str, project_name: str) -> dict:
-	"""Assemble the render branding: company name + the CD's logo if he flagged one."""
-	company = frappe.db.get_value("Brand Brief", brief_name, "business_name") or ""
+def _work_item_context_for(work_item_doctype: str, work_item_name: str, project_name: str) -> dict:
+	"""Assemble the render branding: the work-item's display name (its bundle's
+	`display_name_field`) + the CD's logo if he flagged one."""
+	from frappe.friday_core.engine import bundle
+
+	display_field = bundle.fields_for(work_item_doctype).get("display_name_field")
+	company = (frappe.db.get_value(work_item_doctype, work_item_name, display_field) if display_field else "") or ""
 	ctx: dict = {"company": company}
 	# The CD's flagged logo (an image File he marked customer-facing) brands the PDFs.
 	logo_rows = frappe.get_all(
@@ -307,15 +311,19 @@ def _brand_context_for(brief_name: str, project_name: str) -> dict:
 	return ctx
 
 
-def materialize_for_customer(brief_name: str) -> "dict | None":
+def materialize_for_customer(work_item_doctype: str, work_item_name: str) -> "dict | None":
 	"""Render the customer package: branded, human-named PDFs on the Project,
-	flagged `is_customer_facing` so the bridge push delivers them (and ONLY them,
-	plus whatever assets the CD flagged himself).
+	flagged `is_customer_facing` so a domain app's push delivers them (and ONLY
+	them, plus whatever assets the CD flagged himself).
 
-	Called from the bridge when the brief reaches Delivered, BEFORE the push.
-	Idempotent: prior customer PDFs are replaced.
+	Called by the domain app when its work-item reaches delivery, BEFORE the
+	push. Idempotent: prior customer PDFs are replaced. The Project is read
+	through the bundle's `project_field`.
 	"""
-	project = frappe.db.get_value("Brand Brief", brief_name, "project")
+	from frappe.friday_core.engine import bundle
+
+	project_field = bundle.fields_for(work_item_doctype)["project_field"]
+	project = frappe.db.get_value(work_item_doctype, work_item_name, project_field)
 	if not project:
 		return None
 	files = frappe.get_all(
@@ -327,7 +335,7 @@ def materialize_for_customer(brief_name: str) -> "dict | None":
 	if not sources:
 		return None
 
-	ctx = _brand_context_for(brief_name, project)
+	ctx = _work_item_context_for(work_item_doctype, work_item_name, project)
 	company = ctx.get("company") or ""
 	created: dict = {}
 	for human_title, row in sources:
