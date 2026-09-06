@@ -68,14 +68,14 @@ class TestRecordTurnPersistsAndAudits(unittest.TestCase):
 			"hello",
 			provider,
 			profile="Customer Intake",
-			platform="randompack-intake",
+			platform="demo-intake",
 			usages=[{"total_tokens": 50}, {"total_tokens": 10}],
 		)
 
 		# Transcript: one inbound + one outbound Chat Message row, on the surface's platform.
 		chat_rows = [c.args[0] for c in fr.get_doc.call_args_list if c.args[0]["doctype"] == "Chat Message"]
 		self.assertEqual([r["direction"] for r in chat_rows], ["inbound", "outbound"])
-		self.assertEqual({r["platform"] for r in chat_rows}, {"randompack-intake"})
+		self.assertEqual({r["platform"] for r in chat_rows}, {"demo-intake"})
 		# Usage audited for EVERY model call of the turn.
 		self.assertEqual(rec.call_count, 2)
 		self.assertEqual(rec.call_args_list[0].kwargs["usage"], {"total_tokens": 50})
@@ -112,17 +112,17 @@ class TestEnsurePlatform(unittest.TestCase):
 	@patch(f"{_S}.frappe")
 	def test_creates_the_platform_row_when_absent(self, fr):
 		fr.db.exists.return_value = False
-		out = spine.ensure_platform("randompack-intake", "frappe.friday_core.surfaces.randompack_chat")
+		out = spine.ensure_platform("demo-intake", "my_app.surfaces.intake_chat")
 		row = fr.get_doc.call_args.args[0]
 		self.assertEqual(row["doctype"], "Chat Platform")
-		self.assertEqual(row["platform_name"], "randompack-intake")
+		self.assertEqual(row["platform_name"], "demo-intake")
 		self.assertEqual(row["enabled"], 0)  # registered for the Link, not gateway dispatch
 		self.assertTrue(out["platform_created"])
 
 	@patch(f"{_S}.frappe")
 	def test_idempotent_when_present(self, fr):
 		fr.db.exists.return_value = True
-		out = spine.ensure_platform("randompack-intake", "whatever")
+		out = spine.ensure_platform("demo-intake", "whatever")
 		fr.get_doc.assert_not_called()
 		self.assertFalse(out["platform_created"])
 

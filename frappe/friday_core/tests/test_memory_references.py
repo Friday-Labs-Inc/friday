@@ -79,28 +79,42 @@ class TestRecall(unittest.TestCase):
 		self.assertIsNone(memory.recall_block("Friday"))
 
 
+# The kernel ships an EMPTY reference registry; domain apps contribute entries
+# through the `friday_reference_registry` hook. These tests mock `frappe`
+# wholesale (so the hook is invisible) and inject a fixture registry instead —
+# "Demo Work Item" here is just an opaque doctype string under the mock.
+_FIXTURE_REGISTRY = {
+	"WI-": ("Demo Work Item", ("business_name", "industry")),
+	"WX-": ("Demo Related Record", ("title",)),
+}
+
+
 class TestParseReferences(unittest.TestCase):
+	"""parse_references reads the LIVE registry, which the kernel ships EMPTY —
+	domain apps fill it through `friday_reference_registry`. Inject a fixture so
+	this passes on a bare kernel install with no domain app present."""
+
+	def setUp(self):
+		reg = patch.dict(references.REFERENCE_REGISTRY, _FIXTURE_REGISTRY)
+		reg.start()
+		self.addCleanup(reg.stop)
+
 	def test_finds_registry_refs_and_trims_punctuation(self):
 		self.assertEqual(
-			references.parse_references("use @BB-0001. and compare with @BD-0003,"),
-			["BB-0001", "BD-0003"],
+			references.parse_references("use @WI-0001. and compare with @WX-0003,"),
+			["WI-0001", "WX-0003"],
 		)
 
 	def test_ignores_unknown_prefixes_and_dedupes(self):
 		self.assertEqual(
-			references.parse_references("@XX-99 then @BB-0001 and @BB-0001 again"),
-			["BB-0001"],
+			references.parse_references("@XX-99 then @WI-0001 and @WI-0001 again"),
+			["WI-0001"],
 		)
 
 	def test_no_refs_returns_empty(self):
 		self.assertEqual(references.parse_references("no refs here"), [])
 
 
-# The kernel ships an EMPTY reference registry; domain apps contribute entries
-# through the `friday_reference_registry` hook. These tests mock `frappe`
-# wholesale (so the hook is invisible) and inject a fixture registry instead —
-# "Demo Work Item" here is just an opaque doctype string under the mock.
-_FIXTURE_REGISTRY = {"BB-": ("Demo Work Item", ("business_name", "industry"))}
 
 
 class TestExpandReferences(unittest.TestCase):
@@ -124,9 +138,9 @@ class TestExpandReferences(unittest.TestCase):
 			"frappe.friday_core.permissions.matrix.build_matrix",
 			return_value=self._matrix({"Demo Work Item"}),
 		):
-			block = references.expand_references("look at @BB-0001", "Friday")
+			block = references.expand_references("look at @WI-0001", "Friday")
 		self.assertIn("<referenced-records>", block)
-		self.assertIn("@BB-0001 (Demo Work Item):", block)
+		self.assertIn("@WI-0001 (Demo Work Item):", block)
 		self.assertIn("business_name: Loop Coffee", block)
 
 	@patch(f"{_R}.frappe")
@@ -135,7 +149,7 @@ class TestExpandReferences(unittest.TestCase):
 			"frappe.friday_core.permissions.matrix.build_matrix",
 			return_value=self._matrix(set()),
 		):
-			block = references.expand_references("@BB-0001 please", "Friday")
+			block = references.expand_references("@WI-0001 please", "Friday")
 		self.assertIn("not permitted", block)
 		mock_frappe.get_doc.assert_not_called()
 
@@ -146,8 +160,8 @@ class TestExpandReferences(unittest.TestCase):
 			"frappe.friday_core.permissions.matrix.build_matrix",
 			return_value=self._matrix({"Demo Work Item"}),
 		):
-			block = references.expand_references("@BB-9999", "Friday")
-		self.assertIn("@BB-9999: not found", block)
+			block = references.expand_references("@WI-9999", "Friday")
+		self.assertIn("@WI-9999: not found", block)
 
 	def test_no_refs_returns_none(self):
 		self.assertIsNone(references.expand_references("plain text", "Friday"))
@@ -204,7 +218,7 @@ class TestPromptBuilderSeams(unittest.TestCase):
 		):
 			mock_frappe.get_doc.return_value = profile
 			mock_frappe.get_all.return_value = []
-			return build("Friday", "S-1", "hello @BB-0001", tools=None)
+			return build("Friday", "S-1", "hello @WI-0001", tools=None)
 
 	def test_recall_block_inserted_after_system(self):
 		out = self._build(recall="<memory-context>facts</memory-context>")
@@ -217,14 +231,14 @@ class TestPromptBuilderSeams(unittest.TestCase):
 		out = self._build(refs="<referenced-records>brief</referenced-records>")
 		user = out["messages"][-1]
 		self.assertEqual(user["role"], "user")
-		self.assertTrue(user["content"].startswith("hello @BB-0001"))
+		self.assertTrue(user["content"].startswith("hello @WI-0001"))
 		self.assertIn("<referenced-records>brief</referenced-records>", user["content"])
 
 	def test_no_memory_no_refs_means_clean_prompt(self):
 		out = self._build()
 		roles = [m["role"] for m in out["messages"]]
 		self.assertEqual(roles, ["system", "user"])
-		self.assertEqual(out["messages"][-1]["content"], "hello @BB-0001")
+		self.assertEqual(out["messages"][-1]["content"], "hello @WI-0001")
 
 
 if __name__ == "__main__":

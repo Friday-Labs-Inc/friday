@@ -224,7 +224,7 @@ class TestReconcilerTickEmits(unittest.TestCase):
 		self.assertEqual(events[0]["trigger_source"], "scheduler")
 		# Summary mentions each phase.
 		summary = events[0]["summary"] or ""
-		for phase in ("assigned_orphans", "executing_stale", "transient_blocked", "randompack_events"):
+		for phase in ("assigned_orphans", "executing_stale", "transient_blocked", "connector_events"):
 			self.assertIn(phase, summary)
 
 	def tearDown(self):

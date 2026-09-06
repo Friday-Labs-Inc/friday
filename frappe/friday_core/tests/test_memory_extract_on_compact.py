@@ -33,8 +33,8 @@ class TestParseExtractedFacts(unittest.TestCase):
 	"""Pure parsing — no DB."""
 
 	def test_clean_json_array(self):
-		out = C._parse_extracted_facts('[{"memory": "Loop hates serifs", "subject": "BB-1"}]')
-		self.assertEqual(out, [{"memory": "Loop hates serifs", "subject": "BB-1"}])
+		out = C._parse_extracted_facts('[{"memory": "Loop hates serifs", "subject": "WI-1"}]')
+		self.assertEqual(out, [{"memory": "Loop hates serifs", "subject": "WI-1"}])
 
 	def test_strips_surrounding_prose_and_fences(self):
 		text = 'Sure! Here you go:\n```json\n[{"memory": "Prefers SMS"}]\n```\nDone.'
@@ -75,7 +75,7 @@ class TestExtractFactsBeforeCompaction(unittest.TestCase):
 		return p
 
 	def test_writes_new_memory_rows(self):
-		provider = self._provider('[{"memory": "Loop hates serifs", "subject": "BB-1"}]')
+		provider = self._provider('[{"memory": "Loop hates serifs", "subject": "WI-1"}]')
 		with patch(f"{_C}.frappe") as fr, patch(_MEM, return_value="PROJ-1"):
 			fr.db.exists.return_value = False
 			doc = MagicMock()

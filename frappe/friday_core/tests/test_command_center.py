@@ -62,7 +62,7 @@ class TestAgenticRunner(unittest.TestCase):
 		task = MagicMock()
 		task.name = "TASK-7"
 		task.title = "Strategy draft"
-		task.description = "Read BB-0005 and draft."
+		task.description = "Read WI-0005 and draft."
 		task.get.side_effect = {"execution_mode": "agentic"}.get
 		return task
 
