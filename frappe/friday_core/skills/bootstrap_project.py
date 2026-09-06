@@ -21,34 +21,6 @@ import frappe
 COMMANDER_ROLE = "Project Commander"
 
 _SKILLS: dict[str, dict] = {
-	"plan-project": {
-		"description": (
-			"Create a Project and instantiate the productized RandomPack pipeline "
-			"for a Brand Brief: strategy, naming, three directions, two client "
-			"gates, build-out, guidelines — with dependencies wired."
-		),
-		"when_to_use": (
-			"When asked to start/plan brand work for a brief (e.g. 'plan the "
-			"pipeline for BB-0005'). Pipelines from backend events are planned "
-			"automatically — use this for manual kickoffs."
-		),
-		"schema": {
-			"type": "object",
-			"properties": {
-				"brief": {"type": "string", "description": "The Brand Brief ID, e.g. 'BB-0005'."},
-				"title": {"type": "string", "description": "Optional project title."},
-				"backend_ref": {
-					"type": "string",
-					"description": "Optional RandomPack backend project id (enables write-back).",
-				},
-			},
-			"required": ["brief"],
-		},
-		"docs": [
-			{"target_doctype": "Project", "operation": "create"},
-			{"target_doctype": "Task", "operation": "create"},
-		],
-	},
 	"project-status": {
 		"description": "Report a Project's pipeline at a glance: every task, its state, mode, and what is blocking.",
 		"when_to_use": "When asked where a project stands ('status of PRJ x', 'where is the Loop Coffee pipeline').",

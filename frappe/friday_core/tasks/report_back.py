@@ -15,7 +15,7 @@ Independently-dispatched pipeline tasks with no originating session
 write nothing here — the War Room post remains their only signal.
 
 Never raises: a report-back failure must not break the task pipeline
-(the War Room / randompack-bridge defensiveness pattern).
+(the War Room / connector-bridge defensiveness pattern).
 """
 
 from __future__ import annotations

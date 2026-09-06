@@ -39,9 +39,12 @@ class TestEveryBootstrapIsOnTheMigratePath(unittest.TestCase):
 		)
 
 	def test_registry_paths_resolve(self):
+		"""Every path the registry will call — the kernel's own and every one an
+		installed app contributes through `friday_skill_definitions` — must
+		import and be callable, or the migrate-path refresh silently skips it."""
 		import importlib
 
-		for path in bootstrap_registry.DEFINITION_ENSURES:
+		for path in bootstrap_registry.definition_ensures():
 			module_path, func = path.rsplit(".", 1)
 			mod = importlib.import_module(module_path)
 			self.assertTrue(callable(getattr(mod, func)), f"{path} does not resolve to a callable")

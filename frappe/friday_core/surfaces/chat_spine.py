@@ -23,7 +23,7 @@ hard-won plumbing is identical — so it lives HERE, once:
     whose platform row is missing fails EVERY transcript insert (#168's root cause).
   * The anti-blank guard: an empty completion becomes a gentle nudge, never a blank turn.
 
-A surface module (``randompack_chat``, ``randompack_project_chat``) keeps only its OWN
+A surface module (a domain app's intake / project chat) keeps only its OWN
 meaning: the agent profile, the platform name, the system-prompt builder, and a
 ``structured_pass`` — the deterministic second model pass that turns the finished turn
 into side-channel events (wizard deltas for intake; gate-action proposals for project

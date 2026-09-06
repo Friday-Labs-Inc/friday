@@ -7,7 +7,7 @@ PLAIN ENGLISH
 =============
 A typed, never-raises POST to an external system's Frappe-style API, with auth
 sourced from the Connector row's encrypted secrets (token key:secret). This is
-the generalisation of the old `randompack_client.send` — the transport is
+the generalisation of the first domain client's `send` — the transport is
 generic; the connector's specific endpoint names + payload shapes stay in its
 domain adapter (which resolves the dotted `path` and calls us).
 

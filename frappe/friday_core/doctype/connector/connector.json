@@ -23,7 +23,7 @@
  ],
  "fields": [
   {
-   "description": "Unique id of this integration, e.g. randompack-system.",
+   "description": "Unique id of this integration, e.g. crm-system.",
    "fieldname": "connector_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -33,7 +33,7 @@
   },
   {
    "default": "system",
-   "description": "What kind of ecosystem this talks to. system = signed-event business system (RandomPack). chat/mcp/a2a land in later slices.",
+   "description": "What kind of ecosystem this talks to. system = signed-event business system. chat/mcp/a2a land in later slices.",
    "fieldname": "modality",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -75,7 +75,7 @@
    "label": "Outbound (API)"
   },
   {
-   "description": "Base URL of the external system, e.g. https://ops.randompack.com",
+   "description": "Base URL of the external system, e.g. https://ops.example.com",
    "fieldname": "api_base_url",
    "fieldtype": "Data",
    "label": "API Base URL"

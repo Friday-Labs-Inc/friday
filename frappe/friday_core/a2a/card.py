@@ -42,7 +42,7 @@ def build_agent_card(
 
     `list_fn(profile) -> [{name, description, tags?}]` is injectable for tests; the
     default reads the real skill loader. `base_url` is the site's external origin
-    (e.g. ``https://ai.randompack.com``) onto which the endpoint path is appended.
+    (e.g. ``https://ai.example.com``) onto which the endpoint path is appended.
     """
     list_fn = list_fn or _default_skill_list
     skills = [
