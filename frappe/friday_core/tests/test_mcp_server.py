@@ -161,7 +161,7 @@ class TestEndpointIsRoutable(unittest.TestCase):
 class TestAuth(unittest.TestCase):
 	"""The token rides the `X-MCP-Token` header, NOT `Authorization: Bearer` — Frappe's
 	auth middleware 401s any non-OAuth Bearer before the endpoint runs (caught live on
-	ai.randompack.com). These pin the header name + the constant-time compare."""
+	ai.example.com). These pin the header name + the constant-time compare."""
 
 	def test_reads_the_x_mcp_token_header(self):
 		with mock.patch.object(server, "frappe") as fr:

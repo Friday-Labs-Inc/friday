@@ -51,7 +51,13 @@ def share_deliverables(skill_name: str, parameters: dict) -> dict:
 	session_id = (ctx.get("session_id") or "").strip()
 
 	# The files post into the conversation's OWN channel — never a guessed one.
-	if not session_id or not frappe.db.exists("Raven Channel", session_id):
+	# Raven is optional: check the table before querying it (an absent table
+	# raises, and on Postgres that aborts the caller's whole transaction).
+	if (
+		not session_id
+		or not frappe.db.table_exists("Raven Channel")
+		or not frappe.db.exists("Raven Channel", session_id)
+	):
 		raise ValueError(
 			"share-deliverables only works inside a project's chat channel "
 			"(it posts the files into that channel)."

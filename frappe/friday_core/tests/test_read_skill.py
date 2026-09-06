@@ -34,7 +34,7 @@ class TestReadRecordParameterValidation(unittest.TestCase):
 
 		mock_frappe.flags.get.return_value = _ctx()
 		with self.assertRaises(ValueError) as cm:
-			read_record("read-record", {"name": "BD-0001"})
+			read_record("read-record", {"name": "DEMO-0001"})
 		self.assertIn("doctype", str(cm.exception).lower())
 
 	@patch(f"{_H}.frappe")
@@ -43,7 +43,7 @@ class TestReadRecordParameterValidation(unittest.TestCase):
 
 		mock_frappe.flags.get.return_value = _ctx()
 		with self.assertRaises(ValueError) as cm:
-			read_record("read-record", {"doctype": "Brand Direction"})
+			read_record("read-record", {"doctype": "Demo Record"})
 		self.assertIn("name", str(cm.exception).lower())
 
 	@patch(f"{_H}.frappe")
@@ -53,7 +53,7 @@ class TestReadRecordParameterValidation(unittest.TestCase):
 
 		mock_frappe.flags.get.return_value = {}
 		with self.assertRaises(ValueError) as cm:
-			read_record("read-record", {"doctype": "Brand Direction", "name": "BD-0001"})
+			read_record("read-record", {"doctype": "Demo Record", "name": "DEMO-0001"})
 		self.assertIn("profile", str(cm.exception).lower())
 
 
@@ -66,10 +66,10 @@ class TestReadRecordPermissions(unittest.TestCase):
 		from frappe.friday_core.skills.handlers_read import read_record
 
 		mock_frappe.flags.get.return_value = _ctx()
-		mock_frappe.db.exists.return_value = "BD-0001"
+		mock_frappe.db.exists.return_value = "DEMO-0001"
 		mock_frappe.has_permission.return_value = False
 
-		out = read_record("read-record", {"doctype": "Brand Direction", "name": "BD-0001"})
+		out = read_record("read-record", {"doctype": "Demo Record", "name": "DEMO-0001"})
 
 		# Permission denial collapses to not_found_or_unreadable — deliberately
 		# ambiguous so an agent cannot probe forbidden-vs-missing.
@@ -95,7 +95,7 @@ class TestReadRecordPermissions(unittest.TestCase):
 		mock_frappe.flags.get.return_value = _ctx()
 		mock_frappe.db.exists.return_value = None  # row truly missing
 
-		out = read_record("read-record", {"doctype": "Brand Direction", "name": "BD-NOPE"})
+		out = read_record("read-record", {"doctype": "Demo Record", "name": "DEMO-NOPE"})
 
 		self.assertEqual(out["error"], "not_found_or_unreadable")
 
@@ -108,7 +108,7 @@ class TestReadRecordSuccess(unittest.TestCase):
 		from frappe.friday_core.skills.handlers_read import read_record
 
 		mock_frappe.flags.get.return_value = _ctx()
-		mock_frappe.db.exists.return_value = "BD-0001"
+		mock_frappe.db.exists.return_value = "DEMO-0001"
 		mock_frappe.has_permission.return_value = True
 
 		# Frappe meta + doc behaviour
@@ -120,7 +120,7 @@ class TestReadRecordSuccess(unittest.TestCase):
 
 		doc = MagicMock()
 		doc.as_dict.return_value = {
-			"name": "BD-0001",
+			"name": "DEMO-0001",
 			"direction_name": "Midnight Atelier",
 			"concept_story": "Story...",
 			"creation": "2026-06-13 12:00:00",
@@ -130,10 +130,10 @@ class TestReadRecordSuccess(unittest.TestCase):
 		}
 		mock_frappe.get_doc.return_value = doc
 
-		out = read_record("read-record", {"doctype": "Brand Direction", "name": "BD-0001"})
+		out = read_record("read-record", {"doctype": "Demo Record", "name": "DEMO-0001"})
 
-		self.assertEqual(out["doctype"], "Brand Direction")
-		self.assertEqual(out["name"], "BD-0001")
+		self.assertEqual(out["doctype"], "Demo Record")
+		self.assertEqual(out["name"], "DEMO-0001")
 		self.assertEqual(out["record"]["direction_name"], "Midnight Atelier")
 		self.assertEqual(out["record"]["concept_story"], "Story...")
 
@@ -188,12 +188,12 @@ class TestListRecords(unittest.TestCase):
 
 		list_records(
 			"list-records",
-			{"doctype": "Brand Direction", "filters": {"brief": "BB-0001"}, "limit": 20},
+			{"doctype": "Demo Record", "filters": {"project": "PRJ-0001"}, "limit": 20},
 		)
 
 		call = mock_frappe.db.get_all.call_args
-		self.assertEqual(call.args[0], "Brand Direction")
-		self.assertEqual(call.kwargs["filters"], {"brief": "BB-0001"})
+		self.assertEqual(call.args[0], "Demo Record")
+		self.assertEqual(call.kwargs["filters"], {"project": "PRJ-0001"})
 		# Limit must be capped to a sane maximum even if caller passes more
 		# (prevents the agent from accidentally pulling 50k rows).
 		self.assertLessEqual(call.kwargs.get("limit_page_length", 0), 100)
@@ -207,7 +207,7 @@ class TestListRecords(unittest.TestCase):
 		mock_frappe.get_meta.return_value = MagicMock(fields=[])
 		mock_frappe.db.get_all.return_value = []
 
-		list_records("list-records", {"doctype": "Brand Direction", "limit": 50000})
+		list_records("list-records", {"doctype": "Demo Record", "limit": 50000})
 
 		call = mock_frappe.db.get_all.call_args
 		self.assertEqual(call.kwargs["limit_page_length"], 100)  # MAX_LIST_ROWS
@@ -220,7 +220,7 @@ class TestListRecords(unittest.TestCase):
 		mock_frappe.flags.get.return_value = _ctx()
 		mock_frappe.has_permission.return_value = False
 
-		out = list_records("list-records", {"doctype": "Brand Direction"})
+		out = list_records("list-records", {"doctype": "Demo Record"})
 
 		self.assertEqual(out["rows"], [])
 		self.assertTrue(out.get("denied"))

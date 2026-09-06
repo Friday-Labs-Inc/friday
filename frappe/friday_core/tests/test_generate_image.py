@@ -48,7 +48,7 @@ class TestGenerateImage(unittest.TestCase):
 	@patch(f"{_P}._resolve_provider_row")
 	def test_unsupported_provider_type_rejected(self, m_row):
 		m_row.return_value = {"name": "Claude", "provider_type": "anthropic", "base_url": ""}
-		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director"}
+		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent"}
 		out = hv.generate_image("generate-image", {"prompt": "a logo"})
 		# The message names what IS supported and where to fix the routing.
 		self.assertIn("minimax", out["result"])
@@ -72,7 +72,7 @@ class TestGenerateImage(unittest.TestCase):
 		m_req.post.return_value = post_resp
 		m_req.get.return_value = get_resp
 		m_save.return_value = MagicMock(file_url="/files/glacial-logo-1.png")
-		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director", "session_id": "chat-uuid"}
+		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent", "session_id": "chat-uuid"}
 
 		out = hv.generate_image("generate-image", {"prompt": "glacial minimalist logo", "aspect_ratio": "1:1"})
 
@@ -102,7 +102,7 @@ class TestGenerateImage(unittest.TestCase):
 		post_resp.json.return_value = {"data": [{"b64_json": base64.b64encode(png).decode()}]}
 		m_req.post.return_value = post_resp
 		m_save.return_value = MagicMock(file_url="/files/robot-mark-1.png")
-		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director", "session_id": "chat-uuid"}
+		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent", "session_id": "chat-uuid"}
 
 		out = hv.generate_image("generate-image", {"prompt": "robot mark", "aspect_ratio": "16:9"})
 
@@ -128,7 +128,7 @@ class TestGenerateImage(unittest.TestCase):
 		post_resp = MagicMock()
 		post_resp.json.return_value = {"error": {"message": "content policy violation"}}
 		m_req.post.return_value = post_resp
-		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director"}
+		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent"}
 
 		out = hv.generate_image("generate-image", {"prompt": "a logo"})
 		self.assertIn("content policy violation", out["result"])
@@ -142,7 +142,7 @@ class TestGenerateImage(unittest.TestCase):
 		post_resp = MagicMock()
 		post_resp.json.return_value = {"base_resp": {"status_code": 1008, "status_msg": "insufficient balance"}}
 		m_req.post.return_value = post_resp
-		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director"}
+		frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent"}
 
 		out = hv.generate_image("generate-image", {"prompt": "a logo"})
 		self.assertIn("1008", out["result"])
@@ -156,7 +156,7 @@ class TestGenerateImage(unittest.TestCase):
 			post_resp = MagicMock()
 			post_resp.json.return_value = {"data": {"image_urls": []}, "base_resp": {"status_code": 0}}
 			m_req.post.return_value = post_resp
-			frappe.flags["friday_dispatch_context"] = {"agent_profile": "Creative Director"}
+			frappe.flags["friday_dispatch_context"] = {"agent_profile": "Visual Agent"}
 			hv.generate_image("generate-image", {"prompt": "a logo"})
 			args, _ = m_req.post.call_args
 			self.assertIn("api.minimaxi.com", args[0])

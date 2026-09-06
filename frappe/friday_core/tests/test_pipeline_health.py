@@ -163,7 +163,7 @@ class TestRandomPackHealth(unittest.TestCase):
 	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
 	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
 	@patch("frappe.friday_core.health.pipeline_health.frappe")
-	def test_randompack_block_present(self, mock_frappe, mock_tick, mock_inflight):
+	def test_connector_block_present(self, mock_frappe, mock_tick, mock_inflight):
 		from frappe.friday_core.health.pipeline_health import pipeline_health
 
 		_baseline_db(mock_frappe)

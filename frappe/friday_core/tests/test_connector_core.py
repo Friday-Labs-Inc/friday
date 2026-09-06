@@ -5,7 +5,7 @@
 Unit tests for the generic Connector spine (Design 81a).
 
 Mock-based — no DB, no network. These pin the behaviours that USED to live in
-surfaces/randompack.py + randompack_client.py and are now generic core:
+the first connector surface + its client, and are now generic core:
   - Stripe-style signature: valid passes; bad v1 fails BEFORE freshness;
     stale t fails AFTER a valid v1; malformed headers fail closed
   - process_event: Processed replays skip; handler errors → Failed + reason
@@ -129,7 +129,7 @@ class TestOutboundClient(unittest.TestCase):
 	def _connector(self, enabled=1, signing_secret=""):
 		connector = MagicMock()
 		connector.enabled = enabled
-		connector.api_base_url = "https://ops.randompack.com"
+		connector.api_base_url = "https://ops.example.com"
 		connector.api_key = "key123"
 		# Field-aware secrets: token auth always configured; outbound signing
 		# only when a test opts in (unsigned = the pre-signing behavior).
@@ -145,9 +145,9 @@ class TestOutboundClient(unittest.TestCase):
 		mock_frappe.db.exists.return_value = True
 		mock_frappe.get_cached_doc.return_value = self._connector()
 		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
-		connector_client.send("c1", "randompack.api.v1.update_task_progress", {"task": "T-1"})
+		connector_client.send("c1", "partner_app.api.v1.update_task_progress", {"task": "T-1"})
 		url = mock_requests.post.call_args[0][0]
-		self.assertEqual(url, "https://ops.randompack.com/api/method/randompack.api.v1.update_task_progress")
+		self.assertEqual(url, "https://ops.example.com/api/method/partner_app.api.v1.update_task_progress")
 		headers = mock_requests.post.call_args.kwargs["headers"]
 		self.assertEqual(headers["Authorization"], "token key123:sec456")
 
@@ -184,7 +184,7 @@ class TestOutboundSigning(unittest.TestCase):
 	def _connector(self, signing_secret="s3cret"):
 		connector = MagicMock()
 		connector.enabled = 1
-		connector.api_base_url = "https://ops.randompack.com"
+		connector.api_base_url = "https://ops.example.com"
 		connector.api_key = "key123"
 		connector.get_password.side_effect = lambda field: {
 			"api_secret": "sec456",
@@ -202,7 +202,7 @@ class TestOutboundSigning(unittest.TestCase):
 		mock_frappe.get_cached_doc.return_value = self._connector()
 		mock_requests.post.return_value = MagicMock(json=lambda: {"message": "ok"})
 
-		connector_client.send("c1", "randompack.api.v1.attach_deliverable", {"project": "PROJ-1"})
+		connector_client.send("c1", "partner_app.api.v1.attach_deliverable", {"project": "PROJ-1"})
 
 		kwargs = mock_requests.post.call_args.kwargs
 		headers = kwargs["headers"]

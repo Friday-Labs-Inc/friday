@@ -30,9 +30,9 @@ _M = "frappe.friday_core.llm.memory"
 class TestFormatBlock(unittest.TestCase):
 	def test_renders_subject_and_plain_lines(self):
 		block = M._format_block(
-			[{"memory": "no serifs", "subject": "BB-1"}, {"memory": "ships fridays"}], 2000
+			[{"memory": "no serifs", "subject": "WI-1"}, {"memory": "ships fridays"}], 2000
 		)
-		self.assertIn("- [BB-1] no serifs", block)
+		self.assertIn("- [WI-1] no serifs", block)
 		self.assertIn("- ships fridays", block)
 		self.assertIn("<memory-context>", block)  # fenced
 
@@ -51,7 +51,7 @@ class TestFormatBlock(unittest.TestCase):
 class TestRecallScored(unittest.TestCase):
 	def test_runs_fts_query_and_formats(self):
 		with patch(f"{_M}.frappe") as fr:
-			fr.db.sql.return_value = [{"memory": "loop hates serifs", "subject": "BB-1"}]
+			fr.db.sql.return_value = [{"memory": "loop hates serifs", "subject": "WI-1"}]
 			block = M._recall_scored("Friday", None, 2000, "what fonts does loop like")
 		self.assertIn("loop hates serifs", block)
 		sql = fr.db.sql.call_args[0][0]

@@ -88,7 +88,12 @@ def project_for_session(session_id: str) -> "str | None":
 	if not session_id:
 		return None
 	try:
-		if frappe.db.exists("Raven Channel", session_id):
+		# Raven is optional. `exists()` on an absent table raises, and on Postgres
+		# a failed statement ABORTS THE WHOLE TRANSACTION — the bare `except` below
+		# would swallow the error and every later query in the turn would die with
+		# "current transaction is aborted". Check the table first so the query is
+		# never issued on a Raven-less site.
+		if frappe.db.table_exists("Raven Channel") and frappe.db.exists("Raven Channel", session_id):
 			link = frappe.db.get_value(
 				"Raven Channel", session_id, ["linked_doctype", "linked_document"], as_dict=True
 			)
