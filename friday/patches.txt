@@ -1,0 +1,11 @@
+[pre_model_sync]
+# Take ownership of the "Friday Core" module from the frappe app. Must run
+# BEFORE schema sync: bench migrate sweeps DocTypes whose module belongs to an
+# app that no longer ships the file, and every Friday DocType would qualify.
+friday.friday_core.patches.v1_0.rehome_from_frappe
+friday.friday_core.patches.v1_0.rename_tracker_doctypes
+
+[post_model_sync]
+friday.friday_core.patches.v1_0.backfill_agent_role
+friday.friday_core.patches.v1_0.create_agent_settings_singleton
+friday.friday_core.patches.v1_0.add_task_forcekill_fields

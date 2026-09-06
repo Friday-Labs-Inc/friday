@@ -63,7 +63,7 @@ Per `feedback_hermes-floor-not-ceiling`.
 
 ## Why we know it works
 
-13 unit tests in `frappe/friday_core/tests/test_rollup.py`: the progress map;
+13 unit tests in `friday/friday_core/tests/test_rollup.py`: the progress map;
 the cost sum (real, all-None → None, no-rows → None); and the project rollup
 math — counts, %-complete, the "end-date only when all done" rule (incl. a
 Blocked task suppressing it), cost summation, and the no-op guards. The full

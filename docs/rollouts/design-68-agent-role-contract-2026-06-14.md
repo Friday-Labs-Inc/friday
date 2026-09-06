@@ -37,7 +37,7 @@ A patch (`patches/v1_0/backfill_agent_role.py`) sets every existing Agent Profil
 ## Where to read more
 
 - Locked design: [`docs/design/68-agent-role-contract.md`](../design/68-agent-role-contract.md)
-- Controller: `frappe/friday_core/doctype/agent_profile/agent_profile.py`
-- Prompt scaffolding: `frappe/friday_core/llm/prompt_builder.py`
-- Form: `frappe/friday_core/doctype/agent_profile/agent_profile.js`
-- Patch: `frappe/friday_core/patches/v1_0/backfill_agent_role.py`
+- Controller: `friday/friday_core/doctype/agent_profile/agent_profile.py`
+- Prompt scaffolding: `friday/friday_core/llm/prompt_builder.py`
+- Form: `friday/friday_core/doctype/agent_profile/agent_profile.js`
+- Patch: `friday/friday_core/patches/v1_0/backfill_agent_role.py`

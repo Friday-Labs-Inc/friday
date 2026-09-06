@@ -12,7 +12,7 @@ Friday is an **agentic framework** — a system that lets AI agents do real busi
 
 Think of it like this: a human employee at a company can only do certain things — they need the right role, the right access, and everything they do is recorded. Friday makes AI agents work the same way.
 
-**The Friday repository is a hard fork of Frappe v16 stable.** You are not building a plugin on top of Frappe. You ARE building inside the Frappe codebase, adding agent-native capabilities to its core, and creating a Friday app (`friday/`) on top of it.
+**Friday is an ordinary Frappe app.** It installs on stock Frappe v16 and patches no framework file. (It began as a hard fork; the un-fork landed once it was clear every touch-point was expressible as an app hook. `docs/design/45-fork-policy.md` keeps that reasoning as history.)
 
 **Current state of the repo:** Zero code. Only design documents and project files. Your job is to write all the code.
 
@@ -50,7 +50,7 @@ All design docs live in `docs/design/`. Read them in this order:
 | CLI strategy | **Extend bench** — `bench friday <cmd>` | No new tools to install |
 | LLM provider | **Provider-agnostic interface; Minimax as first provider** | Swap provider by changing one config value |
 | Sandbox | **Docker** | Standard, isolated, proven |
-| Repo strategy | **Hard fork of Frappe v16** | Friday IS the fork |
+| Repo strategy | **App on stock Frappe v16** | No framework edits: `bench update` works and upstream security releases arrive normally |
 
 ---
 
@@ -106,20 +106,16 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ### 4.4 The Friday Kernel — Already Present
 
-There is **no separate "Friday app" to create**. The Friday repository IS the kernel — a hard fork of Frappe v16 with agent-native modifications. See `docs/design/45-fork-policy.md` §1.
-
-After `bench init friday-bench --frappe-branch version-16 --python python3.14`, point `apps/frappe` at the Friday kernel:
+Friday IS the app. Install it on a stock bench:
 
 ```bash
-cd friday-bench/apps/frappe
-git remote set-url origin https://github.com/Friday-Labs-Inc/friday.git
-git fetch origin
-git checkout main          # the Friday kernel branch
+bench get-app --branch develop https://github.com/The-Commit-Company/raven
+bench get-app https://github.com/Friday-Labs-Inc/friday
+bench --site friday.localhost install-app raven
+bench --site friday.localhost install-app friday
 ```
 
-Now `apps/frappe/` IS the Friday kernel. Any `bench new-site` against this kernel produces an agentic site by default — no install-app step, no wrapper command.
-
-Agent kernel modules (Agent Profile, Skill, Execution Log, etc.) live **inside the Frappe source tree** under a module path such as `frappe/friday_core/` or appropriate sub-modules — added in Slice 1 by extending Frappe's own modules.txt, not by creating a new app.
+Agent kernel modules (Agent Profile, Skill, Execution Log, etc.) live in the app at `friday/friday_core/`, under the app's own `modules.txt`.
 
 ### 4.5 Verify Setup
 

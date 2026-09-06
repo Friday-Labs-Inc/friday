@@ -4,7 +4,7 @@ Friday is a Frappe app. It requires a running Frappe bench with Python 3.14+.
 
 ## Prerequisites
 
-- Frappe bench (v16 or later)
+- Frappe bench (v16 or later) — **stock**; Friday patches no framework file
 - Python 3.14+
 - PostgreSQL 14+ (or SQLite for development)
 - Redis 6+
@@ -13,30 +13,22 @@ Friday is a Frappe app. It requires a running Frappe bench with Python 3.14+.
   engine on top of it; Raven supplies the surface, not the intelligence.
 - Docker (optional — only needed for sandboxed skill execution)
 
-## Step 1 — Clone the Repository
+## Step 1 — Get a Bench on Stock Frappe
 
-```bash
-git clone https://github.com/Friday-Labs-Inc/friday.git
-cd friday
-```
-
-## Step 2 — Add the App to Your Bench
-
-If you already have a bench:
-
-```bash
-bench get-app apps/frappe --source-path ./frappe
-bench --site <your-site> install-app frappe
-```
-
-Or create a new bench:
+Friday is an ordinary Frappe app. Nothing about the framework is patched, so a
+plain bench is all it needs:
 
 ```bash
 bench init friday-bench --frappe-branch version-16
 cd friday-bench
-bench get-app apps/frappe --source-path /path/to/friday/frappe
-bench new-site friday.localhost
-bench --site friday.localhost install-app frappe
+bench new-site friday.localhost --db-type postgres
+```
+
+## Step 2 — Add the App
+
+```bash
+bench get-app https://github.com/Friday-Labs-Inc/friday
+bench --site friday.localhost install-app friday
 ```
 
 ## Step 3 — Install Raven
@@ -80,7 +72,7 @@ This creates the Friday DocTypes:
 For production skill execution, build the sandbox image:
 
 ```bash
-cd apps/frappe/frappe/friday_core/sandbox
+cd apps/friday/friday/friday_core/sandbox
 docker build -t friday/sandbox:latest -f Dockerfile .
 ```
 
@@ -92,7 +84,7 @@ The sandbox runs skill handlers in isolated containers with:
 ## Step 7 — Verify
 
 ```bash
-bench --site friday.localhost run-tests --app frappe --module frappe.friday_core.tests
+bench --site friday.localhost run-tests --app friday --module friday.friday_core.tests.test_doctypes_exist
 ```
 
 All tests should pass.

@@ -38,14 +38,14 @@ The agent is **stateless** between turns. All state lives in Frappe DocTypes.
 
 ## Modules
 
-### `frappe.friday_core.gateway`
+### `friday.friday_core.gateway`
 Receives inbound messages from chat platforms and routes them to the agent runner.
 
 - Subscribes to `chat_message.after_insert` via Frappe hooks
 - Resolves Agent Profile from Chat Platform default
 - Calls the runner and emits the outbound response
 
-### `frappe.friday_core.llm`
+### `friday.friday_core.llm`
 LLM provider abstraction layer.
 
 - `LLMProvider` ABC — swap providers without changing agent logic
@@ -53,21 +53,21 @@ LLM provider abstraction layer.
 - Prompt builder assembles system prompt + history + current message
 - All API keys stored in DocType (Password field, encrypted at rest)
 
-### `frappe.friday_core.skills.loader`
+### `friday.friday_core.skills.loader`
 Loads the skill manifest for a given Agent Profile.
 
 - Reads from DB, filters by `status='Active'` and permission matrix
 - Cached in Redis with 5-minute TTL
 - Invalidated on Skill or Agent Profile changes
 
-### `frappe.friday_core.permissions.matrix`
+### `friday.friday_core.permissions.matrix`
 Role-based permission engine.
 
 - Computes a `PermissionMatrix` per profile (which roles grant which DocType ops)
 - Caches in Redis; invalidated on role or profile changes
 - Every call writes a `PermissionDecisionLog` row
 
-### `frappe.friday_core.agent_runner.dispatcher`
+### `friday.friday_core.agent_runner.dispatcher`
 Executes a skill call from the LLM.
 
 1. Parse the tool call (skill name + parameters)
@@ -76,7 +76,7 @@ Executes a skill call from the LLM.
 4. Write `ExecutionLog` row
 5. Return result to the LLM
 
-### `frappe.friday_core.sandbox`
+### `friday.friday_core.sandbox`
 Docker-based skill execution environment.
 
 - Skills run in ephemeral containers (no persistent state)
@@ -85,14 +85,14 @@ Docker-based skill execution environment.
 - Scoped API tokens injected at runtime (short-lived, profile-scoped)
 - Warm container pool for sub-second cold starts
 
-### `frappe.friday_core.tasks`
+### `friday.friday_core.tasks`
 Async task dispatch and execution (Slice 8).
 
 - **Workflow hook** — derives `dispatchable` from workflow state on every Agent Task save
 - **Dispatcher** — cron job (every 60s) that claims pending tasks via `FOR UPDATE SKIP LOCKED` and matches them to profiles
 - **Runner** — listens on Redis pub/sub for `agent_task.assigned` events, executes in sandbox, transitions state
 
-### `frappe.friday_core.doctor`
+### `friday.friday_core.doctor`
 System health checks.
 
 - Verifies all required DocTypes exist

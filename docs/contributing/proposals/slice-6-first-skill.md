@@ -28,7 +28,7 @@ User message → run_turn() → LLM → tool_call → dispatcher.check()
   → denied?  write rejection → Execution Log → error reply to user
 ```
 
-### 2.1 Dispatcher (`frappe/friday_core/agent_runner/dispatcher.py`)
+### 2.1 Dispatcher (`friday/friday_core/agent_runner/dispatcher.py`)
 
 The dispatcher is the bridge between the LLM's tool call intent and actual skill execution.
 
@@ -95,7 +95,7 @@ _SKILL_HANDLERS = {
 }
 ```
 
-### 2.3 Runner Update (`frappe/friday_core/agent_runner/runner.py`)
+### 2.3 Runner Update (`friday/friday_core/agent_runner/runner.py`)
 
 The `run_turn()` function is updated to:
 
@@ -108,7 +108,7 @@ The `run_turn()` function is updated to:
 **Tool call detection:**
 Minimax returns tool calls in `response["choices"][0]["message"]["tool_calls"]`. Each entry has `{"name": "...", "arguments": "{...}"}`. The `arguments` field is a JSON string to be parsed.
 
-### 2.4 Execution Log DocType (`frappe/friday_core/doctype/execution_log/`)
+### 2.4 Execution Log DocType (`friday/friday_core/doctype/execution_log/`)
 
 Already exists from Slice 1. Slice 6 populates it correctly:
 
@@ -143,11 +143,11 @@ A pre-existing `Skill` DocType row that the test profile uses:
 
 | File | Action | Notes |
 |------|--------|-------|
-| `frappe/friday_core/agent_runner/dispatcher.py` | Create | `dispatch()` + `_execute_skill()` + `_SKILL_HANDLERS` |
-| `frappe/friday_core/agent_runner/runner.py` | Modify | Detect tool calls; call dispatcher; handle result |
-| `frappe/friday_core/doctype/execution_log/execution_log.json` | Inspect | Verify fields for Slice 6 population needs |
-| `frappe/friday_core/tests/test_dispatcher.py` | Create | Allowed flow, denied flow, error flow |
-| `frappe/friday_core/tests/test_runner_tool_call.py` | Create | Runner parses tool calls, dispatches, returns result |
+| `friday/friday_core/agent_runner/dispatcher.py` | Create | `dispatch()` + `_execute_skill()` + `_SKILL_HANDLERS` |
+| `friday/friday_core/agent_runner/runner.py` | Modify | Detect tool calls; call dispatcher; handle result |
+| `friday/friday_core/doctype/execution_log/execution_log.json` | Inspect | Verify fields for Slice 6 population needs |
+| `friday/friday_core/tests/test_dispatcher.py` | Create | Allowed flow, denied flow, error flow |
+| `friday/friday_core/tests/test_runner_tool_call.py` | Create | Runner parses tool calls, dispatches, returns result |
 | `docs/contributing/proposals/slice-6-first-skill.md` | Create | This proposal |
 
 ---

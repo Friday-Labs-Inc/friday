@@ -42,7 +42,7 @@ If all three are yes → **allow**. If any is no → **deny**, with a written re
 | An admin changes a Role itself | Cache flushes for every agent. Next check is fresh. |
 | Any of the above happens | **One audit row** is written, immutable, with the full reasoning snapshot. |
 
-All of these are proven by tests (`frappe/friday_core/tests/test_permissions.py`). 10/10 green.
+All of these are proven by tests (`friday/friday_core/tests/test_permissions.py`). 10/10 green.
 
 ---
 
@@ -77,7 +77,7 @@ This is the moment Friday stops being a doc set and starts being a product.
 
 When an admin opens "Role Permissions Manager" in Frappe Desk and ticks a new box for the "Sales User" role, every Friday agent with that role gets the new permission within 60 seconds, automatically, with no Friday-specific configuration. That's the integration story.
 
-**One honest mild tension:** friday-core lives *inside* the Frappe fork (at `frappe/friday_core/`) rather than as a sibling Frappe app. That means Friday is currently bound to this specific Frappe fork — it can't be installed on a vanilla Frappe install. We picked this knowingly (simplicity > portability for v0.1). Worth revisiting before any "Friday for ERPNext customers" pitch.
+**One honest mild tension:** friday-core lives *inside* the Frappe fork (at `friday/friday_core/`) rather than as a sibling Frappe app. That means Friday is currently bound to this specific Frappe fork — it can't be installed on a vanilla Frappe install. We picked this knowingly (simplicity > portability for v0.1). Worth revisiting before any "Friday for ERPNext customers" pitch.
 
 ---
 
@@ -108,14 +108,14 @@ When an admin opens "Role Permissions Manager" in Frappe Desk and ticks a new bo
 
 ## Numbers for the record
 
-- 6 files changed (3 new modules in `frappe/friday_core/permissions/`, 1 new test file, 1 hooks edit, 1 new package `__init__.py`)
+- 6 files changed (3 new modules in `friday/friday_core/permissions/`, 1 new test file, 1 hooks edit, 1 new package `__init__.py`)
 - ~465 lines added (~60% docstrings, 40% code)
 - **10/10 tests green**
 - Slice 1 regression: **2/2 green**
 - Deliverable verified:
   ```
   $ bench --site friday.localhost execute \
-      frappe.friday_core.permissions.matrix.check \
+      friday.friday_core.permissions.matrix.check \
       --args "['FRIDAY-TEST-PROFILE-A', 'friday-test-skill-active']"
   {"allowed": true, "reason": "Allowed"}
   ```

@@ -312,7 +312,7 @@ If migration fails: **STOP**. Read the error carefully. The most common failures
 
 ### Step 3.5 â€” Write the test
 
-Create `apps/frappe/frappe/friday_core/tests/test_doctypes_exist.py`:
+Create `apps/frappe/friday/friday_core/tests/test_doctypes_exist.py`:
 
 ```python
 # Copyright (c) 2026, Friday Labs and contributors
@@ -366,7 +366,7 @@ class TestDocTypesExist(unittest.TestCase):
 Run it:
 
 ```bash
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
 ```
 
 **Expected:** all tests pass.
@@ -387,7 +387,7 @@ If anything 500s or any DocType doesn't load, debug the JSON for that DocType.
 ```bash
 cd /home/friday/friday/friday-bench/apps/frappe
 git checkout -b slice-1/friday-core-doctypes
-git add frappe/friday_core/ frappe/modules.txt
+git add friday/friday_core/ frappe/modules.txt
 git status   # verify only Friday Core changes are staged
 git commit -m "feat(friday-core): scaffold Friday Core module with 8 agent kernel DocTypes
 
@@ -413,12 +413,12 @@ Then open a PR against `main` of `Friday-Labs-Inc/friday`. PR title: `Slice 1 â€
 
 Tick each box. Do not consider Slice 1 done until every box is green.
 
-- [ ] `apps/frappe/frappe/friday_core/` exists with `__init__.py`, `doctype/`, `tests/`
+- [ ] `apps/frappe/friday/friday_core/` exists with `__init__.py`, `doctype/`, `tests/`
 - [ ] `apps/frappe/frappe/modules.txt` contains `Friday Core`
 - [ ] All 11 DocType folders exist under `friday_core/doctype/` with their `.json` and `.py` files
 - [ ] `bench --site friday.localhost migrate` runs clean (no errors, no pending patches)
 - [ ] `Agent Supervisor` role exists
-- [ ] `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist` passes
+- [ ] `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist` passes
 - [ ] Each of the 8 main DocTypes can be created from the Desk UI without errors
 - [ ] List views render for all 8 main DocTypes
 - [ ] `Execution Log` and `Permission Decision Log` show Submit/Cancel buttons in the Desk

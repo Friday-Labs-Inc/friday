@@ -41,7 +41,7 @@
 
 ## Proven live (the showcase)
 
-`bench --site <sandbox> execute frappe.friday_core.conversation.intake.run_demo` on the
+`bench --site <sandbox> execute friday.friday_core.conversation.intake.run_demo` on the
 real MiniMax provider. From a single customer message
 ("We are Northwind Tools, premium hand tools for woodworkers, rugged heritage feel"):
 the reply **streamed token-by-token**, and the extraction pass filled **4/4 wizard

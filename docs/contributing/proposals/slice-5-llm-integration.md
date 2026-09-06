@@ -25,7 +25,7 @@ This is not yet tool execution (that is Slice 6). This is just the LLM being in 
 
 ## 2. Proposed Changes & Architecture
 
-The LLM integration lives inside `frappe/friday_core/llm/`.
+The LLM integration lives inside `friday/friday_core/llm/`.
 
 ```mermaid
 graph TD
@@ -39,7 +39,7 @@ graph TD
     C -->|system_prompt + model_name| F
 ```
 
-### 2.1 Provider Adapter (`frappe/friday_core/llm/provider.py`)
+### 2.1 Provider Adapter (`friday/friday_core/llm/provider.py`)
 
 A provider-agnostic interface with Minimax M2 as the Phase 1 implementation.
 
@@ -75,7 +75,7 @@ class LLMProvider(ABC):
 - Handles `401` (invalid key → clean error), `429` (rate limit → retry with backoff), `500` (server error → retry up to 3x).
 - Timeout: 30 seconds per request.
 
-### 2.2 Prompt Builder (`frappe/friday_core/llm/prompt_builder.py`)
+### 2.2 Prompt Builder (`friday/friday_core/llm/prompt_builder.py`)
 
 Assembles the full prompt from components already in Frappe.
 
@@ -102,7 +102,7 @@ def build(
 - **Tools:** passed in from `load_for_profile()` caller; `None` if no tools are permitted (agent is query-only).
 - **Model:** from `Agent Profile.model_name`, falling back to `Agent Settings` default.
 
-### 2.3 LLM Provider DocType (`frappe/friday_core/doctype/llm_provider/`)
+### 2.3 LLM Provider DocType (`friday/friday_core/doctype/llm_provider/`)
 
 A proper DocType for provider configuration — not a Select field on a singleton. Each row represents one configured provider instance.
 
@@ -121,7 +121,7 @@ A proper DocType for provider configuration — not a Select field on a singleto
 
 `Agent Profile.model_provider` becomes a Link → `LLM Provider` instead of a Select. If the link is empty, fall back to `Agent Settings.default_provider`.
 
-### 2.4 Runner Update (`frappe/friday_core/agent_runner/runner.py`)
+### 2.4 Runner Update (`friday/friday_core/agent_runner/runner.py`)
 
 Replaces the echo stub in `run_turn()`:
 
@@ -148,19 +148,19 @@ Error handling: if LLM call fails after retries, write a system-error outbound C
 
 | File | Action | Notes |
 |------|--------|-------|
-| `frappe/friday_core/llm/__init__.py` | Create | Package init + `get_provider_for_profile()` |
-| `frappe/friday_core/llm/provider.py` | Create | `LLMProvider` ABC + `MinimixProvider` |
-| `frappe/friday_core/llm/prompt_builder.py` | Create | `build()` function |
-| `frappe/friday_core/doctype/llm_provider/__init__.py` | Create | DocType init |
-| `frappe/friday_core/doctype/llm_provider/llm_provider.json` | Create | DocType schema |
-| `frappe/friday_core/doctype/llm_provider/llm_provider.py` | Create | Controller |
-| `frappe/friday_core/doctype/agent_settings/__init__.py` | Create | Minimal singleton for global defaults |
-| `frappe/friday_core/doctype/agent_settings/agent_settings.json` | Create | Schema (singleton) |
-| `frappe/friday_core/doctype/agent_settings/agent_settings.py` | Create | Singleton guard |
-| `frappe/friday_core/agent_runner/runner.py` | Modify | Replace echo stub with LLM call |
+| `friday/friday_core/llm/__init__.py` | Create | Package init + `get_provider_for_profile()` |
+| `friday/friday_core/llm/provider.py` | Create | `LLMProvider` ABC + `MinimixProvider` |
+| `friday/friday_core/llm/prompt_builder.py` | Create | `build()` function |
+| `friday/friday_core/doctype/llm_provider/__init__.py` | Create | DocType init |
+| `friday/friday_core/doctype/llm_provider/llm_provider.json` | Create | DocType schema |
+| `friday/friday_core/doctype/llm_provider/llm_provider.py` | Create | Controller |
+| `friday/friday_core/doctype/agent_settings/__init__.py` | Create | Minimal singleton for global defaults |
+| `friday/friday_core/doctype/agent_settings/agent_settings.json` | Create | Schema (singleton) |
+| `friday/friday_core/doctype/agent_settings/agent_settings.py` | Create | Singleton guard |
+| `friday/friday_core/agent_runner/runner.py` | Modify | Replace echo stub with LLM call |
 | `frappe/hooks.py` | Modify | Add `after_migrate` hook to seed default `LLM Provider` row |
-| `frappe/friday_core/tests/test_llm_provider.py` | Create | Mock Minimax; test adapter interface, error paths |
-| `frappe/friday_core/tests/test_prompt_builder.py` | Create | Deterministic prompt output given fixed inputs |
+| `friday/friday_core/tests/test_llm_provider.py` | Create | Mock Minimax; test adapter interface, error paths |
+| `friday/friday_core/tests/test_prompt_builder.py` | Create | Deterministic prompt output given fixed inputs |
 | `docs/contributing/proposals/slice-5-llm-integration.md` | Create | This proposal |
 
 ---

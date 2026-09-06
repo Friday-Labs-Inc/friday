@@ -41,7 +41,7 @@ Phase 1 slices 1–8 are implemented and tested. Before declaring Phase 1 comple
 
 ### 3.3 CI Test Job
 
-- `.github/workflows/tests.yml` — runs `bench run-tests --app frappe --module frappe.friday_core.tests` on PR, Python 3.14, uploads test log on failure
+- `.github/workflows/tests.yml` — runs `bench run-tests --app frappe --module friday.friday_core.tests` on PR, Python 3.14, uploads test log on failure
 
 ### 3.4 Slice 9 Proposal
 

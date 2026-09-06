@@ -34,7 +34,7 @@ Provisioned the skill, then in the real Northwind channel asked: *"@Friday pleas
 
 ## How to turn it on (per site)
 
-    bench --site <site> execute frappe.friday_core.skills.bootstrap_deliverables.provision
+    bench --site <site> execute friday.friday_core.skills.bootstrap_deliverables.provision
 
 Idempotent. Grants the role + skill to the `Friday` profile; pass a different `profile_name` to grant another agent.
 

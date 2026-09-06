@@ -43,7 +43,7 @@ Why have both? Two reasons:
 | Admin removes a skill from an agent's allow-list | **Same.** Surgical invalidation, no global flush needed. |
 | Admin edits a Role itself | **All agents' menus rebuild on next request.** Broad but rare. |
 
-All of these are proven by tests (`frappe/friday_core/tests/test_skill_loader.py`). 8/8 green.
+All of these are proven by tests (`friday/friday_core/tests/test_skill_loader.py`). 8/8 green.
 
 ---
 
@@ -114,14 +114,14 @@ Three new claims, each tied to a verifiable fact:
 
 ## Numbers for the record
 
-- 4 files changed (1 new package `frappe/friday_core/skills/`, 1 new module `loader.py`, 1 new test file, 1 hooks edit)
+- 4 files changed (1 new package `friday/friday_core/skills/`, 1 new module `loader.py`, 1 new test file, 1 hooks edit)
 - +733 lines (≈60% docstrings, 40% code + tests)
 - **8/8 tests green**
 - Regression: Slice 1 → 2/2, Slice 2 → 10/10
 - Deliverable verified:
   ```
   $ bench --site friday.localhost execute \
-      frappe.friday_core.skills.loader.load_for_profile \
+      friday.friday_core.skills.loader.load_for_profile \
       --args "['FRIDAY-SLICE3-PROFILE-FULL']"
   [{"name": "slice3-skill-active", "description": "...", "parameters_schema": {...}, ...}]
   ```

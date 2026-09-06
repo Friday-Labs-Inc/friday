@@ -167,7 +167,7 @@ Slice 7 replaces this with:
 
 ```python
 # SLICE 7 — sandboxed
-from frappe.friday_core.sandbox.runner import execute as execute_sandbox
+from friday.friday_core.sandbox.runner import execute as execute_sandbox
 result = execute_sandbox(
     skill_name=skill_name,
     parameters=parameters,
@@ -182,7 +182,7 @@ The dispatcher continues to write the `Execution Log` row (submitted). The log's
 ### 2.7 Module Structure
 
 ```
-frappe/friday_core/sandbox/
+friday/friday_core/sandbox/
 ├── __init__.py
 ├── runner.py          # execute(), SandboxResult dataclass, container lifecycle
 ├── entrypoint.py      # container entrypoint — skill runner inside container
@@ -200,20 +200,20 @@ frappe/friday_core/sandbox/
 
 | File | Purpose |
 |---|---|
-| `frappe/friday_core/sandbox/__init__.py` | Package marker |
-| `frappe/friday_core/sandbox/runner.py` | `execute()` — orchestrator, cold-spawn |
-| `frappe/friday_core/sandbox/entrypoint.py` | Container entrypoint |
-| `frappe/friday_core/sandbox/pool.py` | Warm pool stub (cold-spawn returns None; Phase 1.5 wire it) |
-| `frappe/friday_core/sandbox/credentials.py` | Scoped API key generation stub |
-| `frappe/friday_core/sandbox/Dockerfile` | Runtime image definition |
-| `frappe/friday_core/tests/test_sandbox_runner.py` | Unit + integration tests |
+| `friday/friday_core/sandbox/__init__.py` | Package marker |
+| `friday/friday_core/sandbox/runner.py` | `execute()` — orchestrator, cold-spawn |
+| `friday/friday_core/sandbox/entrypoint.py` | Container entrypoint |
+| `friday/friday_core/sandbox/pool.py` | Warm pool stub (cold-spawn returns None; Phase 1.5 wire it) |
+| `friday/friday_core/sandbox/credentials.py` | Scoped API key generation stub |
+| `friday/friday_core/sandbox/Dockerfile` | Runtime image definition |
+| `friday/friday_core/tests/test_sandbox_runner.py` | Unit + integration tests |
 
 ### Modified files
 
 | File | Change |
 |---|---|
-| `frappe/friday_core/agent_runner/dispatcher.py` | Replace direct handler call with `execute_sandbox()` call |
-| `frappe/friday_core/doctype/execution_log/execution_log.json` | `status` options: `oom` and `timeout` added (alongside existing ones) |
+| `friday/friday_core/agent_runner/dispatcher.py` | Replace direct handler call with `execute_sandbox()` call |
+| `friday/friday_core/doctype/execution_log/execution_log.json` | `status` options: `oom` and `timeout` added (alongside existing ones) |
 | `frappe/hooks.py` | Add `agent_task.assigned` pub/sub handler (for Slice 8 wiring); Wire the janitor scheduler event |
 | `docs/contributing/proposals/slice-7-docker-sandbox.md` | This file |
 
@@ -266,15 +266,15 @@ All Slice 6 `test_dispatcher.py` and `test_runner_tool_call.py` tests must pass.
 ### Slice 6 Regression
 
 ```
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_dispatcher
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_runner_tool_call
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_dispatcher
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_runner_tool_call
 ```
 → **17/17 + 6/6 all green** (unchanged from Slice 6)
 
 ### Sandbox Tests
 
 ```
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_sandbox_runner
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_sandbox_runner
 ```
 → **≥ 10/10 green**
 

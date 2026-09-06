@@ -219,7 +219,7 @@ This is too big for one PR. Three slices, each independently mergeable; each gre
 - `Task.parent_task` Link field + migration patch (no backfill needed — pre-69 Tasks simply have it null).
 - `Agent Profile.max_concurrent_delegations` Int field, default 5.
 - `Agent Settings.max_delegation_depth` Int field, default 3.
-- New skill `delegate_task` — registered in skill catalog, handler in `frappe/friday_core/skills/handlers_delegation.py`.
+- New skill `delegate_task` — registered in skill catalog, handler in `friday/friday_core/skills/handlers_delegation.py`.
 - Skill loader: gates `delegate_task` visibility on `agent_role == "Orchestrator"` (Q4).
 - Dispatcher guard: `RoleContractViolation` if non-Orchestrator tries to invoke (defense in depth).
 - Child Task creation path: inherits `project`, sets `parent_task`, sets `assigned_to_profile = <target>`, enqueues normally.

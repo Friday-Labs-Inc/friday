@@ -21,10 +21,10 @@
 
 **Friday** = a hard fork of Frappe v16 stable that makes AI agents
 first-class framework primitives. The kernel lives at
-`apps/frappe/frappe/friday_core/` inside the fork (not a separate app).
+`apps/frappe/friday/friday_core/` inside the fork (not a separate app).
 Every agent action is **permission-checked → logged (immutable
 submittable DocType) → sandboxed → audited**. Single chokepoint is
-`frappe.friday_core.gateway.service.handle_inbound` (wired as
+`friday.friday_core.gateway.service.handle_inbound` (wired as
 `Chat Message.after_insert` in `frappe/hooks.py`). A domain is **DATA**
 (Domain Bundle + Frappe Workflow + Friday Workflow Transition Meta +
 Agent Profiles with `discriminator_role`), not Python. Friday IS the
@@ -137,7 +137,7 @@ sub-stream.
   default 1, capped at 16). Runs the governed execution loop.
 
 ### 3.2 Single chokepoint
-`frappe.friday_core.gateway.service.handle_inbound` is the
+`friday.friday_core.gateway.service.handle_inbound` is the
 `Chat Message.after_insert` hook in `frappe/hooks.py`. Every inbound
 message from any surface (CLI today; Raven/Telegram/Slack/A2A later)
 lands here. The flow:
@@ -605,7 +605,7 @@ A patch that **POPULATES a newly-added field** goes in
 **`[post_model_sync]`** (NOT above it). Pre-sync runs before model
 sync creates the column → fresh `bench migrate` dies with
 `UndefinedColumn`. friday_core lives INSIDE frappe
-(`apps/frappe/frappe/friday_core`), so its patches register in
+(`apps/frappe/friday/friday_core`), so its patches register in
 `apps/frappe/frappe/patches.txt`, not a standalone app patches.txt.
 
 ### 6.12 Connector framework gotcha
