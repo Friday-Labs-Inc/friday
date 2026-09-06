@@ -6,7 +6,7 @@ Visual-generation skills — `generate-image` over ANY routed image provider.
 
 PLAIN ENGLISH
 =============
-This gives a visual agent (the Creative Director today; Graphic/Web designers
+This gives a visual agent (a domain app's Creative Director; Graphic/Web designers
 later) the ability to produce ACTUAL images, not just describe them. The agent
 calls `generate-image` with a prompt; we call the image API of whichever
 provider the site routes the "image" medium to, download or decode the result,

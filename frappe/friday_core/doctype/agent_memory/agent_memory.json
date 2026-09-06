@@ -37,7 +37,7 @@
             "options": "Project"
         },
         {
-            "description": "Optional grouping tag — a client, a brief ID (e.g. 'BB-0001'), a topic. For filtering in Desk.",
+            "description": "Optional grouping tag — a client, a record ID (e.g. 'PRJ-0007'), a topic. For filtering in Desk.",
             "fieldname": "subject",
             "fieldtype": "Data",
             "in_list_view": 1,

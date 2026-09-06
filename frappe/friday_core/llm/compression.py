@@ -152,7 +152,7 @@ _FACT_EXTRACTION_SYSTEM = (
 	"Do NOT extract: transient task chatter, one-off requests already handled, "
 	"environment/setup errors, or anything temporary.\n"
 	'Output ONLY a JSON array of objects, each {"memory": <one sentence, under '
-	'500 chars>, "subject": <optional client/record tag like \'BB-0001\', else '
+	'500 chars>, "subject": <optional client/record tag like \'PRJ-0007\', else '
 	'"">}. If nothing is worth keeping, output [].'
 )
 

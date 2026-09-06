@@ -56,21 +56,23 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		frappe.set_user("Administrator")
 		frappe.db.rollback()
 
-	def _brief(self):
-		# No pipeline state needed — get-phase-outputs reads tasks by work_item,
-		# independent of the brief's workflow state (which now idles at Intake).
+	def _work_item(self):
+		# get-phase-outputs reads tasks by work_item, independent of the item's
+		# own workflow state — so any DocType serves as the work-item here. We
+		# use a kernel one (Project) on purpose: this test must pass on a bare
+		# kernel install with no domain app present.
 		return frappe.get_doc(
-			{"doctype": "Brand Brief", "business_name": "PhaseOut Co", "status": "Ready"}
+			{"doctype": "Project", "project_name": "PhaseOut Co"}
 		).insert(ignore_permissions=True)
 
-	def _completed(self, brief_name, phase_key, summary):
+	def _completed(self, item_name, phase_key, summary):
 		return frappe.get_doc(
 			{
 				"doctype": "Task",
 				"title": f"t-{phase_key}",
 				"priority": "normal",
-				"work_item_doctype": "Brand Brief",
-				"work_item_name": brief_name,
+				"work_item_doctype": "Project",
+				"work_item_name": item_name,
 				"phase_key": phase_key,
 				"workflow_state": "Completed",
 				"result": json.dumps({"status": "success", "summary": summary}),
@@ -78,26 +80,26 @@ class TestGetPhaseOutputs(unittest.TestCase):
 		).insert(ignore_permissions=True)
 
 	def test_named_work_item_returns_prior_outputs(self):
-		bb = self._brief()
-		self._completed(bb.name, "strategy", "STRAT_BODY_123")
-		self._completed(bb.name, "naming", "NAME_BODY_456")
+		item = self._work_item()
+		self._completed(item.name, "strategy", "STRAT_BODY_123")
+		self._completed(item.name, "naming", "NAME_BODY_456")
 		out = get_phase_outputs(
-			"get-phase-outputs", {"work_item": bb.name, "work_item_doctype": "Brand Brief"}
+			"get-phase-outputs", {"work_item": item.name, "work_item_doctype": "Project"}
 		)
 		self.assertIn("STRAT_BODY_123", out["result"])
 		self.assertIn("NAME_BODY_456", out["result"])
 		self.assertIn("strategy", out["result"])
 
 	def test_derives_work_item_from_task_context(self):
-		bb = self._brief()
-		self._completed(bb.name, "strategy", "CTX_BODY_789")
+		item = self._work_item()
+		self._completed(item.name, "strategy", "CTX_BODY_789")
 		current = frappe.get_doc(
 			{
 				"doctype": "Task",
 				"title": "cur",
 				"priority": "normal",
-				"work_item_doctype": "Brand Brief",
-				"work_item_name": bb.name,
+				"work_item_doctype": "Project",
+				"work_item_name": item.name,
 				"phase_key": "gate1_prep",
 				"workflow_state": "Executing",
 			}

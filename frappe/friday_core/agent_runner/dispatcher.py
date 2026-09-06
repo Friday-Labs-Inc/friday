@@ -343,7 +343,7 @@ def dispatch(
 		# frappe.has_permission checks run as the AMBIENT session user — whoever
 		# happened to trigger the turn. Found live on the Friday Labs E2E, twice:
 		# a human (Rajiv) firing "Creative Ready" leaked HIS narrower perms into
-		# the gate1_prep worker, and the gate.decided webhook leaked the GATEWAY
+		# a phase worker, and a connector webhook leaked the GATEWAY
 		# user (gateway+brand@…) into the AI Production turn — both denied file
 		# reads the agent's own user was fully permitted to make. An agent turn
 		# must carry the agent's identity, not its trigger's. Scoped to skill

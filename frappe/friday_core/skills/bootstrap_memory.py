@@ -26,7 +26,7 @@ _SKILL = {
 		"Store ONE durable fact, preference, or decision in your persistent "
 		"memory so you know it in every future conversation. Examples: a "
 		"client's taste ('Loop Coffee hates serif fonts'), a decision "
-		"('BB-0001 shortlisted Midnight Roast'), a standing instruction."
+		"('PRJ-0007 shipped on the 14th'), a standing instruction."
 	),
 	"when_to_use": (
 		"Save proactively — do not wait to be asked. Save when: the user corrects "
@@ -38,7 +38,7 @@ _SKILL = {
 		"(decisions, client facts, conventions). Priority: user corrections and "
 		"preferences first.\n\n"
 		"One fact per call. Set 'subject' to the client or record ID it concerns "
-		"(e.g. 'BB-0001') for filtering in Desk. Do NOT store conversation "
+		"(e.g. 'PRJ-0007') for filtering in Desk. Do NOT store conversation "
 		"minutiae, one-off task chatter, things already in your memory, or "
 		"anything temporary."
 	),
@@ -60,7 +60,7 @@ _SKILL = {
 			},
 			"subject": {
 				"type": "string",
-				"description": "Optional grouping tag: a client name or record ID like 'BB-0001'.",
+				"description": "Optional grouping tag: a client name or record ID like 'PRJ-0007'.",
 			},
 			"scope": {
 				"type": "string",
