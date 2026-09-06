@@ -13,7 +13,8 @@ implementation of "provision a provider / profile / surface / tool", not two.
 The five steps:
   1. ``save_provider``     — LLM Provider + key + model + cost rates + default
   2. ``save_agent``        — the Friday Agent Profile (seeds a default soul)
-  3. ``provision_surfaces``— Raven war room (if Raven installed)
+  3. ``provision_surfaces``— Raven war room (Raven is required; this step
+     fails loudly when it is missing)
   4. ``provision_tools``   — read + file tools onto the profile
   5. ``verify_and_complete``— live provider probe + pipeline health, then flag
 
@@ -165,7 +166,17 @@ def provision_surfaces(profile_name: str = FRIDAY_PROFILE) -> dict:
 	"""Step 3 — provision the Raven war room, if Raven is installed."""
 	frappe.only_for("System Manager")
 	if not frappe.db.table_exists("Raven Channel"):
-		return {"status": "skipped", "reason": "Raven is not installed on this site"}
+		# Raven is required, not optional — say so plainly instead of reporting a
+		# tidy "skipped" that reads like everything is fine.
+		frappe.throw(
+			frappe._(
+				"Raven is not installed on this site, and Friday requires it — it is the "
+				"chat front door (bot identity, project channels, the war room). "
+				"Install it with: bench get-app --branch develop "
+				"https://github.com/The-Commit-Company/raven && "
+				"bench --site {0} install-app raven"
+			).format(frappe.local.site)
+		)
 
 	from frappe.friday_core.surfaces import bootstrap_raven
 

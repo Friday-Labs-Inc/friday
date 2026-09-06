@@ -45,7 +45,7 @@ All design docs live in `docs/design/`. Read them in this order:
 |---|---|---|
 | Frappe version | **v16 stable** | Longest support, modern features |
 | Database | **PostgreSQL + pgvector** | AI memory search requires vector support |
-| Chat UI (Raven) | **Excluded in v0.1** | Add in v0.2; keep v0.1 focused |
+| Chat UI (Raven) | **Required** | Friday's chat front door — bot identity, project channels, war room. Superseded the v0.1 "excluded" decision (designs 58, 73). |
 | ERPNext | **Excluded this phase** | Use case, not framework requirement |
 | CLI strategy | **Extend bench** — `bench friday <cmd>` | No new tools to install |
 | LLM provider | **Provider-agnostic interface; Minimax as first provider** | Swap provider by changing one config value |
