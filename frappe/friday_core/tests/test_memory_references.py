@@ -96,7 +96,19 @@ class TestParseReferences(unittest.TestCase):
 		self.assertEqual(references.parse_references("no refs here"), [])
 
 
+# The kernel ships an EMPTY reference registry; domain apps contribute entries
+# through the `friday_reference_registry` hook. These tests mock `frappe`
+# wholesale (so the hook is invisible) and inject a fixture registry instead —
+# "Brand Brief" here is just an opaque doctype string under the mock.
+_FIXTURE_REGISTRY = {"BB-": ("Brand Brief", ("business_name", "industry"))}
+
+
 class TestExpandReferences(unittest.TestCase):
+	def setUp(self):
+		reg = patch.dict(references.REFERENCE_REGISTRY, _FIXTURE_REGISTRY)
+		reg.start()
+		self.addCleanup(reg.stop)
+
 	def _matrix(self, readable):
 		m = MagicMock()
 		m.ops_for.side_effect = lambda dt: frozenset({"read"}) if dt in readable else frozenset()

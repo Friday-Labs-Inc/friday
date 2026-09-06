@@ -22,6 +22,12 @@ class DomainBundle(Document):
 	def validate(self) -> None:
 		self._single_active_per_doctype()
 
+	def on_update(self) -> None:
+		_clear_engine_cache()
+
+	def on_trash(self) -> None:
+		_clear_engine_cache()
+
 	def _single_active_per_doctype(self) -> None:
 		"""At most one active bundle per work-item DocType — so the engine can
 		unambiguously find which bundle governs a given work item. Mirrors
@@ -43,3 +49,11 @@ class DomainBundle(Document):
 					"Deactivate it first, or set this one inactive."
 				).format(frappe.bold(clash), frappe.bold(self.domain_doctype))
 			)
+
+
+def _clear_engine_cache() -> None:
+	"""The engine caches doctype → active bundle (it runs on every save); any
+	bundle change must invalidate it."""
+	from frappe.friday_core.engine.bundle import clear_cache
+
+	clear_cache()

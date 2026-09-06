@@ -197,18 +197,22 @@ def _watch_transition(doc: "Task") -> None:
 		except Exception:
 			frappe.db.rollback(save_point="friday_rollup")
 
-	# --- RandomPack write-back (design 60, Q5) ------------------------------
-	# The bridge no-ops for tasks/projects without backend refs and never
-	# raises — a write-back outage cannot break a task save.
-	from frappe.friday_core.integrations.randompack_bridge import on_task_transition
-
-	on_task_transition(doc, state)
+	# --- Task-transition hooks (kernel seam) --------------------------------
+	# Apps subscribe to task transitions through the `friday_task_transition_hooks`
+	# hook: dotted paths called as fn(doc, state) (e.g. a domain app's backend
+	# write-back). Each subscriber is failure-isolated — an outage in one cannot
+	# break the task save or starve the others.
+	for _hook_path in frappe.get_hooks("friday_task_transition_hooks") or []:
+		try:
+			frappe.get_attr(_hook_path)(doc, state)
+		except Exception:
+			frappe.log_error(title=f"friday task transition hook failed: {_hook_path}")
 
 	# --- Agent report-back (design 62, Q3) ---------------------------------
 	# A terminal task that knows the conversation it came from writes a direct
 	# reply to that session, authored by the agent that did the work. No-op
-	# for tasks with no originating_session (e.g. RandomPack pipeline tasks,
-	# whose report-back is the bridge above). Never raises.
+	# for tasks with no originating_session (e.g. domain pipeline tasks, whose
+	# report-back is a transition hook above). Never raises.
 	from frappe.friday_core.tasks.report_back import report_back
 
 	report_back(doc, state)

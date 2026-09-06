@@ -163,6 +163,11 @@ doc_events = {
 			"frappe.core.doctype.user_type.user_type.apply_permissions_for_non_standard_user_type",
 			"frappe.core.doctype.permission_log.permission_log.make_perm_log",
 			"frappe.search.sqlite_search.update_doc_index",
+			# Friday (design 75): the generic workflow interpreter. Runs on every
+			# save but returns immediately unless an active Domain Bundle governs
+			# the doctype (cached lookup) — so domain apps add pipelines as data,
+			# never by registering their DocType here.
+			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
 		],
 		"after_rename": "frappe.desk.notifications.clear_doctype_notifications",
 		"on_cancel": [
@@ -267,7 +272,6 @@ doc_events = {
 		# Design 77 — when the brief reaches Delivered, push the union of brief
 		# + linked Friday Project deliverables back to RandomPack.
 		"on_update": [
-			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
 			"frappe.friday_core.integrations.randompack_bridge.on_brief_state_change",
 			# Design 95 slice 2 — the apprenticeship study loop: observe task when
 			# the human CD finishes creating; labeled memories on his gate decisions.
@@ -724,4 +728,39 @@ add_to_apps_screen = [
 		"title": app_title,
 		"route": app_home,
 	}
+]
+
+# ---------------------------------------------------------------------------
+# Friday kernel seams — the hooks a domain app uses to plug into the agent
+# kernel without touching it. Any installed app may extend each list.
+# ---------------------------------------------------------------------------
+
+# Modules whose import registers skill handlers (see friday_core/skills/registry.py).
+friday_skill_handlers = [
+	"frappe.friday_core.skills.handlers_cron",  # design 87 slice 2
+	"frappe.friday_core.skills.handlers_delegate",
+	"frappe.friday_core.skills.handlers_deliverables",  # design 73 #5
+	"frappe.friday_core.skills.handlers_engine",  # design 75: get-phase-outputs
+	"frappe.friday_core.skills.handlers_files",  # design 66b
+	"frappe.friday_core.skills.handlers_memory",
+	"frappe.friday_core.skills.handlers_propose_skill",  # design 79 slice 2
+	"frappe.friday_core.skills.handlers_read",  # design 66a
+	"frappe.friday_core.skills.handlers_session_search",  # design 89
+	"frappe.friday_core.skills.handlers_visual",  # design 76 f/u: generate-image
+	# Domain (moves to the design_studio app): brand skills + the legacy plan-project.
+	"frappe.friday_core.skills.handlers_brand",
+	"frappe.friday_core.skills.handlers_project",
+]
+
+# Called as fn(doc, state) after every Task transition (see tasks/workflow.py).
+friday_task_transition_hooks = [
+	# Domain (moves to the design_studio app): RandomPack backend write-back.
+	"frappe.friday_core.integrations.randompack_bridge.on_task_transition",
+]
+
+# Dotted paths to dicts of {"@PREFIX-": (doctype, content_fields)} merged into
+# the @-reference registry (see llm/references.py).
+friday_reference_registry = [
+	# Domain (moves to the design_studio app): Brand Brief / Brand Direction refs.
+	"frappe.friday_core.domains.randompack_brand.REFERENCE_REGISTRY",
 ]

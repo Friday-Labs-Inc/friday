@@ -189,7 +189,7 @@ def _push_gate_presentation(rp_project: str, brief_name: str, phase: str) -> Non
 	except Exception:
 		return
 
-	ctx = materialize._brand_context_for(brief_name, project)
+	ctx = materialize._work_item_context_for("Brand Brief", brief_name, project)
 	company = ctx.get("company") or ""
 	title = _GATE_DOC_TITLE.get(phase, "Gate Review")
 	display = f"{company} — {title}" if company else title
@@ -331,7 +331,7 @@ def on_brief_state_change(doc, method: str | None = None) -> None:
 		from frappe.friday_core.deliverables.materialize import materialize_for_customer
 
 		try:
-			materialize_for_customer(doc.name)
+			materialize_for_customer(doc.doctype, doc.name)
 		except Exception:
 			frappe.log_error(title="friday.randompack materialize_for_customer failed")
 		_push_deliverables(rp_project, doc.name)
