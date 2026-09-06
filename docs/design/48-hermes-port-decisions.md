@@ -154,7 +154,7 @@ What is NOT written:
 
 ## 1.D Concrete contract for Roo Code
 
-**File to modify:** `frappe/friday_core/agent_runner/runner.py`.
+**File to modify:** `friday/friday_core/agent_runner/runner.py`.
 
 **New module constant:**
 ```python
@@ -235,7 +235,7 @@ def _extract_denial_reason(result: DispatchResult) -> str:
 
 ## 1.E Tests Roo Code must include
 
-`frappe/friday_core/tests/test_react_loop.py` — new file.
+`friday/friday_core/tests/test_react_loop.py` — new file.
 
 Required cases:
 

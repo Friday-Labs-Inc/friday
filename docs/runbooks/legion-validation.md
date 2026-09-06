@@ -92,13 +92,13 @@ These exercise the seams the Mac's mocked tests *cannot* reach (real provider
 resolution, real Issue rows, the real runner → dispatcher → DB path):
 
 ```bash
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_llm_provider
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_runner_tool_call
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_prompt_builder
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_issue_doctype
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_compression
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_approval
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_task_failure_issue
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_llm_provider
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_runner_tool_call
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_prompt_builder
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_issue_doctype
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_compression
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_approval
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_task_failure_issue
 ```
 **Verify:** all green. **On failure:** a failing test here is very likely a *real
 seam bug* (the mocked version passed). Debug it, fix the code, re-run. Report each
@@ -136,7 +136,7 @@ the full chain is clean. This passing is the headline result of the session.
 - Set a test skill's `requires_approval = 1`.
 - Trigger it via a message. VERIFY: the skill did NOT execute; a Workflow Request
   (status Pending) was created; the loop paused with the "needs approval" reply.
-- In the console: from frappe.friday_core.approvals.workflow import approve
+- In the console: from friday.friday_core.approvals.workflow import approve
   approve("<request name>", approved_by="<your user>", reason="ok")
   VERIFY: the skill now executes; an Execution Log row is written; the request is
   Approved and its execution_log is linked.

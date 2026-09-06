@@ -73,10 +73,10 @@ doc calls out as a tool-definition best practice for better tool selection.
 
 ## How we proved it works
 
-- `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_skill_loader` →
+- `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_skill_loader` →
   10/10 green, including two new tests (`test_tool_description_merges_when_to_use`
   and `test_tool_description_falls_back_to_either`) that lock both behaviors.
-- `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_engine_routing` →
+- `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_engine_routing` →
   4/4 green after resetting the polluted local workflow (dev bench had stale
   Intake state from an earlier integration branch — unrelated to this work).
 - `bench --site friday.localhost migrate` → clean, RandomPack bundle re-provisioned

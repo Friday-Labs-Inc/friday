@@ -56,7 +56,7 @@ instead of conflict.
 
 ```bash
 bench --site friday.localhost execute \
-  frappe.friday_core.skills.bootstrap_read.provision
+  friday.friday_core.skills.bootstrap_read.provision
 ```
 
 Creates the Skill rows, wires them onto the Friday profile, grants
@@ -104,7 +104,7 @@ After merging, on each existing bench, run:
 
 ```bash
 bench --site <yoursite> execute \
-  frappe.friday_core.skills.bootstrap_read.provision
+  friday.friday_core.skills.bootstrap_read.provision
 ```
 
 The Friday profile gains two skills; the governance frame line lands

@@ -79,7 +79,7 @@ with:
 
 ```python
 frappe.enqueue(
-    "frappe.friday_core.tasks.runner.run_assigned_task",
+    "friday.friday_core.tasks.runner.run_assigned_task",
     queue="long",
     timeout=1800,
     enqueue_after_commit=True,
@@ -181,7 +181,7 @@ problem for chat turns; we copy it.
 `agent_runner.dispatcher.dispatch(...)` by synthesizing a tool-call:
 
 ```python
-from frappe.friday_core.agent_runner.dispatcher import dispatch
+from friday.friday_core.agent_runner.dispatcher import dispatch
 ...
 for skill_name in skills:
     tool_call = {

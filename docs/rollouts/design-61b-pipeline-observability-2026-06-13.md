@@ -83,7 +83,7 @@ unaffected by this PR.
   data is real — but rendering it as an auto-refreshing Frappe Page with
   traffic-light colours lands separately so the visual polish doesn't
   block the data layer. Operators can hit the method directly today via
-  `/api/method/frappe.friday_core.health.pipeline_health.pipeline_health`
+  `/api/method/friday.friday_core.health.pipeline_health.pipeline_health`
   (returns the same dict).
 - **The 5-min auto-fallback from `friday` → `default` queue** for the case
   where a registered queue's worker stays absent. The endpoint *reports*
@@ -97,7 +97,7 @@ unaffected by this PR.
 
 - [ ] `bench migrate` on a fresh clone → `common_site_config.json` gains
   `workers.friday = {"timeout": 600}` automatically.
-- [ ] `curl /api/method/frappe.friday_core.health.pipeline_health.pipeline_health`
+- [ ] `curl /api/method/friday.friday_core.health.pipeline_health.pipeline_health`
   → returns the dict above with `verdict: "ok"` when everything is up.
 - [ ] Stop the `friday` worker → within 60s the verdict goes `down` with
   `workers.friday.present = False`.

@@ -98,10 +98,10 @@ unused parameter). Seven targeted tests pin each of these (65 total, all DB-free
 ```bash
 # A panel benefits from 2+ independent providers, but runs on one (shared provider,
 # distinct lenses). Probes need no judge and run regardless.
-bench --site <sandbox-site> execute frappe.friday_core.evals.run.run
+bench --site <sandbox-site> execute friday.friday_core.evals.run.run
 
 # name the judge provider(s) explicitly (still must differ from the agent's):
-bench --site <sandbox-site> execute frappe.friday_core.evals.run.run --kwargs '{"judge_provider": "Claude"}'
+bench --site <sandbox-site> execute friday.friday_core.evals.run.run --kwargs '{"judge_provider": "Claude"}'
 ```
 
 Sandbox-only: chat scenarios drive real LLM calls (now including the panel's), and the

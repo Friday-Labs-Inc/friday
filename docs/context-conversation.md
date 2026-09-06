@@ -14,7 +14,7 @@
 - Working copy: /Users/alphaworkz/Documents/friday
 - Active branch: main (clean, up to date with origin/main)
 - Origin: https://github.com/Friday-Labs-Inc/friday.git
-- frappe/friday_core/ is on main — Slice 1 already merged from Linux box.
+- friday/friday_core/ is on main — Slice 1 already merged from Linux box.
 
 **Unmerged work on origin:**
 - origin/docs/architecture-diagram — 37 commits refactoring all design docs (docs 02–38) to match house style. Not yet PR'd to main. Push happened at 85d0cf7. **Open a PR for this when convenient.**
@@ -98,7 +98,7 @@ psql -h 127.0.0.1 -p 5432 -d friday.localhost -c "CREATE EXTENSION IF NOT EXISTS
 **5. Migrate and run Slice 1 tests:**
 
 bench --site friday.localhost migrate
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
 # Expected: "Ran 2 tests in ~0.1s — OK"
 **6. Append to IMPLEMENTATION_LOG.md:**
 
@@ -188,7 +188,7 @@ git branch -vv
 git remote -v
 
 # 2. Is Slice 1 work present?
-ls frappe/friday_core/doctype/
+ls friday/friday_core/doctype/
 
 # 3. Bench state
 ls ~/Documents/friday-bench/
@@ -264,7 +264,7 @@ Ran 3 commands
 Ran
 Confirm apps/frappe is the friday repo
 Bash
-cd /Users/alphaworkz/Documents/friday-bench/apps/frappe && git remote -v 2>&1 && echo "---" && git branch --show-current 2>&1 && echo "---" && git log --oneline -5 2>&1 && echo "---" && ls frappe/friday_core/doctype/ 2>&1 | head
+cd /Users/alphaworkz/Documents/friday-bench/apps/frappe && git remote -v 2>&1 && echo "---" && git branch --show-current 2>&1 && echo "---" && git log --oneline -5 2>&1 && echo "---" && ls friday/friday_core/doctype/ 2>&1 | head
 origin	https://github.com/Friday-Labs-Inc/friday.git (fetch)
 origin	https://github.com/Friday-Labs-Inc/friday.git (push)
 ---
@@ -417,13 +417,13 @@ Migrate is clean. Running Slice 1 tests now.
 Ran
 Run Slice 1 test_doctypes_exist test
 Bash
-source ~/.nvm/nvm.sh >/dev/null 2>&1 && nvm use 24 >/dev/null 2>&1 && export PATH="$HOME/Library/Python/3.9/bin:$PATH" && bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist 2>&1 | tail -40
-Starting test run with parameters: site=friday.localhost, module=frappe.friday_core.tests.test_doctypes_exist, verbose=False, tests=(), force=False, profile=False, failfast=False, skip_before_tests=False, debug=False, selected_categories=[]
+source ~/.nvm/nvm.sh >/dev/null 2>&1 && nvm use 24 >/dev/null 2>&1 && export PATH="$HOME/Library/Python/3.9/bin:$PATH" && bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist 2>&1 | tail -40
+Starting test run with parameters: site=friday.localhost, module=friday.friday_core.tests.test_doctypes_exist, verbose=False, tests=(), force=False, profile=False, failfast=False, skip_before_tests=False, debug=False, selected_categories=[]
 View detailed logs (using --verbose): /Users/alphaworkz/Documents/friday-bench/logs/frappe.testing.log
 
 Running 2 unspecified-category tests for frappe
 
-frappe.friday_core.tests.test_doctypes_exist.TestDocTypesExist
+friday.friday_core.tests.test_doctypes_exist.TestDocTypesExist
     ✔  test_each_doctype_exists_with_required_fields
     ✔  test_submittable_doctypes_are_submittable
 
@@ -452,11 +452,11 @@ tail -30 /Users/alphaworkz/Documents/friday-bench/apps/frappe/docs/project/IMPLE
   ```
 - Ran Slice 1 tests successfully on the PostgreSQL backend:
   ```bash
-  bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+  bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
   ```
   Result:
   ```text
-  frappe.friday_core.tests.test_doctypes_exist.TestDocTypesExist
+  friday.friday_core.tests.test_doctypes_exist.TestDocTypesExist
       ✔  test_each_doctype_exists_with_required_fields
       ✔  test_submittable_doctypes_are_submittable
 
@@ -512,11 +512,11 @@ frappe/docs/project/IMPLEMENTATION_LOG.md
   ```
 - Ran Slice 1 tests successfully on the PostgreSQL backend:
   ```bash
-  bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+  bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
   ```
   Result:
   ```text
-  frappe.friday_core.tests.test_doctypes_exist.TestDocTypesExist
+  friday.friday_core.tests.test_doctypes_exist.TestDocTypesExist
       ✔  test_each_doctype_exists_with_required_fields
       ✔  test_submittable_doctypes_are_submittable
 

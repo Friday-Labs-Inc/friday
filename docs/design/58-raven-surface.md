@@ -98,3 +98,53 @@ remains gated exactly as today.
   session mapping, outbound post shape, absent-Raven no-ops.
 - Live proof: install Raven on the bench via the command, DM the bot, get a
   governed reply; delegation War-Room posts appearing in the channel.
+
+
+---
+
+## Locked decision (2026-09-06) — Raven is the surface, Friday is the engine
+
+Raven 3.0 ships **Raven AI**: its own agent runtime (OpenAI Agents SDK; OpenAI,
+Google, or any OpenAI-compatible endpoint) whose bots can call eighteen kinds of
+function — Create / Update / Delete / Submit / Cancel Document, Set Value, and
+`Custom Function`, an arbitrary dotted Python path an admin types into a field.
+Those calls run as **the human who typed the message**, using Frappe's ordinary
+document permissions.
+
+That is a reasonable design for a chat assistant. It is not Friday's.
+
+| | Raven AI | Friday |
+|---|---|---|
+| Acts as | the human who typed | the agent's own Frappe User — its roles are its job description |
+| Before acting | Frappe document permissions | permission matrix check per skill, logged immutably |
+| After acting | nothing recorded | submitted Execution Log row |
+| High-risk actions | proceed | approval gate — pauses for a human |
+| Models | OpenAI-compatible | MiniMax, OpenAI, Anthropic (incl. OAuth), with failover |
+| Long-running work | one chat turn | durable task pipeline, survives restarts |
+
+**The decision: Raven supplies the surface — channels, DMs, @mentions, presence,
+mobile, the UI. Friday supplies the intelligence. Raven AI stays off.**
+
+The reason is not feature envy, it is auditability. Two engines writing to the
+same records means "which one did this?" has no answer for half the surface, and
+Friday's entire product claim is that an AI agent has a badge, a job description,
+and a timesheet. An asterisk on that claim is worth more than the convenience.
+
+### How the decision is enforced
+
+- `surfaces/bootstrap_raven._ensure_bot` pins `is_ai_bot = 0` on Friday's bot at
+  creation, and resets it (with a warning) if it is ever switched on — that flag
+  would route turns through Raven AI and past the permission engine entirely.
+- `health/pipeline_health` reports `surfaces.raven_ai_enabled`, and a site with
+  Raven's AI integration switched on reads **degraded**: not a Friday outage, a
+  governance gap the operator should see.
+- `setup/wizard.setup_status` returns `surfaces.engine = "friday"` alongside the
+  Raven AI state, so the choice is visible during setup rather than discovered
+  later.
+
+### Revisit when
+
+A studio asks why the Raven AI toggle exists if it cannot be used. The answer
+then is not to switch it on, but to make Raven's function layer call **Friday
+skills** — one governed engine behind two front doors. That is a v2 design, not
+a reversal of this one.

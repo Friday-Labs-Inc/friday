@@ -12,7 +12,7 @@ A single Frappe form script
 it sits next to `llm_provider.json`):
 
 - Adds a **Discover Models** custom button on the LLM Provider form.
-- Calls the whitelisted `frappe.friday_core.llm.model_discovery.list_models`
+- Calls the whitelisted `friday.friday_core.llm.model_discovery.list_models`
   endpoint shipped in PR #89.
 - Renders the response in a click-to-fill dialog:
   - Each row is a one-click button. Click → writes the model id into

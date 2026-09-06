@@ -68,7 +68,7 @@ Raven, not Telegram/Slack. Per `feedback_hermes-floor-not-ceiling`.
 
 ## Why we know it works
 
-11 unit tests in `frappe/friday_core/tests/test_setup_wizard.py`: each endpoint
+11 unit tests in `friday/friday_core/tests/test_setup_wizard.py`: each endpoint
 delegates correctly, cost rates write only when provided (never a fake 0),
 surfaces skip when Raven is absent, tools call both bootstraps, and the verify
 contract is exact — `setup_complete` is set only on a live probe + non-down

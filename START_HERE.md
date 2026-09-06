@@ -17,7 +17,7 @@ Friday is an AI agent system for businesses. The kind of AI that doesn't just ch
 - **Sandboxed** — like working in a locked room, not the whole office
 - **Reviewed** — humans can pause, approve, or revoke anything
 
-Friday is built on **Frappe v16** (a proven business software framework from Mumbai) and made in India, for the world.
+Friday is an app on **Frappe v16** (a proven business software framework from Mumbai) and made in India, for the world.
 
 That's the project in 6 sentences.
 
@@ -29,10 +29,10 @@ That's the project in 6 sentences.
 
 What that means concretely:
 
-- The repo is a fork of Frappe v16 with a `friday_core` module added.
+- The repo is an ordinary **Frappe app** (`friday`), installed on stock Frappe v16 alongside Raven. It began as a hard fork and was un-forked once the kernel proved it needed no framework changes; see `docs/design/45-fork-policy.md` for that history.
 - About 10 empty DocTypes exist (Agent Profile, Agent Task, Chat Message, Execution Log, etc.) — the data structures the rest of Friday will hang off.
 - A `bench` env runs locally against PostgreSQL 17 with `pgvector` and `pg_trgm` enabled.
-- Slice 1 tests pass: `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist`.
+- Slice 1 tests pass: `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist`.
 - **No agent logic, no permission engine, no chat handling, no skill execution yet.** That's slices 2–9.
 
 If you want to **build a slice from scratch**, today is the right day. If you want to **plug into a working system**, come back after slice 5 or so.

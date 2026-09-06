@@ -41,7 +41,7 @@ cover the new provisioning that v0.3 adds on top.
 **A0.1 — Provision the delegate-task skill (Design 69a).**
 ```bash
 bench --site $SITE execute \
-  frappe.friday_core.skills.bootstrap_delegate.provision \
+  friday.friday_core.skills.bootstrap_delegate.provision \
   --kwargs '{"profile_name": "Friday"}'
 ```
 Idempotent. Creates the `Agent Delegator` role, the `delegate-task` Skill row
@@ -107,7 +107,7 @@ execute pipeline as any first-party skill.
 
 **A1.1 — Sync the server.**
 ```bash
-bench --site $SITE execute frappe.friday_core.mcp.sync.sync_server \
+bench --site $SITE execute friday.friday_core.mcp.sync.sync_server \
   --kwargs '{"server_name": "test-mcp"}'
 ```
 
@@ -138,7 +138,7 @@ the Friday profile:
 
 **VERIFY A1.2** — the skill appears in the loaded tool list:
 ```python
->>> from frappe.friday_core.skills.loader import load_for_profile, invalidate_for_profile
+>>> from friday.friday_core.skills.loader import load_for_profile, invalidate_for_profile
 >>> invalidate_for_profile("Friday")
 >>> tools = load_for_profile("Friday")
 >>> skill_name in [t.name for t in tools]    # True
@@ -149,7 +149,7 @@ the Friday profile:
 If the MCP server has an `echo` or similar safe tool, fire it through the
 dispatcher to confirm the full pipeline:
 ```python
->>> from frappe.friday_core.agent_runner.dispatcher import dispatch
+>>> from friday.friday_core.agent_runner.dispatcher import dispatch
 >>> frappe.flags.friday_dispatch_context = {
 ...     "agent_profile": "Friday",
 ...     "session_id": "test::mcp-e2e",
@@ -169,7 +169,7 @@ editable by the operator (not locked by sync).
 >>> frappe.db.set_value("MCP Server", "test-mcp", "enabled", 0)
 >>> frappe.db.commit()
 >>> try:
-...     from frappe.friday_core.mcp.client import call_tool
+...     from friday.friday_core.mcp.client import call_tool
 ...     # This should fail at the handler level (enabled check):
 ...     dispatch(skill_name, {"message": "should fail"})
 ...     print("BUG: should have raised")
@@ -200,7 +200,7 @@ backfill patch ensures pre-existing profiles get `Specialist` instead of blank.
 
 **A2.2 — Role preamble in the system prompt.**
 ```python
->>> from frappe.friday_core.llm.prompt_builder import _ROLE_PREAMBLES
+>>> from friday.friday_core.llm.prompt_builder import _ROLE_PREAMBLES
 >>> "ORCHESTRATOR ROLE" in _ROLE_PREAMBLES["Orchestrator"]   # True
 >>> "delegate-task" in _ROLE_PREAMBLES["Orchestrator"]       # True
 >>> "SPECIALIST ROLE" in _ROLE_PREAMBLES["Specialist"]       # True
@@ -294,7 +294,7 @@ concurrency gate (active children ≤ profile's max).
 Create a Specialist profile with `delegate-task` permitted. The loader should
 still strip it.
 ```python
->>> from frappe.friday_core.skills.loader import load_for_profile, invalidate_for_profile
+>>> from friday.friday_core.skills.loader import load_for_profile, invalidate_for_profile
 
 >>> # Create a Specialist test profile with delegate-task permitted
 >>> spec = frappe.get_doc({
@@ -324,7 +324,7 @@ still strip it.
 
 Even if the loader were bypassed, the handler itself refuses non-Orchestrators.
 ```python
->>> from frappe.friday_core.skills.handlers_delegate import delegate_task
+>>> from friday.friday_core.skills.handlers_delegate import delegate_task
 >>> frappe.flags.friday_dispatch_context = {
 ...     "agent_profile": "E2E-Spec-Delegate-Test",
 ...     "session_id": "test::role-gate",
@@ -392,7 +392,7 @@ Pending.
 
 **A3.6 — Depth gate blocks deep chains.**
 ```python
->>> from frappe.friday_core.skills.handlers_delegate import _delegation_depth
+>>> from friday.friday_core.skills.handlers_delegate import _delegation_depth
 
 >>> # Our parent_task already exists; the child from A3.5 is depth 1.
 >>> _delegation_depth(child_name)                   # 1

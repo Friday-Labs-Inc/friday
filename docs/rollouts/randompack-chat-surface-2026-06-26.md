@@ -19,7 +19,7 @@ secret, the same seam as connector events) IS the auth.
   returns `{session_id, deltas:[…]}` as JSON. (RP writes the draft brief + owns the
   account step — provisional, not built here.)
 
-Path: `/api/method/frappe.friday_core.surfaces.randompack_chat.chat_send` (and
+Path: `/api/method/friday.friday_core.surfaces.randompack_chat.chat_send` (and
 `…chat_finalize`). `surfaces/randompack.py` already exists as a module, so this is a
 sibling file, not a `randompack/` package.
 

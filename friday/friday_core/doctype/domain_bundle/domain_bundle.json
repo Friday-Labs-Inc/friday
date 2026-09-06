@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:bundle_name",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bundle_name",
+  "description",
+  "domain_doctype",
+  "workflow_name",
+  "display_name_field",
+  "project_field",
+  "external_ref_field",
+  "version",
+  "is_active",
+  "tags"
+ ],
+ "fields": [
+  {
+   "fieldname": "bundle_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bundle Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "description": "The work-item DocType this domain governs (e.g. a Brand Brief, a Work Order). The Frappe Workflow is attached to THIS doctype; the engine reacts to its on_update.",
+   "fieldname": "domain_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Domain DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "description": "The Frappe Workflow that drives this domain's pipeline (states + role-gated transitions). Friday Workflow Transition Meta rows carry the agentic config per transition.",
+   "fieldname": "workflow_name",
+   "fieldtype": "Link",
+   "label": "Workflow",
+   "options": "Workflow"
+  },
+  {
+   "default": "",
+   "description": "Fieldname on the work-item that holds its human-readable name (e.g. business_name). Used for console tiles, pause announcements and deliverable branding.",
+   "fieldname": "display_name_field",
+   "fieldtype": "Data",
+   "label": "Display Name Field"
+  },
+  {
+   "default": "project",
+   "description": "Fieldname on the work-item that links it to a Friday Project (default: project). Engine tasks inherit this Project.",
+   "fieldname": "project_field",
+   "fieldtype": "Data",
+   "label": "Project Field"
+  },
+  {
+   "description": "Fieldname on the work-item that holds the external system's reference (e.g. the backend's project id). Shown in announcements; optional.",
+   "fieldname": "external_ref_field",
+   "fieldtype": "Data",
+   "label": "External Ref Field"
+  },
+  {
+   "default": "1.0",
+   "fieldname": "version",
+   "fieldtype": "Data",
+   "label": "Version"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "tags",
+   "fieldtype": "Small Text",
+   "label": "Tags"
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Domain Bundle",
+ "naming_rule": "By fieldname",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

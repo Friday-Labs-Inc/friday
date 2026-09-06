@@ -26,7 +26,7 @@ console), **66** (agent toolbox + deliverables), and the **RandomPack** loop
   or `bench --site $SITE console`.
 - Hit whitelisted endpoints with `curl` using an authenticated session, **or**
   just call them in `bench console` — e.g.
-  `frappe.call("frappe.friday_core.health.pipeline_health.pipeline_health")`.
+  `frappe.call("friday.friday_core.health.pipeline_health.pipeline_health")`.
 - Every phase has a **VERIFY** block with the exact expected result. If a VERIFY
   fails, jump to **Troubleshooting** at the bottom — it's keyed to the health
   verdict. Do not proceed past a failed gate; report it.
@@ -71,9 +71,9 @@ bench --site $SITE scheduler enable
 
 **0.5 — Provision the surfaces + tools (idempotent; safe to re-run).**
 ```bash
-bench --site $SITE execute frappe.friday_core.surfaces.bootstrap_raven.provision --kwargs '{"profile_name": "Friday"}'
-bench --site $SITE execute frappe.friday_core.skills.bootstrap_read.provision  --kwargs '{"profile_name": "Friday"}'
-bench --site $SITE execute frappe.friday_core.skills.bootstrap_files.provision --kwargs '{"profile_name": "Friday"}'
+bench --site $SITE execute friday.friday_core.surfaces.bootstrap_raven.provision --kwargs '{"profile_name": "Friday"}'
+bench --site $SITE execute friday.friday_core.skills.bootstrap_read.provision  --kwargs '{"profile_name": "Friday"}'
+bench --site $SITE execute friday.friday_core.skills.bootstrap_files.provision --kwargs '{"profile_name": "Friday"}'
 ```
 
 **0.6 — RandomPack settings are configured** (you said the RandomPack bench +
@@ -104,7 +104,7 @@ Room channel exists.
 bench --site $SITE console
 ```
 ```python
->>> frappe.call("frappe.friday_core.health.pipeline_health.pipeline_health")
+>>> frappe.call("friday.friday_core.health.pipeline_health.pipeline_health")
 ```
 **VERIFY 1:** the result dict has:
 - `verdict` == `"ok"` (or `"degraded"` only if you already have >10 pending /
@@ -152,7 +152,7 @@ Without these, the pipeline still runs and progress rolls up, but cost shows
 
 **VERIFY 3** (`bench console`):
 ```python
->>> frappe.call("frappe.friday_core.llm.model_discovery.list_models",
+>>> frappe.call("friday.friday_core.llm.model_discovery.list_models",
 ...             provider_name="<your provider name>")     # source: "live", models: [...]
 >>> frappe.db.get_value("LLM Provider", "<name>", ["default_model", "input_cost_per_million"])
 ```
@@ -192,7 +192,7 @@ the RandomPack side); use **5B** if you want to drive it locally.
 In the RandomPack bench/app, take a project through to the point where it emits
 `payment.received` then `project.created` to Friday's webhook:
 ```
-POST /api/method/frappe.friday_core.surfaces.randompack.receive_event
+POST /api/method/friday.friday_core.surfaces.randompack.receive_event
 Header: X-RP-Signature: t=<unix>,v1=<hmac_sha256( "<t>.<raw_body>", webhook_secret )>
 ```
 (`payment.received` first creates the Brand Brief; `project.created` then creates
@@ -202,7 +202,7 @@ the Project and plans the pipeline.)
 
 ```python
 import frappe, json, time
-from frappe.friday_core.surfaces import randompack
+from friday.friday_core.surfaces import randompack
 
 brief = {"company":"Acme","industry":"SaaS","audience":"Developers",
          "differentiator":"Fastest CI","personality_attributes":["bold","clear"],
@@ -248,7 +248,7 @@ directions via the `create-brand-direction` skill.
 
 **VERIFY 6** (`bench console`, after ~2–5 min):
 ```python
->>> frappe.call("frappe.friday_core.console.console_snapshot.console_snapshot", project=proj)
+>>> frappe.call("friday.friday_core.console.console_snapshot.console_snapshot", project=proj)
 ```
 Check: `health.verdict` ok; `active_tasks` shows what's running; `recent_activity`
 lists completed transitions with their `assigned_to_profile`. And the **console

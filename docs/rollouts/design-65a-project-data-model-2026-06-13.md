@@ -88,7 +88,7 @@ forked a full low-code platform underneath.
 existing rows migrate with NULLs). 10 unit tests cover the provisioner:
 identity shape, the no-login invariant, idempotency, slug sanitization, role
 mirroring, failure isolation, and both hooks. Full file:
-`frappe/friday_core/tests/test_agent_identity.py`. Existing pipeline tests
+`friday/friday_core/tests/test_agent_identity.py`. Existing pipeline tests
 (dispatcher/workflow/runner) are untouched and still green.
 
 ## What's NOT in this PR

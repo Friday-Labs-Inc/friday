@@ -1,3 +1,42 @@
+> ## ⚠️ SUPERSEDED — 2026-09-06
+>
+> **Friday is no longer a fork.** It is an ordinary Frappe app, installed on
+> stock `frappe/frappe@version-16`, patching no framework file.
+>
+> This document is kept as the record of why the fork was chosen and what
+> retired it. The policy below argued that agent-native primitives — actor
+> context, trace propagation, framework audit hooks, agent-scoped auth — could
+> only be built by owning the kernel (§1, §2). In eighteen months none of them
+> were built. What the fork actually contained was four framework edits:
+>
+> | Fork edit | Fate |
+> |---|---|
+> | `desk/doctype/number_card` — Postgres `order_by=None` | already fixed upstream in v16 |
+> | `api/__init__.py` — `StrEnum` | cosmetic; dropped |
+> | `app.py` — `/.well-known/agent.json` for the A2A card | an nginx rewrite onto the existing guest endpoint |
+> | `locale.py` — `UnboundLocalError` | still open upstream; carried as a documented shim in `friday_core/compat.py` |
+>
+> Everything else — `hooks.py`, `patches.txt`, `modules.txt`,
+> `commands/__init__.py` — was plain registration that any app can do.
+>
+> The costs were real and were being paid: manual CVE cherry-picks, deleted
+> upstream CI, a base fifteen minor versions stale, no `bench get-app`, and
+> `required_apps` (which is app-only) unable to express that Raven is required.
+> The divergence registry §6 promised and the `# friday-core:` markers §7
+> required were never created — because there were no divergences to register.
+>
+> §5's absorption workflow, §6's registry and §7's patch discipline are
+> obsolete. §3's line — *framework identity and cross-cutting execution
+> infrastructure live in core; domain features live in apps* — survives, and is
+> now enforced by the kernel seams (`friday_skill_handlers`,
+> `friday_task_transition_hooks`, `friday_reference_registry`,
+> `friday_skill_definitions`, and the Domain Bundle record) rather than by
+> owning the framework.
+>
+> If Friday ever does need a true kernel primitive, the honest sequence is:
+> propose it upstream first; fork only if upstream refuses; and write the
+> divergence registry that time.
+
 # 45 — Fork Policy
 
 > **Purpose:** Define how Friday develops on its Frappe kernel — what we change in core, what we keep stable, and how we absorb upstream Frappe patches when relevant.
@@ -35,7 +74,7 @@ The single `Friday-Labs-Inc/friday` repository contains:
 
 - **Frappe v16 source code** absorbed from upstream (`frappe/frappe`) at v16.18.2 as the base
 - **Agent-native modifications to Frappe core**: actor context, trace propagation, audit hooks, agent-scoped auth, infrastructure adaptations
-- **Friday's agent kernel modules** — Agent Profile, Skill, Execution Log, Permission Decision Log, Agent Task, etc. — built into the Frappe source tree (e.g. under `frappe/friday_core/` or appropriate module paths)
+- **Friday's agent kernel modules** — Agent Profile, Skill, Execution Log, Permission Decision Log, Agent Task, etc. — built into the Frappe source tree (e.g. under `friday/friday_core/` or appropriate module paths)
 - **Friday's design docs** (`docs/`)
 - **Governance and policies** (`CODEX.md`, `START_HERE.md`, `docs/contributing/AI_CONTRIBUTORS.md`)
 - **Scripts**, GitHub templates, project infrastructure

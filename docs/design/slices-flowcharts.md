@@ -73,11 +73,11 @@ Nothing *works* yet. Nothing *checks* anything. The system just knows the forms 
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/doctype/agent_profile/agent_profile.json` | The "Agent Profile" form definition |
-| `frappe/friday_core/doctype/skill/skill.json` | The "Skill" form definition |
-| `frappe/friday_core/doctype/execution_log/execution_log.json` | The "Execution Log" form definition |
-| `frappe/friday_core/doctype/permission_decision_log/permission_decision_log.json` | The audit receipt form |
-| `frappe/friday_core/tests/test_doctypes_exist.py` | Test that all tables exist |
+| `friday/friday_core/doctype/agent_profile/agent_profile.json` | The "Agent Profile" form definition |
+| `friday/friday_core/doctype/skill/skill.json` | The "Skill" form definition |
+| `friday/friday_core/doctype/execution_log/execution_log.json` | The "Execution Log" form definition |
+| `friday/friday_core/doctype/permission_decision_log/permission_decision_log.json` | The audit receipt form |
+| `friday/friday_core/tests/test_doctypes_exist.py` | Test that all tables exist |
 
 ### Real-world analogy
 
@@ -158,7 +158,7 @@ The logbook is a receipt book — once written, it can never be altered. A regul
 ### Key Code
 
 ```python
-from frappe.friday_core.permissions.matrix import check
+from friday.friday_core.permissions.matrix import check
 
 decision = check(agent_profile="My Agent", skill_name="create_note")
 # decision.allowed  → True or False
@@ -169,10 +169,10 @@ decision = check(agent_profile="My Agent", skill_name="create_note")
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/permissions/matrix.py` | The gatekeeper logic — checks all 3 questions |
-| `frappe/friday_core/permissions/decisions.py` | Writes the permanent audit receipt |
-| `frappe/friday_core/permissions/cache.py` | Redis cache so the same check is fast (<1ms) |
-| `frappe/friday_core/tests/test_permissions.py` | 10 tests for every scenario |
+| `friday/friday_core/permissions/matrix.py` | The gatekeeper logic — checks all 3 questions |
+| `friday/friday_core/permissions/decisions.py` | Writes the permanent audit receipt |
+| `friday/friday_core/permissions/cache.py` | Redis cache so the same check is fast (<1ms) |
+| `friday/friday_core/tests/test_permissions.py` | 10 tests for every scenario |
 
 ### Real-world analogy
 
@@ -264,8 +264,8 @@ Two reasons for this:
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/skills/loader.py` | Builds the filtered menu |
-| `frappe/friday_core/tests/test_skill_loader.py` | 8 tests |
+| `friday/friday_core/skills/loader.py` | Builds the filtered menu |
+| `friday/friday_core/tests/test_skill_loader.py` | 8 tests |
 
 ### Real-world analogy
 
@@ -371,10 +371,10 @@ The gateway fires on EVERY `Chat Message` insert — including the outbound row 
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/gateway/service.py` | The unified gateway function |
-| `frappe/friday_core/cli/chat.py` | The REPL (reads/writes Chat Message rows) |
-| `frappe/friday_core/agent_runner/runner.py` | `run_turn` — in Slice 4 this is an echo stub |
-| `frappe/friday_core/tests/test_chat_flow.py` | 15 tests |
+| `friday/friday_core/gateway/service.py` | The unified gateway function |
+| `friday/friday_core/cli/chat.py` | The REPL (reads/writes Chat Message rows) |
+| `friday/friday_core/agent_runner/runner.py` | `run_turn` — in Slice 4 this is an echo stub |
+| `friday/friday_core/tests/test_chat_flow.py` | 15 tests |
 
 ### Real-world analogy
 
@@ -463,13 +463,13 @@ Yes — the last 10 back-and-forth turns are loaded from `Chat Message` rows and
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/llm/provider.py` | Minimax HTTP client with retry and error redaction |
-| `frappe/friday_core/llm/prompt_builder.py` | Builds the {messages, tools, model} payload |
-| `frappe/friday_core/agent_runner/runner.py` | Calls prompt_builder → provider → returns text |
-| `frappe/friday_core/doctype/llm_provider/llm_provider.json` | The form where operators register API keys |
-| `frappe/friday_core/doctype/agent_settings/agent_settings.json` | Holds the default provider link |
-| `frappe/friday_core/tests/test_llm_provider.py` | 25 tests |
-| `frappe/friday_core/tests/test_prompt_builder.py` | 20 tests |
+| `friday/friday_core/llm/provider.py` | Minimax HTTP client with retry and error redaction |
+| `friday/friday_core/llm/prompt_builder.py` | Builds the {messages, tools, model} payload |
+| `friday/friday_core/agent_runner/runner.py` | Calls prompt_builder → provider → returns text |
+| `friday/friday_core/doctype/llm_provider/llm_provider.json` | The form where operators register API keys |
+| `friday/friday_core/doctype/agent_settings/agent_settings.json` | Holds the default provider link |
+| `friday/friday_core/tests/test_llm_provider.py` | 25 tests |
+| `friday/friday_core/tests/test_prompt_builder.py` | 20 tests |
 
 ### Real-world analogy
 
@@ -652,12 +652,12 @@ Together they answer: "On March 12th at 2 PM, agent X tried to create a note tit
 
 | File | What it is |
 |------|-----------|
-| `frappe/friday_core/agent_runner/dispatcher.py` | The single chokepoint — parses, checks, routes, logs |
-| `frappe/friday_core/agent_runner/runner.py` | Updated to detect tool calls and call dispatcher |
-| `frappe/friday_core/llm/provider.py` | `tool_calls` field added to LLMResponse |
-| `frappe/friday_core/doctype/execution_log/execution_log.json` | `error` status option added |
-| `frappe/friday_core/tests/test_dispatcher.py` | 17 tests |
-| `frappe/friday_core/tests/test_runner_tool_call.py` | 6 tests |
+| `friday/friday_core/agent_runner/dispatcher.py` | The single chokepoint — parses, checks, routes, logs |
+| `friday/friday_core/agent_runner/runner.py` | Updated to detect tool calls and call dispatcher |
+| `friday/friday_core/llm/provider.py` | `tool_calls` field added to LLMResponse |
+| `friday/friday_core/doctype/execution_log/execution_log.json` | `error` status option added |
+| `friday/friday_core/tests/test_dispatcher.py` | 17 tests |
+| `friday/friday_core/tests/test_runner_tool_call.py` | 6 tests |
 
 ---
 
