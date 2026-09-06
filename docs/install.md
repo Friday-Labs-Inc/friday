@@ -8,6 +8,9 @@ Friday is a Frappe app. It requires a running Frappe bench with Python 3.14+.
 - Python 3.14+
 - PostgreSQL 14+ (or SQLite for development)
 - Redis 6+
+- **Raven** — required. Friday's chat front door: the bot you DM, the
+  per-project channels, and the war room. Friday runs its own governed agent
+  engine on top of it; Raven supplies the surface, not the intelligence.
 - Docker (optional — only needed for sandboxed skill execution)
 
 ## Step 1 — Clone the Repository
@@ -36,7 +39,21 @@ bench new-site friday.localhost
 bench --site friday.localhost install-app frappe
 ```
 
-## Step 3 — Apply Migrations
+## Step 3 — Install Raven
+
+Raven is a required part of the platform, not an optional add-on:
+
+```bash
+bench get-app --branch develop https://github.com/The-Commit-Company/raven
+bench --site friday.localhost install-app raven
+```
+
+Without it, `friday setup` refuses to provision surfaces and the health check
+reports `down`. (Frappe's `required_apps` can only be declared by an app, not by
+the framework — until Friday is packaged as an app, this install step and the
+health check are how the requirement is enforced.)
+
+## Step 4 — Apply Migrations
 
 ```bash
 bench --site friday.localhost migrate
@@ -49,7 +66,7 @@ This creates the Friday DocTypes:
 - Chat Message + Chat Platform
 - Execution Log + Permission Decision Log
 
-## Step 4 — Configure an LLM Provider
+## Step 5 — Configure an LLM Provider
 
 1. Go to **Frappe Desk → Agent Settings**.
 2. Create an **LLM Provider** (e.g., Minimax M2):
@@ -58,7 +75,7 @@ This creates the Friday DocTypes:
    - `default_model`: `MiniMax-Text-01`
 3. Link the provider to an **Agent Profile**.
 
-## Step 5 — (Optional) Enable Docker Sandbox
+## Step 6 — (Optional) Enable Docker Sandbox
 
 For production skill execution, build the sandbox image:
 
@@ -72,7 +89,7 @@ The sandbox runs skill handlers in isolated containers with:
 - CPU and memory limits
 - Short-lived scoped API tokens
 
-## Step 6 — Verify
+## Step 7 — Verify
 
 ```bash
 bench --site friday.localhost run-tests --app frappe --module frappe.friday_core.tests

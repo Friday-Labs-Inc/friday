@@ -62,6 +62,25 @@ class TestVerdictStrict(unittest.TestCase):
 	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
 	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
 	@patch("frappe.friday_core.health.pipeline_health.frappe")
+	def test_verdict_down_when_raven_missing(self, mock_frappe, mock_tick, mock_inflight):
+		"""Raven is a REQUIRED platform component, so its absence is 'down' — not a
+		quiet skip. Without it there is no bot to DM, no per-project channels and
+		no war room, and the operator must see that immediately."""
+		from frappe.friday_core.health.pipeline_health import pipeline_health
+
+		_baseline_db(mock_frappe)
+		mock_frappe.db.table_exists.return_value = False
+		mock_tick.return_value = 30
+		mock_inflight.return_value = {"default": 0, "friday": 0}
+
+		out = pipeline_health()
+
+		self.assertEqual(out["verdict"], "down")
+		self.assertFalse(out["surfaces"]["raven_installed"])
+
+	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
+	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
+	@patch("frappe.friday_core.health.pipeline_health.frappe")
 	def test_verdict_down_when_no_scheduler_tick_in_5_min(self, mock_frappe, mock_tick, mock_inflight):
 		from frappe.friday_core.health.pipeline_health import pipeline_health
 
