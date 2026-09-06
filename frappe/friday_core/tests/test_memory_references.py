@@ -99,8 +99,8 @@ class TestParseReferences(unittest.TestCase):
 # The kernel ships an EMPTY reference registry; domain apps contribute entries
 # through the `friday_reference_registry` hook. These tests mock `frappe`
 # wholesale (so the hook is invisible) and inject a fixture registry instead —
-# "Brand Brief" here is just an opaque doctype string under the mock.
-_FIXTURE_REGISTRY = {"BB-": ("Brand Brief", ("business_name", "industry"))}
+# "Demo Work Item" here is just an opaque doctype string under the mock.
+_FIXTURE_REGISTRY = {"BB-": ("Demo Work Item", ("business_name", "industry"))}
 
 
 class TestExpandReferences(unittest.TestCase):
@@ -122,11 +122,11 @@ class TestExpandReferences(unittest.TestCase):
 		mock_frappe.get_doc.return_value = doc
 		with patch(
 			"frappe.friday_core.permissions.matrix.build_matrix",
-			return_value=self._matrix({"Brand Brief"}),
+			return_value=self._matrix({"Demo Work Item"}),
 		):
 			block = references.expand_references("look at @BB-0001", "Friday")
 		self.assertIn("<referenced-records>", block)
-		self.assertIn("@BB-0001 (Brand Brief):", block)
+		self.assertIn("@BB-0001 (Demo Work Item):", block)
 		self.assertIn("business_name: Loop Coffee", block)
 
 	@patch(f"{_R}.frappe")
@@ -144,7 +144,7 @@ class TestExpandReferences(unittest.TestCase):
 		mock_frappe.db.exists.return_value = False
 		with patch(
 			"frappe.friday_core.permissions.matrix.build_matrix",
-			return_value=self._matrix({"Brand Brief"}),
+			return_value=self._matrix({"Demo Work Item"}),
 		):
 			block = references.expand_references("@BB-9999", "Friday")
 		self.assertIn("@BB-9999: not found", block)

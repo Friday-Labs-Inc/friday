@@ -59,7 +59,7 @@
    "label": "Enabled"
   },
   {
-   "description": "Dotted Python module that exposes this connector's inbound handlers as a HANDLERS dict (system modality). e.g. frappe.friday_core.surfaces.randompack",
+   "description": "Dotted Python module that exposes this connector's inbound handlers as a HANDLERS dict (system modality). e.g. my_app.surfaces.crm",
    "fieldname": "handler_module",
    "fieldtype": "Data",
    "label": "Handler Module"

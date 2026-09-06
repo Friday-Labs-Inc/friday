@@ -8,8 +8,8 @@ Why this exists, in plain English
 =================================
 Until today every Friday skill was a one-directional verb:
 ``create-brand-direction`` writes a row, ``remember`` writes a row,
-``plan-project`` writes rows. None of them read anything back. So when an
-operator asked "what brand directions do we have for BB-0001?", the agent
+``update-task`` writes rows. None of them read anything back. So when an
+operator asked "which Issues are open on PRJ-7?", the agent
 had no tool to fetch them — and the LLM, faced with a missing capability,
 **fabricated three brand new ones** and presented them as if they were
 the saved work. This is the Legion incident at L5142 of the validation

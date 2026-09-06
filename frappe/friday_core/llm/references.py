@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 """
-@-references — point Friday at records: "draft taglines for @BB-0001" (design 59).
+@-references — point Friday at records: "summarise @PRJ-0001" (design 59).
 
 **Port** of Hermes `agent/context_references.py`, adapted from files to
 records: Hermes expands typed refs (`@file:`, `@url:`, `@git:`) and blocks
@@ -26,7 +26,7 @@ from frappe.friday_core.llm.memory import sanitize_context
 # Ported from Hermes context_references.TRAILING_PUNCTUATION.
 TRAILING_PUNCTUATION = ",.;!?"
 
-# Matches "@BB-0001"-style record refs; the prefix decides the doctype via the
+# Matches "@PRJ-0001"-style record refs; the prefix decides the doctype via the
 # registry below. (Hermes' typed `@kind:value` syntax is deferred with the
 # @url/@file slice.)
 _REFERENCE_RE = re.compile(r"(?<![\w/])@([A-Z]{2,8}-\d+)")
@@ -52,7 +52,7 @@ def registry() -> dict[str, tuple[str, tuple[str, ...]]]:
 def parse_references(text: str) -> list[str]:
 	"""Return registry-known record IDs referenced in `text`, in order, deduped.
 
-	Trailing punctuation is trimmed ("…for @BB-0001." → BB-0001), ported from
+	Trailing punctuation is trimmed ("…for @PRJ-0001." → PRJ-0001), ported from
 	Hermes. IDs whose prefix isn't in the registry are ignored (they're just
 	prose, e.g. an issue number from another system).
 	"""

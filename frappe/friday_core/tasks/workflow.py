@@ -96,7 +96,7 @@ def on_state_change(doc: "Task", method: str) -> None:
 
 	# Design 72 — record token release as its own event so the Lifecycle Trace
 	# shows when the runner's claim was given up (the bug that caught us at
-	# 2026-06-14: stale token + dispatchable=0 stranded gate1_prep for 20 min).
+	# 2026-06-14: stale token + dispatchable=0 stranded a phase task 20 min).
 	if release_token and doc.has_value_changed("executing_token"):
 		emit(
 			"workflow.executing_token_released",
