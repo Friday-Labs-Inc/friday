@@ -117,6 +117,15 @@ def _build_snapshot() -> dict:
 	# a missing Raven has to be loud — otherwise it degrades into silence
 	# (channels never provision, the war room swallows every post).
 	surfaces = {"raven_installed": bool(frappe.db.table_exists("Raven Channel"))}
+	# Raven is the SURFACE; Friday is the engine (locked — see design 58). Raven
+	# ships its own agent runtime whose bots write to Frappe documents with no
+	# permission matrix, no Execution Log and no approval gate. If an operator
+	# switches it on, half the site's AI writes leave the audit trail — so the
+	# health strip reports it rather than letting it happen quietly.
+	surfaces["raven_ai_enabled"] = bool(
+		surfaces["raven_installed"]
+		and frappe.db.get_single_value("Raven Settings", "enable_ai_integration")
+	)
 
 	open_issues = frappe.db.count("Issue", {"status": "Open"})
 
@@ -127,6 +136,7 @@ def _build_snapshot() -> dict:
 		pending=tasks_by_state.get("Pending", 0),
 		open_issues=open_issues,
 		raven_installed=surfaces["raven_installed"],
+		raven_ai_enabled=surfaces["raven_ai_enabled"],
 	)
 
 	return {
@@ -146,7 +156,9 @@ def _build_snapshot() -> dict:
 	}
 
 
-def _verdict(*, tick_age, workers, stuck, pending, open_issues, raven_installed=True) -> str:
+def _verdict(
+	*, tick_age, workers, stuck, pending, open_issues, raven_installed=True, raven_ai_enabled=False
+) -> str:
 	"""
 	Q3 LOCKED — Strict thresholds.
 
@@ -168,6 +180,10 @@ def _verdict(*, tick_age, workers, stuck, pending, open_issues, raven_installed=
 		return "down"
 
 	# 'degraded' conditions
+	if raven_ai_enabled:
+		# A second, ungoverned agent engine on the same records. Not a Friday
+		# outage — a governance gap, and the operator should see it.
+		return "degraded"
 	if pending > PENDING_DEGRADED_THRESHOLD:
 		return "degraded"
 	if open_issues > OPEN_ISSUES_DEGRADED_THRESHOLD:
