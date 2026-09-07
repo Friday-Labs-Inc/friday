@@ -637,7 +637,7 @@ Completed. Raven channel `Friday-proj-nwc-e2e-001`. Live on Legion.
 > A user can create or send work into Friday. Friday resolves an
 > Agent Profile, loads governed Skills from DocTypes, checks
 > permissions, executes one approved skill in a sandboxed path,
-> records immutable logs, updates an Agent Task through a
+> records immutable logs, updates an Agent Job through a
 > configurable workflow, and shows the result in the Framework
 > Console.
 

@@ -332,9 +332,9 @@ history, except for correcting factual mistakes.
   Agent Profile Skill
   Skill
   Skill Required DocType
-  Agent Project
-  Agent Task
-  Agent Task Skill
+  Agent Run
+  Agent Job
+  Agent Job Skill
   Chat Message
   Chat Platform
   Execution Log

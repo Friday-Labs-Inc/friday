@@ -32,7 +32,7 @@ from friday.friday_core.llm.project_context import project_snapshot_block
 
 def _project(name: str, status: str = "In Progress") -> str:
 	return (
-		frappe.get_doc({"doctype": "Agent Project", "project_name": name, "status": status})
+		frappe.get_doc({"doctype": "Agent Run", "project_name": name, "status": status})
 		.insert(ignore_permissions=True)
 		.name
 	)
@@ -42,7 +42,7 @@ def _task(project: str, title: str, state: str) -> str:
 	return (
 		frappe.get_doc(
 			{
-				"doctype": "Agent Task",
+				"doctype": "Agent Job",
 				"title": title,
 				"project": project,
 				"priority": "normal",

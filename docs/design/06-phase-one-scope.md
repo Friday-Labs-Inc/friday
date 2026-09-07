@@ -37,7 +37,7 @@ If that single loop runs end-to-end with governance intact, the architecture is 
 | 5 | LLM call path + no-op skill | Gateway picks up a message, calls Minimax, writes outbound Chat Message |
 | 6 | First real skill (`create_note`) | End-to-end: CLI message → permission check → skill exec → Note created → reply |
 | 7 | Docker-isolated execution for `create_note` | Skill runs in a sandbox meeting 42 §5 minimum bar |
-| 8 | Agent Task workflow + dispatcher | Manually created Task is claimed and executed by the dispatcher |
+| 8 | Agent Job workflow + dispatcher | Manually created Task is claimed and executed by the dispatcher |
 | 9 | Native Kanban + real-time updates | Task moves through states live on a Kanban board |
 | 10 | Polish + tests + docs | README, install guide, architecture doc; permission engine ≥ 80% coverage |
 | 11 | Dogfood | Friday runs Friday's own task list for one week |

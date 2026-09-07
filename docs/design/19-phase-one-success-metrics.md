@@ -27,7 +27,7 @@ The first business-automation dogfood follows the governed loop becoming green. 
 - [ ] Denied calls are rejected and logged.
 - [ ] Permitted calls execute through the sandboxed path.
 - [ ] Execution Log and Permission Decision Log rows are written.
-- [ ] Agent Task moves through a configurable workflow.
+- [ ] Agent Job moves through a configurable workflow.
 - [ ] Framework Console shows the task, agent, execution, and audit trail.
 
 ### M1.2 — Zero unsafe actions

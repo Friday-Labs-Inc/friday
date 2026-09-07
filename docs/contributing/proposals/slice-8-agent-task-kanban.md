@@ -1,4 +1,4 @@
-# Proposal: Slice 8 — Agent Task + Dispatcher + Native Kanban
+# Proposal: Slice 8 — Agent Job + Dispatcher + Native Kanban
 
 ## Status
 
@@ -18,19 +18,19 @@ Slice 8 introduces the **asynchronous task queue**: tasks are created manually i
 
 Three concrete gaps are addressed:
 
-1. **No task lifecycle beyond the chat session.** Chat-driven skills die when the session closes. Agent Tasks survive — they track state across dispatcher cycles, agent restarts, and manual interventions.
+1. **No task lifecycle beyond the chat session.** Chat-driven skills die when the session closes. Agent Jobs survive — they track state across dispatcher cycles, agent restarts, and manual interventions.
 2. **No CLI-to-dispatcher separation.** The CLI currently routes through the chat gateway (synchronous). Tasks created in the console have no route to an agent. The dispatcher bridges this gap.
-3. **No native Frappe Kanban view for tasks.** Agents managed in spreadsheets or custom tables. The `Agent Task` DocType Kanban view makes task state visible and transitionable without a custom UI.
+3. **No native Frappe Kanban view for tasks.** Agents managed in spreadsheets or custom tables. The `Agent Job` DocType Kanban view makes task state visible and transitionable without a custom UI.
 
-**Reference architecture:** [`docs/design/10-agent-execution-guide.md`](docs/design/10-agent-execution-guide.md) §Slice 8, [`05-module-design.md`](docs/design/05-module-design.md) §Phase 1 DocTypes (`Agent Task`), [`docs/design/14-integrated-architecture.md`](docs/design/14-integrated-architecture.md) for request flow and runtime architecture.
+**Reference architecture:** [`docs/design/10-agent-execution-guide.md`](docs/design/10-agent-execution-guide.md) §Slice 8, [`05-module-design.md`](docs/design/05-module-design.md) §Phase 1 DocTypes (`Agent Job`), [`docs/design/14-integrated-architecture.md`](docs/design/14-integrated-architecture.md) for request flow and runtime architecture.
 
 ---
 
 ## 2. Proposed Changes & Architecture
 
-### 2.1 Frappe Workflow on `Agent Task`
+### 2.1 Frappe Workflow on `Agent Job`
 
-The state machine for an `Agent Task` DocType row:
+The state machine for an `Agent Job` DocType row:
 
 ```
 Pending → Assigned → Executing → Blocked → Review → Completed
@@ -58,11 +58,11 @@ The `dispatchable` set = `{Pending, Assigned}`. The dispatcher will only claim t
 
 ### 2.2 Workflow Hook (`friday/tasks/workflow.py`)
 
-Lives in the new `friday/tasks/` module. registered as the `on_update` hook on `Agent Task` in `hooks.py`:
+Lives in the new `friday/tasks/` module. registered as the `on_update` hook on `Agent Job` in `hooks.py`:
 
 ```python
 doc_events = {
-    "Agent Task": {
+    "Agent Job": {
         "on_update": "friday.tasks.workflow.on_state_change",
     },
 }
@@ -81,7 +81,7 @@ doc_events = {
 
 DISPATCHABLE_STATES = {"Pending", "Assigned"}
 
-def on_state_change(doc: "Agent Task", method: str) -> None:
+def on_state_change(doc: "Agent Job", method: str) -> None:
     """Recompute dispatchable; record timestamps; emit Redis event."""
 
     # 1. dispatchable is a derived field — never trust a stale value
@@ -157,7 +157,7 @@ def tick() -> None:
 
 ```sql
 SELECT name, assigned_to_profile, required_skills
-FROM `tabAgent Task`
+FROM `tabAgent Job`
 WHERE dispatchable = 1
   AND assigned_to_profile IS NULL
   AND workflow_state = 'Pending'
@@ -176,7 +176,7 @@ The `ORDER BY` priority trick (sorting boolean DESC) achieves strict priority or
 **`_claim_and_dispatch`:**
 
 ```python
-def _claim_and_dispatch(task_doc: "Agent Task") -> None:
+def _claim_and_dispatch(task_doc: "Agent Job") -> None:
     """Atomically assign the task to the best-fit profile, transition state,
     emit Redis event, and hand off to the runner."""
 
@@ -214,7 +214,7 @@ def _claim_and_dispatch(task_doc: "Agent Task") -> None:
 ### 2.5 Profile Matching (`_match_profiles`)
 
 ```python
-def _match_profiles(task_doc: "Agent Task") -> list[str]:
+def _match_profiles(task_doc: "Agent Job") -> list[str]:
     """Return the names of Agent Profiles whose permitted_skills cover
     every skill in task_doc.required_skills.
 
@@ -271,7 +271,7 @@ def on_agent_task_assigned(message: dict) -> None:
     task_name = message["task_name"]
     profile_name = message["assigned_to_profile"]
 
-    task = frappe.get_doc("Agent Task", task_name)
+    task = frappe.get_doc("Agent Job", task_name)
 
     # Transition to Executing
     task.transition("Executing")
@@ -299,7 +299,7 @@ def on_agent_task_assigned(message: dict) -> None:
     task.save(ignore_permissions=True)
 
 
-def _execute_skill_in_sandbox(skill_name: str, task: "Agent Task") -> SandboxResult:
+def _execute_skill_in_sandbox(skill_name: str, task: "Agent Job") -> SandboxResult:
     """Execute one skill from the task's required_skills in a Docker sandbox.
     Uses the task-level API token scoped to this task + profile."""
 
@@ -321,12 +321,12 @@ Frappe v16 ships a built-in Kanban board renderer for any DocType that has a `wo
 
 **Configuration:**
 
-1. **Workflow:** A Frappe Workflow document named `Agent Task Workflow` with the states and transitions defined in §2.1 above.
+1. **Workflow:** A Frappe Workflow document named `Agent Job Workflow` with the states and transitions defined in §2.1 above.
 2. **Kanban board:** Created via Framework Console or `after_migrate` hook:
    ```
-   doctype: Agent Task
+   doctype: Agent Job
    column_field: workflow_state
-   board_name: "Agent Tasks"
+   board_name: "Agent Jobs"
    ```
 3. **Field labels on the card:**
    - `title` (primary)
@@ -342,11 +342,11 @@ These are two distinct execution paths that share the dispatcher infrastructure 
 
 | | CLI / Chat Flow (Slices 1–7) | Console Task Flow (Slice 8) |
 |---|---|---|
-| Entry | `friday chat --profile <name>` → writes Chat Message row | `Agent Task` row created manually in Framework Console |
+| Entry | `friday chat --profile <name>` → writes Chat Message row | `Agent Job` row created manually in Framework Console |
 | Gateway | `Chat Message.after_insert` → session_manager → runner → LLM | None |
 | Dispatcher | `agent_runner/dispatcher.dispatch()` — synchronous, called in-process | `tasks/dispatcher.tick()` — scheduled cron, atomic claim |
 | Skill execution | Inside Docker sandbox (Slice 7) | Inside Docker sandbox (same) |
-| Result delivery | Chat Message row (outbound) written by gateway | `Agent Task.result` JSON field written by task runner |
+| Result delivery | Chat Message row (outbound) written by gateway | `Agent Job.result` JSON field written by task runner |
 | State machine | None (stateless round-trip) | Full workflow state (Pending→Assigned→...) |
 | Persistence | Ephemeral (lasts as long as session) | Persistent (survives restarts) |
 
@@ -364,7 +364,7 @@ Both paths share the same `SandboxResult` → `Execution Log` writing. The task 
 | `friday/friday_core/tasks/workflow.py` | `on_state_change` hook; `DISPATCHABLE_STATES` |
 | `friday/friday_core/tasks/dispatcher.py` | `tick()`, `_fetch_dispatchable_tasks()`, `_claim_and_dispatch()`, `_match_profiles()` |
 | `friday/friday_core/tasks/runner.py` | `on_agent_task_assigned()` event consumer; task execution loop |
-| `friday/friday_core/doctype/agent_task_skill/agent_task_skill.json` | Already exists; verify fields |
+| `friday/friday_core/doctype/agent_job_skill/agent_task_skill.json` | Already exists; verify fields |
 | `friday/friday_core/tests/test_task_workflow.py` | Workflow state transitions; dispatchable derivation |
 | `friday/friday_core/tests/test_task_dispatcher.py` | Atomic claim; concurrent dispatcher; profile matching |
 
@@ -372,10 +372,10 @@ Both paths share the same `SandboxResult` → `Execution Log` writing. The task 
 
 | File | Change |
 |---|---|
-| `frappe/frappe/hooks.py` | Add `Agent Task.on_update → friday.tasks.workflow.on_state_change`; Wire `*/1 * * * *` cron to `friday.tasks.dispatcher.tick` |
-| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `workflow_state` field type override (ensure `Data` with workflow-state-like values; the actual states are driven by the Frappe Workflow document, not hardcoded in the DocType schema) |
-| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `dependencies` field (Table → Agent Task Dependency, Phase 1 can be a stub, needed for ordering) |
-| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `current_execution` Link → Execution Log (Point to active Execution Log row during execution) |
+| `frappe/frappe/hooks.py` | Add `Agent Job.on_update → friday.tasks.workflow.on_state_change`; Wire `*/1 * * * *` cron to `friday.tasks.dispatcher.tick` |
+| `frappe/friday/friday_core/doctype/agent_job/agent_task.json` | Add `workflow_state` field type override (ensure `Data` with workflow-state-like values; the actual states are driven by the Frappe Workflow document, not hardcoded in the DocType schema) |
+| `frappe/friday/friday_core/doctype/agent_job/agent_task.json` | Add `dependencies` field (Table → Agent Job Dependency, Phase 1 can be a stub, needed for ordering) |
+| `frappe/friday/friday_core/doctype/agent_job/agent_task.json` | Add `current_execution` Link → Execution Log (Point to active Execution Log row during execution) |
 | `frappe/friday/friday_core/agent_runner/dispatcher.py` | Add comment clarifying that `dispatch()` handles chat-driven (tool-call) tasks; task-driven dispatch goes through `tasks/dispatcher.tick()` |
 | `frappe/friday/friday_core/agent_runner/runner.py` | Subscribe to `agent_task.assigned` realtime event and hand off to task runner when task is claimed for the profile |
 | `docs/contributing/proposals/slice-8-agent-task-kanban.md` | This file |
@@ -409,12 +409,12 @@ The dispatcher infrastructure is **task-profile agnostic**: the same permission 
 
 | # | Scenario | Expected |
 |---|---|---|
-| T1 | Create `Agent Task` row in `Pending` state → `dispatchable=1` | Workflow hook sets `dispatchable=True` automatically |
+| T1 | Create `Agent Job` row in `Pending` state → `dispatchable=1` | Workflow hook sets `dispatchable=True` automatically |
 | T2 | Transition task `Pending → Assigned` → `dispatchable=0`, `assigned_to_profile` set | Both conditions hold after transition |
 | T3 | Two `dispatcher.tick()` calls concurrent → only one claims each task | `SELECT … FOR UPDATE SKIP LOCKED` prevents double-claim |
 | T4 | Task `Pending` with no eligible profiles → left in `Pending`, no exception | Log warning emitted; task stays unclaimed |
 | T5 | Task transitions to `Review` → `completed_at` reset | `completed_at` cleared on `Review` entry (task re-opened after block resolved) |
-| T6 | Kanban view opens for `Agent Task` → all 6 columns visible | Kanban board renders states Pending/Assigned/Executing/Blocked/Review/Completed |
+| T6 | Kanban view opens for `Agent Job` → all 6 columns visible | Kanban board renders states Pending/Assigned/Executing/Blocked/Review/Completed |
 | T7 | Task in `Executing` transitions to `Blocked` → `result` preserves partial execution | `result` JSON shows execution history up to the failure |
 | T8 | `Review → Completed` transition → `completed_at` set, `dispatchable=0` | Both fields correct after transition |
 | T9 | Profile with no matching skills → `required_skills` unmet → task not assigned | `_match_profiles` returns empty; task stays Pending |
@@ -467,18 +467,18 @@ $ bench --site friday.localhost run-tests --module friday.friday_core.tests.test
 ### Manual Smoke Test
 
 1. Open Frappe Framework Console on `friday.localhost`.
-2. Create an `Agent Task` row: title="Test Kanban Task", priority="high", required_skills=`[create_note]`.
+2. Create an `Agent Job` row: title="Test Kanban Task", priority="high", required_skills=`[create_note]`.
 3. Verify `workflow_state` defaults to `Pending` and `dispatchable=1`.
 4. Run: `bench --site friday.localhost execute friday.friday_core.tasks.dispatcher.tick`.
 5. Observe: task moves to `Assigned` state → `Assigned to Profile` set → `dispatchable=0`.
-6. Open the **Kanban view** for `Agent Task` in the Desk sidebar.
+6. Open the **Kanban view** for `Agent Job` in the Desk sidebar.
 7. Observe: column "Pending" is empty; column "Assigned" shows the task card.
 8. Watch a real-time update as the task runner executes and transitions the task to `Review` → `Completed`.
 
 ### Validation Checklist (from [`docs/design/11-agent-validation-checklist.md`](docs/design/11-agent-validation-checklist.md))
 
-- [ ] `Agent Task` DocType has `workflow_state`, `dispatchable`, `assigned_to_profile`, `required_skills`, `result`, `started_at`, `completed_at`
-- [ ] Frappe Workflow `Agent Task Workflow` has 6 states and transitions per §2.1
+- [ ] `Agent Job` DocType has `workflow_state`, `dispatchable`, `assigned_to_profile`, `required_skills`, `result`, `started_at`, `completed_at`
+- [ ] Frappe Workflow `Agent Job Workflow` has 6 states and transitions per §2.1
 - [ ] `dispatchable` is `1` for `Pending` and `Assigned` tasks; `0` for all other states
 - [ ] Two concurrent `tick()` calls do not double-claim any task
 - [ ] Kanban board renders all 6 columns correctly

@@ -81,7 +81,7 @@ The AIAgent class from `run_agent.py` is synchronous and ReAct-style. This is th
 
 Three concrete changes required during porting:
 
-**1. Cooperative cancellation.** Replace Hermes' `threading.Event` interrupt with an RQ `SIGTERM`-aware check: on each tool boundary, the worker reads a `stop_requested` flag from the Agent Task DocType. If set, the worker shuts down gracefully.
+**1. Cooperative cancellation.** Replace Hermes' `threading.Event` interrupt with an RQ `SIGTERM`-aware check: on each tool boundary, the worker reads a `stop_requested` flag from the Agent Job DocType. If set, the worker shuts down gracefully.
 
 **2. State as DocTypes.** Replace Hermes' filesystem state (`SOUL.md`, `MEMORY.md`, `USER.md`, `state.db`) with DocType reads loaded once at the start of `run_conversation()` and kept immutable for that run's duration. Frappe RQ can run multiple workers; each must load its own snapshot cleanly.
 
@@ -111,11 +111,11 @@ Friday ports selected DocTypes from ERPNext into the Friday app. It does not ins
 
 | ERPNext Source | Friday Name | What's kept | What's dropped |
 |---|---|---|---|
-| Project | Agent Project | Container semantics, status, comments, timeline | Billing, timesheet coupling, customer accounting |
-| Task | Agent Task | Assignment, priorities, dependencies, Kanban/list/Gantt | ERP-specific fields, invoice linking |
-| Issue | Agent Issue | Blocker tracking, escalation routing | Customer-facing ticketing fields |
+| Project | Agent Run | Container semantics, status, comments, timeline | Billing, timesheet coupling, customer accounting |
+| Task | Agent Job | Assignment, priorities, dependencies, Kanban/list/Gantt | ERP-specific fields, invoice linking |
+| Issue | Agent Blocker | Blocker tracking, escalation routing | Customer-facing ticketing fields |
 
-**Added to Agent Task:**
+**Added to Agent Job:**
 - `assigned_to_profile` (Link → Agent Profile)
 - `required_skills` (child table)
 - `risk_level`
@@ -137,8 +137,8 @@ Raven owns: conversation, channels, direct messages, message reactions, file sha
 Friday owns: workflow truth, task state, execution truth, permissions, audit, approvals, sandboxing, and dispatcher decisions.
 
 **War Room behavior:**
-- One Raven channel auto-created per Agent Project on `after_insert`
-- Agent Task state changes post to the channel
+- One Raven channel auto-created per Agent Run on `after_insert`
+- Agent Job state changes post to the channel
 - Message Actions route through Friday permission checks before triggering any state change
 - Raven messages are mirrored to Frappe Timeline where audit relevance exists
 - Execution Log remains the legal and operational proof — not Raven
@@ -169,7 +169,7 @@ The workflow is defined in Frappe Workflow. Kanban renders whatever states are c
 The dispatcher queries validated records. It does not infer the world from text.
 
 Selection logic:
-1. Find Agent Tasks whose workflow state is dispatchable
+1. Find Agent Jobs whose workflow state is dispatchable
 2. Exclude tasks with incomplete dependencies
 3. Exclude tasks with pending approvals
 4. Exclude tasks whose required skills are not Active status
@@ -204,7 +204,7 @@ Agents may propose profiles, skills, tasks, and workflows. They may not silently
 **Required for v0.1:**
 - Validated Agent Profile with linked Frappe User
 - Validated Skill with DocType-based discovery
-- Agent Project and Agent Task with configurable workflow
+- Agent Run and Agent Job with configurable workflow
 - Kanban rendered from workflow states
 - Dispatcher claiming only dispatchable tasks
 - Execution Log per run

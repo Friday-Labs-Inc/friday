@@ -65,7 +65,7 @@ Friday still lacks; everything else on the core thinking/serving path is built.
 |---|---|---|---|
 | Tools auto-register (`tools/registry.py`) and are handed to the model as schemas | Skills become tool schemas via `skills/loader.py` `to_tool_definition()` | ✅ | In Friday a "tool" **is** a Skill (a DocType), not a Python file in a registry. |
 | Browser control, computer-use, web search, shell | — | ❌ | Not built. Would arrive as Skills if a business case needs them. |
-| **Delegate** tool — spawn sub-agents (`delegate_tool.py`) | — | ❌ | Friday has Agent Tasks (below) for async work instead of in-loop subagents. |
+| **Delegate** tool — spawn sub-agents (`delegate_tool.py`) | — | ❌ | Friday has Agent Jobs (below) for async work instead of in-loop subagents. |
 | **MCP** client + server (`mcp_tool.py`, `mcp_serve.py`) — connect any external tool server | — | ❌ | Not yet. A natural later add (Frappe could expose Skills over MCP). |
 | Six **terminal backends**: local, Docker, SSH, Modal, Daytona, Singularity | Docker only (`sandbox/`) | 🚫 | One company, one safe runtime. The other five are deleted scope. |
 
@@ -109,7 +109,7 @@ Friday still lacks; everything else on the core thinking/serving path is built.
 
 | In Hermes | In Friday | Status | How it changes for Frappe |
 |---|---|---|---|
-| Async work, parallel subagents, batch runner | **Agent Task** DocType run in a sandbox (`tasks/runner.py`), state machine Executing→Review/Blocked | 🟡 | Built, but the auto-trigger is a stub today (`register_task_runner` no-op); a scheduler tick / doc-event will drive it. |
+| Async work, parallel subagents, batch runner | **Agent Job** DocType run in a sandbox (`tasks/runner.py`), state machine Executing→Review/Blocked | 🟡 | Built, but the auto-trigger is a stub today (`register_task_runner` no-op); a scheduler tick / doc-event will drive it. |
 | **Cron scheduler + "routines"** — natural-language scheduled jobs delivered to any platform | — | 🔨 | Will use Frappe's built-in **scheduler** instead of Hermes' own cron. |
 | Kanban multi-agent board | — | 🚫 | Out of scope for v0.1. |
 
@@ -142,7 +142,7 @@ Friday still lacks; everything else on the core thinking/serving path is built.
 
 | In Friday | What it is | Status |
 |---|---|---|
-| **War Room** (`warroom/publisher.py`) | Posts every Agent Task status change into a Raven chat channel so a human team watches the agents work | ✅ (activates when Raven is installed) |
+| **War Room** (`warroom/publisher.py`) | Posts every Agent Job status change into a Raven chat channel so a human team watches the agents work | ✅ (activates when Raven is installed) |
 | **Everything-is-a-DocType** | Agents, skills, providers, messages, logs are all Frappe records — editable, permissioned, audited, backed-up natively | ✅ |
 | **Immutable audit logs** | Execution Log + Permission Decision Log are first-class, not an afterthought | ✅ |
 | **Project / Issue tracker** (`doctype/issue`, `issues/raise_issue.py`) | Generic Project/Task/Issue work objects + an *agent* issue tracker that auto-raises an Issue on a task failure or cross-agent dependency-wait. Ported from ERPNext (port, not depend) — doc 53. | 🟡 (Issue + auto-raise built; the rename + dependency wiring are next) |

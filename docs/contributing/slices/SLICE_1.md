@@ -174,7 +174,7 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 | target_doctype | Target DocType | Link | DocType | 1 |
 | operation | Operation | Select | read\nwrite\ncreate\nsubmit\ncancel\ndelete | 1 |
 
-##### (5) Agent Project
+##### (5) Agent Run
 
 - **Naming:** Set by user, field = `project_name`
 - **Submittable:** No
@@ -185,7 +185,7 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 | description | Description | Long Text |  | 0 |
 | status | Status | Select | Open\nIn Progress\nCompleted\nCancelled | 1 |
 
-##### (6) Agent Task
+##### (6) Agent Job
 
 - **Naming:** Autoincrement (so tasks are numbered)
 - **Submittable:** No
@@ -194,9 +194,9 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 |---|---|---|---|---|
 | title | Title | Data |  | 1 |
 | description | Description | Long Text |  | 0 |
-| project | Project | Link | Agent Project | 0 |
+| project | Project | Link | Agent Run | 0 |
 | assigned_to_profile | Assigned To Profile | Link | Agent Profile | 0 |
-| required_skills | Required Skills | Table | Agent Task Skill | 0 |
+| required_skills | Required Skills | Table | Agent Job Skill | 0 |
 | workflow_state | Workflow State | Data |  | 0 |
 | dispatchable | Dispatchable | Check |  | 0 |
 | priority | Priority | Select | low\nnormal\nhigh\nurgent | 1 |
@@ -204,7 +204,7 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 | started_at | Started At | Datetime |  | 0 |
 | completed_at | Completed At | Datetime |  | 0 |
 
-##### (7) Agent Task Skill (child table)
+##### (7) Agent Job Skill (child table)
 
 - **Naming:** Autoincrement
 - **is_child_table:** Yes
@@ -250,7 +250,7 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 |---|---|---|---|---|
 | agent_profile | Agent Profile | Link | Agent Profile | 1 |
 | skill | Skill | Link | Skill | 1 |
-| task | Task | Link | Agent Task | 0 |
+| task | Task | Link | Agent Job | 0 |
 | parameters | Parameters (JSON) | JSON |  | 0 |
 | result | Result (JSON) | JSON |  | 0 |
 | status | Status | Select | success\nfailed\nrejected\ntimeout | 1 |
@@ -272,7 +272,7 @@ Naming rule: where the table says "Set by user", `naming_rule = "Set by user"` a
 | matrix_snapshot | Matrix Snapshot (JSON) | JSON |  | 0 |
 | decided_at | Decided At | Datetime |  | 1 |
 
-> Note: there are 11 entries above because three are child tables (Agent Profile Skill, Skill Required DocType, Agent Task Skill). The "eight DocTypes" headline counts main DocTypes: Agent Profile, Skill, Agent Project, Agent Task, Chat Message, Chat Platform, Execution Log, Permission Decision Log.
+> Note: there are 11 entries above because three are child tables (Agent Profile Skill, Skill Required DocType, Agent Job Skill). The "eight DocTypes" headline counts main DocTypes: Agent Profile, Skill, Agent Run, Agent Job, Chat Message, Chat Platform, Execution Log, Permission Decision Log.
 
 ### Step 3.3 — Create the Agent Supervisor role
 
@@ -327,9 +327,9 @@ EXPECTED_DOCTYPES = {
     "Agent Profile Skill": {"skill"},
     "Skill": {"skill_name", "description", "risk_level", "status"},
     "Skill Required DocType": {"target_doctype", "operation"},
-    "Agent Project": {"project_name", "status"},
-    "Agent Task": {"title", "priority"},
-    "Agent Task Skill": {"skill"},
+    "Agent Run": {"project_name", "status"},
+    "Agent Job": {"title", "priority"},
+    "Agent Job Skill": {"skill"},
     "Chat Message": {"session_id", "direction", "timestamp"},
     "Chat Platform": {"platform_name", "adapter_module"},
     "Execution Log": {"agent_profile", "skill", "status"},
@@ -394,11 +394,11 @@ git commit -m "feat(friday-core): scaffold Friday Core module with 8 agent kerne
 Implements Slice 1 of Phase 1 per docs/contributing/slices/SLICE_1.md.
 
 - New module 'Friday Core' inside the Frappe source tree
-- 8 main DocTypes: Agent Profile, Skill, Agent Project, Agent Task,
+- 8 main DocTypes: Agent Profile, Skill, Agent Run, Agent Job,
   Chat Message, Chat Platform, Execution Log (submittable),
   Permission Decision Log (submittable)
 - 3 child tables: Agent Profile Skill, Skill Required DocType,
-  Agent Task Skill
+  Agent Job Skill
 - Agent Supervisor role created as fixture
 - test_doctypes_exist asserts presence and required fields
 - bench migrate runs clean on a fresh site"

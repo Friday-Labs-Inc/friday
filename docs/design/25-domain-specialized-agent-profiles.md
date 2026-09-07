@@ -158,7 +158,7 @@ React Developer produces a component that calls an API.
   → Coordinator verifies both sides match.
 ```
 
-Contracts live in the War Room. Mismatches surface as Agent Issues and block task completion.
+Contracts live in the War Room. Mismatches surface as Agent Blockers and block task completion.
 
 ---
 

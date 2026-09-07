@@ -54,7 +54,7 @@ A research engagement is a first-class object.
 | `sub_questions` | Table | Decomposed questions |
 | `findings` | Table | Each finding with source citation |
 | `final_report` | Link → File (markdown) | Output |
-| `parent_task` | Link → Agent Task | If kicked off from a task |
+| `parent_task` | Link → Agent Job | If kicked off from a task |
 | Submittable | Yes | |
 
 ### 3.2 Research Sub-Question DocType

@@ -171,22 +171,22 @@ locked — go tests-first, confirm before push.
 
 ### B1. The rename (doc 53 §7) — the careful one
 Rename the agent-namespaced DocTypes to the **generic** ones (D1):
-`Agent Project → Project`, `Agent Task → Task` (and the child
-`Agent Task Skill → Task Skill`).
+`Agent Run → Project`, `Agent Job → Task` (and the child
+`Agent Job Skill → Task Skill`).
 - Use a **`frappe.rename_doc` patch** (preserves data), registered in
   `patches.txt`.
 - Sweep **every** code + schema reference: `tasks/dispatcher.py`,
   `tasks/runner.py`, `tasks/workflow.py`, `warroom/publisher.py`,
   `gateway/service.py`, `hooks.py`, `issue.json` (the `related_task` / `waiting_on`
   Link `options`), and `issues/raise_issue.py` `TASK_DOCTYPE`.
-- `grep -rn "Agent Task\|Agent Project"` must come back empty (outside the patch
+- `grep -rn "Agent Job\|Agent Run"` must come back empty (outside the patch
   + migration notes) when you're done.
 - **Verify:** `bench migrate` clean; existing task rows survive the rename; the
   chat + task flows still work.
 
 ### B2. Field alignment (the gotcha)
 `issues/raise_issue.py` `unfinished_dependencies()` reads a **`status`** field,
-but the current `Agent Task` has **`workflow_state`**, not `status`. Pick one and
+but the current `Agent Job` has **`workflow_state`**, not `status`. Pick one and
 align everything (doc 53 §3.2 frames the Task as having a status). This is *why*
 D5 was held back — wiring it before this alignment would be half-built.
 

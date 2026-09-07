@@ -13,7 +13,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Depends On Task",
-   "options": "Agent Task",
+   "options": "Agent Job",
    "reqd": 1
   }
  ],

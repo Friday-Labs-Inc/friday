@@ -131,7 +131,7 @@ class TestVerdictStrict(unittest.TestCase):
 
 		# 11 pending tasks → degraded
 		def count(doctype, filters=None):
-			if doctype == "Agent Task" and filters and filters.get("workflow_state") == "Pending":
+			if doctype == "Agent Job" and filters and filters.get("workflow_state") == "Pending":
 				return 11
 			return 0
 
@@ -152,7 +152,7 @@ class TestVerdictStrict(unittest.TestCase):
 		mock_inflight.return_value = {"default": 0, "friday": 0}
 
 		def count(doctype, filters=None):
-			if doctype == "Agent Issue":
+			if doctype == "Agent Blocker":
 				return 6
 			return 0
 
@@ -179,7 +179,7 @@ class TestStuckCounts(unittest.TestCase):
 		# Wire the count() mock to return distinct numbers per call so we can
 		# verify each stuck_* lands in the right slot.
 		def count(doctype, filters=None):
-			if doctype != "Agent Task":
+			if doctype != "Agent Job":
 				return 0
 			f = filters or {}
 			state = f.get("workflow_state")

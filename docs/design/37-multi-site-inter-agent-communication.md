@@ -166,7 +166,7 @@ The `escalation_handoff` intent — when agent A cannot resolve an issue and nee
 
 1. Agent A composes an escalation message with context.
 2. Sends to partner B.
-3. B's Friday creates an Agent Task with priority "External Escalation" in B's War Room.
+3. B's Friday creates an Agent Job with priority "External Escalation" in B's War Room.
 4. B's supervisor responds via ACP message back.
 5. Conversation continues async until resolved.
 

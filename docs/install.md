@@ -54,7 +54,7 @@ bench --site friday.localhost migrate
 This creates the Friday DocTypes:
 - Agent Profile
 - Skill + Skill Credential
-- Agent Project + Agent Task
+- Agent Run + Agent Job
 - Chat Message + Chat Platform
 - Execution Log + Permission Decision Log
 

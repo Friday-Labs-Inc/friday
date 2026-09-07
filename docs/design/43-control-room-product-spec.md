@@ -53,7 +53,7 @@ Top-level navigation:
 1. **Now** — live activity dashboard (default landing view)
 2. **Inbox** — approval queue, escalations, agent questions
 3. **Agents** — profile list with status, capabilities, recent activity
-4. **Tasks** — Agent Project / Agent Task workspace with workflow Kanban
+4. **Tasks** — Agent Run / Agent Job workspace with workflow Kanban
 5. **Executions** — searchable Execution Log with replay capability
 6. **Permissions** — Permission Decision Log with denials surfaced
 7. **Policies** — Operations Policy, approval thresholds, autopilot config (Phase 2+)
@@ -92,7 +92,7 @@ Item types:
 
 Each item shows: context summary, what the agent proposes, what evidence it gathered, action buttons (Approve / Reject / Modify / Discuss).
 
-Approve/Reject/Modify trigger workflow state changes on the underlying Agent Task. Discuss opens a thread (Frappe Communication in Phase 1, Raven channel in Phase 2 if Raven is included).
+Approve/Reject/Modify trigger workflow state changes on the underlying Agent Job. Discuss opens a thread (Frappe Communication in Phase 1, Raven channel in Phase 2 if Raven is included).
 
 Inbox items have SLA timers. Items older than the configured SLA highlight in red.
 
@@ -120,7 +120,7 @@ Clicking an agent opens the detail page showing:
 
 ### 5.4 Tasks
 
-The Agent Project / Agent Task workspace. Combines Kanban, List, and Calendar views (Frappe standard) with Friday-specific columns and filters.
+The Agent Run / Agent Job workspace. Combines Kanban, List, and Calendar views (Frappe standard) with Friday-specific columns and filters.
 
 Kanban renders the configured workflow states as columns (per doc 41 — Kanban is a view, not the workflow).
 
@@ -182,7 +182,7 @@ These actions must be available from any view where they are contextually releva
 | **Stop** (single execution) | Sends graceful cancel signal to running sandbox; logs cancellation reason | Any user with supervisor role on the agent's domain |
 | **Suspend Agent** | Agent stops claiming new tasks; in-flight executions complete or timeout | Supervisor |
 | **Revoke Agent** | Agent immediately disabled, all in-flight executions cancelled, no new claims, audit log entry created | Admin only |
-| **Approve / Reject / Modify** | Workflow transition on the Agent Task or skill draft | Per workflow definition |
+| **Approve / Reject / Modify** | Workflow transition on the Agent Job or skill draft | Per workflow definition |
 | **Pause Project** | All tasks in project move to "paused" state; dispatcher excludes them | Project supervisor |
 | **Replay Execution** | Opens read-only replay view | Any user with read access to the execution |
 | **Kill Switch (All)** | Suspends every agent in the site immediately; requires re-enable to resume | Admin only, requires confirmation |
@@ -197,7 +197,7 @@ The Control Room is not a dashboard the operator must remember to check. It push
 
 - **In-app** — Frappe notification bell for approvals, escalations, anomalies
 - **Email** — daily summary at configurable time (default 07:00 site timezone)
-- **Raven** (if installed) — channel-specific notifications per Agent Project
+- **Raven** (if installed) — channel-specific notifications per Agent Run
 - **Webhook** — outbound notifications to operator-configured endpoints (Slack, Teams, custom) — Phase 2
 
 Notification routing is configured per role and per event type. Default: approvals and escalations go in-app immediately; daily summary goes via email; anomalies surface in-app + email.

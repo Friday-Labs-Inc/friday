@@ -151,7 +151,7 @@ Phase 1 establishes the framework shell and proves one governed execution path:
 
 1. Friday-derived repo, bench-aware setup, Friday-facing CLI identity
 2. Framework Console workspace
-3. Core agent DocTypes (Agent Profile, Skill, Agent Task, Execution Log, Permission Decision Log)
+3. Core agent DocTypes (Agent Profile, Skill, Agent Job, Execution Log, Permission Decision Log)
 4. Permission-gated skill execution
 5. Sandboxed execution path
 6. One end-to-end skill proving the loop

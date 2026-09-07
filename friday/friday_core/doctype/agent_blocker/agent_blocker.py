@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class AgentTask(Document):
+class AgentBlocker(Document):
 	pass

@@ -4,7 +4,7 @@
 """
 Task workflow state-machine hook for Task documents.
 
-Registered as ``doc_events["Agent Task"]["on_update"]`` in ``hooks.py``.
+Registered as ``doc_events["Agent Job"]["on_update"]`` in ``hooks.py``.
 
 Responsibilities
 ----------------
@@ -58,7 +58,7 @@ def _get_warroom():
 DISPATCHABLE_STATES = frozenset({"Pending", "Assigned"})
 
 
-def on_state_change(doc: "AgentTask", method: str) -> None:
+def on_state_change(doc: "AgentJob", method: str) -> None:
 	"""
 	Recompute dispatchable; record timestamps; emit Redis event.
 
@@ -129,7 +129,7 @@ def on_state_change(doc: "AgentTask", method: str) -> None:
 	doc.db_set(derived, update_modified=False)
 
 
-def _emit_state_change_event(doc: "AgentTask") -> None:
+def _emit_state_change_event(doc: "AgentJob") -> None:
 	"""Design 72 — record every workflow state transition for the Lifecycle Trace.
 
 	Reads ``frappe.flags.dispatcher_event_source`` to honestly stamp who caused
@@ -148,7 +148,7 @@ def _emit_state_change_event(doc: "AgentTask") -> None:
 	)
 
 
-def _watch_transition(doc: "AgentTask") -> None:
+def _watch_transition(doc: "AgentJob") -> None:
 	"""
 	Handle side-effects that depend on the specific state transition.
 
@@ -263,7 +263,7 @@ def _watch_transition(doc: "AgentTask") -> None:
 		write_task_completion_summary(doc)
 
 
-def _post_warroom_update(doc: "AgentTask", state: str) -> None:
+def _post_warroom_update(doc: "AgentJob", state: str) -> None:
 	"""
 	Post a status update to the Raven War Room channel.
 

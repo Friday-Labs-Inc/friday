@@ -1,4 +1,4 @@
-# Doc 50 — C1 Fix Design Lock: Agent Task Execution Route
+# Doc 50 — C1 Fix Design Lock: Agent Job Execution Route
 
 **Status:** Design lock — decisions are final for Roo Code to implement against
 **Fixes:** Finding **C1** (and folds in **M4**, **M5**; depends on **M3**) from
@@ -12,7 +12,7 @@ deviate from a locked decision; if a decision blocks you, stop and flag it.
 
 ## 0. Why this doc exists
 
-[Doc 49 finding C1](49-foundations-deviation-audit.md) found the async Agent Task
+[Doc 49 finding C1](49-foundations-deviation-audit.md) found the async Agent Job
 route is **dead**: the dispatcher announces an assignment with
 `frappe.publish_realtime("agent_task.assigned", ...)`, but that is a *browser push*,
 not a server job queue — so nothing executes the task. PR #35 stopped the resulting
@@ -47,7 +47,7 @@ logs for free. The duplicate emit in the workflow hook and the no-op
 
 | Aspect | Hermes | Friday (this design) | Why we diverge |
 |--------|--------|----------------------|----------------|
-| Background work | In-process `threading.Thread` tracked in `_background_tasks` dict (`cli.py:3269-3271`); in-memory `_enqueue(QueueEvent)` stream (`mcp_serve.py:312-321`) | Durable **Agent Task** DocType rows, cron-claimed, executed by **Frappe RQ** workers | Friday tasks must survive process restart, be claimed exactly once across multiple workers, and leave an immutable audit trail. Hermes's threads are ephemeral and single-process. |
+| Background work | In-process `threading.Thread` tracked in `_background_tasks` dict (`cli.py:3269-3271`); in-memory `_enqueue(QueueEvent)` stream (`mcp_serve.py:312-321`) | Durable **Agent Job** DocType rows, cron-claimed, executed by **Frappe RQ** workers | Friday tasks must survive process restart, be claimed exactly once across multiple workers, and leave an immutable audit trail. Hermes's threads are ephemeral and single-process. |
 | Trigger | Direct in-process call / thread spawn | `frappe.enqueue` after DB commit | Frappe gives us RQ + cron for free; we use the platform's native async primitive. |
 | Precedent we mirror | — | Friday's **own** gateway async path: `gateway.service.run_pipeline_for_row` (`gateway/service.py:112`) | Consistency within Friday beats inventing a second async idiom. We are [unified-gateway / one-idiom](49-foundations-deviation-audit.md) by preference. |
 
@@ -275,7 +275,7 @@ The new tests **must assert execution and enforcement**, not emission.
 **Required new/changed tests:**
 
 1. **End-to-end execution** (`tests/test_task_runner.py`, new or rewritten): create a
-   `Pending` Agent Task with one `create_note` skill and a profile permitted for it; run
+   `Pending` Agent Job with one `create_note` skill and a profile permitted for it; run
    `dispatcher.tick()` with `frappe.enqueue` patched to call the job **inline**. Assert:
    - task ends in `Review`;
    - a **Note** row was created;
@@ -294,7 +294,7 @@ The new tests **must assert execution and enforcement**, not emission.
    "asserts `frappe.enqueue` called once with the expected kwargs."
 
 **Verify clause for the whole slice:** `bench run-tests --module ...tasks` green; a manually
-created Agent Task reaches `Review` and produces a Note + Execution Log + Permission Decision
+created Agent Job reaches `Review` and produces a Note + Execution Log + Permission Decision
 Log; `grep -rn "publish_realtime(\"agent_task" friday_core` returns zero; `grep -rn
 "agent_role_profile" friday_core/tasks` returns zero.
 

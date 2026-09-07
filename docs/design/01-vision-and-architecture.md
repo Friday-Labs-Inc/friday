@@ -52,7 +52,7 @@ The goal: an agentic framework that enterprises can actually deploy because gove
 ┌─────────────────────────────────────────────────────────────────┐
 │  AGENT CORE WORKER  —  Dedicated RQ worker, custom queue        │
 │  Runs the Hermes-derived AIAgent.run_conversation() loop        │
-│  ─ Dispatcher (claims dispatchable Agent Tasks)                 │
+│  ─ Dispatcher (claims dispatchable Agent Jobs)                 │
 │  ─ Permission gate (checks every skill before dispatch)         │
 │  ─ Skill loader (Redis-cached Skill DocTypes)                   │
 │  ─ LLM provider adapter (Minimax Phase 1; provider-agnostic)    │
@@ -100,7 +100,7 @@ The goal: an agentic framework that enterprises can actually deploy because gove
 6. **LLM call** — Worker calls the configured LLM provider with the system prompt, skill definitions (L0 headers), and conversation history.
 7. **Tool dispatch** — LLM returns a tool call. Worker verifies permission again. Spawns Docker sandbox.
 8. **Sandboxed execution** — Container authenticates with a scoped API token, calls Frappe REST API, executes the skill, returns structured JSON.
-9. **Result persistence** — Execution Log row submitted (immutable). Agent Task workflow state updated. Result written back as outbound Chat Message.
+9. **Result persistence** — Execution Log row submitted (immutable). Agent Job workflow state updated. Result written back as outbound Chat Message.
 10. **Console update** — Framework Console receives real-time event; task state and execution log update live.
 
 **Every step is auditable.** Every permission decision is a submitted row. Every skill execution is a submitted row. Nothing happens silently.
@@ -111,15 +111,15 @@ The goal: an agentic framework that enterprises can actually deploy because gove
 
 Agents coordinate through Frappe DocTypes, not through direct calls to each other.
 
-**Agent Project** = a workflow context with associated agent profiles and tasks.
+**Agent Run** = a workflow context with associated agent profiles and tasks.
 
-**Agent Task** = a unit of work moving through a configurable Frappe Workflow (e.g. `Pending → Assigned → Executing → Blocked → Review → Completed`). States are fully configurable per project type.
+**Agent Job** = a unit of work moving through a configurable Frappe Workflow (e.g. `Pending → Assigned → Executing → Blocked → Review → Completed`). States are fully configurable per project type.
 
 **Dispatcher** = a Frappe scheduled job (60-second interval) that atomically claims dispatchable tasks for eligible Agent Profiles.
 
 **War Room** (Raven channel, Phase 2+) = the human-visible communication surface for a project. Agents post status updates; humans post instructions; escalations surface here. The War Room reflects truth; it does not own it.
 
-Agents never call each other directly. Inter-agent work flows through Agent Task delegation — one agent creates a sub-task, the dispatcher claims it for another profile, and that profile executes it with its own permissions.
+Agents never call each other directly. Inter-agent work flows through Agent Job delegation — one agent creates a sub-task, the dispatcher claims it for another profile, and that profile executes it with its own permissions.
 
 ---
 

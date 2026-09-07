@@ -61,7 +61,7 @@ Evaluated against FastAPI + custom permission layer, Django, and Flask:
 - DocType system gives declarative schema with automatic CRUD, validation, hooks, and UI.
 - Role-based permission engine — fine-grained, multi-role, per-document, hardened in production for years.
 - Workflow engine — multi-state, multi-role approval chains, no extra code.
-- Native Kanban view — Agent Tasks render as a board with no UI work.
+- Native Kanban view — Agent Jobs render as a board with no UI work.
 - Real-time via Socket.io — out of the box.
 - Background workers via Frappe RQ — out of the box.
 - REST API auto-generated per DocType — no hand-written endpoints for CRUD.

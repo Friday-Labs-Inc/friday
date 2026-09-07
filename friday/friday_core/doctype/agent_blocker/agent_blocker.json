@@ -71,20 +71,20 @@
   {
    "fieldname": "project",
    "fieldtype": "Link",
-   "label": "Agent Project",
-   "options": "Agent Project"
+   "label": "Agent Run",
+   "options": "Agent Run"
   },
   {
    "fieldname": "related_task",
    "fieldtype": "Link",
    "label": "Related Task",
-   "options": "Agent Task"
+   "options": "Agent Job"
   },
   {
    "fieldname": "waiting_on",
    "fieldtype": "Link",
    "label": "Waiting On (Task)",
-   "options": "Agent Task"
+   "options": "Agent Job"
   },
   {
    "fieldname": "description",
@@ -105,7 +105,7 @@
  ],
  "links": [],
  "module": "Friday Core",
- "name": "Agent Issue",
+ "name": "Agent Blocker",
  "naming_rule": "Autoincrement",
  "permissions": [
   {

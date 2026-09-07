@@ -38,7 +38,7 @@ Severity ladder:
 
 | # | Sev | One-line | Breaks |
 |---|-----|----------|--------|
-| **C1** | CRITICAL | The async Agent Task execution route is **dead** — tasks get claimed but never run. | doc 42 §7 (task route) |
+| **C1** | CRITICAL | The async Agent Job execution route is **dead** — tasks get claimed but never run. | doc 42 §7 (task route) |
 | **C2** | HIGH (borderline CRITICAL) | The Docker sandbox is **advisory, not mandatory** — any Docker hiccup silently runs skills in-process. | doc 04 Layer 3, doc 42 §5 |
 | **H1** | HIGH | There is **no ReAct loop** — the agent takes exactly one action then stops. | doc 47 / Hermes parity |
 | **H2** | HIGH | The **approval subsystem is half-wired** — the `requires_approval` flag exists but nothing enforces it. | doc 04 Layer 2 §7 + Layer 6, doc 42 §3 |
@@ -99,10 +99,10 @@ per the **authoritative** [doc 42](42-phase-one-authority-contract.md). Calling 
 
 ## 4. Findings
 
-### C1 — CRITICAL — The async Agent Task route is dead
+### C1 — CRITICAL — The async Agent Job route is dead
 
 **In plain English.** Friday has two ways to do work: (1) you chat with it and it acts
-immediately, and (2) it runs queued background "Agent Tasks." Route (1) works. **Route (2)
+immediately, and (2) it runs queued background "Agent Jobs." Route (1) works. **Route (2)
 is completely dead.** A task gets claimed and marked assigned, an event is announced — and
 then nothing runs it. The task sits forever.
 
@@ -124,7 +124,7 @@ crashing `bench migrate`) and stopped the crash by turning the subscriber into a
 tasks never execute.
 
 **Design doc it breaks.** [doc 42 §7](42-phase-one-authority-contract.md) completion gate
-lists the Agent Task route as required v0.1 functionality.
+lists the Agent Job route as required v0.1 functionality.
 
 **The Frappe-correct fix.** Replace the publish/subscribe fiction with a real background job.
 At the point we currently emit (dispatcher and/or workflow hook), call:

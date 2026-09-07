@@ -15,7 +15,7 @@
 |---|---|---|
 | **Friday Framework Core** | Hard fork of Frappe v16 stable | DocTypes, permissions, workflows, Socket.io, scheduler, RQ, REST API, bench ecosystem, Framework Console shell, agent-native core primitives |
 | **Friday Core (agent kernel)** | New code; Hermes patterns ported, not forked | Agent loop, Gateway, Dispatcher, Permission Engine, Skill Loader, Sandbox runtime, LLM provider adapters |
-| **Ported orchestration** | DocTypes ported from `frappe/erpnext` | Agent Project, Agent Task, Agent Issue with Friday-added fields |
+| **Ported orchestration** | DocTypes ported from `frappe/erpnext` | Agent Run, Agent Job, Agent Blocker with Friday-added fields |
 | **Raven** | Installed app from `The-Commit-Company/raven` | War Room channels, Message Actions, Timeline integration |
 
 Friday is the framework. The Friday repository **is** the Frappe v16 fork — agent-native primitives are built into core, not bolted on. Upstream Frappe patches are absorbed manually per `45-fork-policy.md`. Domain capability lives in Friday Apps; the agent kernel is part of the fork.
@@ -40,9 +40,9 @@ flowchart TB
     end
 
     subgraph Ported["Orchestration (ported from ERPNext)"]
-        AgentProject["Agent Project"]
-        AgentTask["Agent Task<br/>(+ Friday fields)"]
-        AgentIssue["Agent Issue"]
+        AgentRun["Agent Run"]
+        AgentJob["Agent Job<br/>(+ Friday fields)"]
+        AgentBlocker["Agent Blocker"]
     end
 
     subgraph RavenLayer["Raven (communication)"]
@@ -78,19 +78,19 @@ flowchart TB
     Gateway --> PermEngine
     Gateway --> SkillLoader
     Gateway --> Dispatcher
-    Dispatcher -->|atomic claim| AgentTask
+    Dispatcher -->|atomic claim| AgentJob
     Gateway -->|spawn| Sandbox
     Sandbox -->|scoped token| REST
     Gateway --> LLM
     PermEngine -->|submit row| PermLog
     Sandbox -->|submit row| ExecLog
     Gateway --> WarRoom
-    AgentTask --> WarRoom
+    AgentJob --> WarRoom
     WarRoom --> Timeline
     MsgActions -->|state transitions| Workflow
-    Workflow --> AgentTask
-    AgentTask -->|hook| WarRoom
-    AgentProject -->|after_insert| WarRoom
+    Workflow --> AgentJob
+    AgentJob -->|hook| WarRoom
+    AgentRun -->|after_insert| WarRoom
 
     FridayCore -.depends on.-> FrappeCore
     Ported -.lives inside.-> FrappeCore
@@ -110,7 +110,7 @@ flowchart TB
     classDef audit fill:#fee2e2,stroke:#dc2626,stroke-width:2px
 
     class Gateway,Dispatcher,PermEngine,SkillLoader,Sandbox,LLM new
-    class AgentProject,AgentTask,AgentIssue ported
+    class AgentRun,AgentJob,AgentBlocker ported
     class WarRoom,Timeline,MsgActions raven
     class DocTypes,Roles,Workflow,RTPubSub,RQ,Scheduler,REST,AgentKernelMods frappe
     class ExecLog,PermLog,WReq audit
@@ -134,7 +134,7 @@ sequenceDiagram
     participant Audit as Audit Logs<br/>(immutable DocTypes)
     participant Raven as War Room
 
-    Supervisor->>Frappe: Create Agent Project + Tasks
+    Supervisor->>Frappe: Create Agent Run + Tasks
     Frappe->>Raven: after_insert hook<br/>→ create channel · pin brief
     Dispatcher->>Dispatcher: Every 60s: query dispatchable Tasks
     Dispatcher->>Frappe: Atomic claim<br/>SELECT ... FOR UPDATE SKIP LOCKED
@@ -194,7 +194,7 @@ Owns:
 
 - DocType schema and ORM.
 - Role-based permissions — foundation for the gateway permission gate.
-- Workflow engine — used for Agent Task state machine and approval routing.
+- Workflow engine — used for Agent Job state machine and approval routing.
 - Real-time pub/sub — used by Raven, Gateway, and Kanban live updates.
 - RQ background workers — used for skill executions, dispatcher tick, curator, learner.
 - Scheduler — periodic jobs.
@@ -222,7 +222,7 @@ Owns:
 
 Friday adds:
 
-- One Raven channel per Agent Project (the War Room), auto-created via `after_insert` hook.
+- One Raven channel per Agent Run (the War Room), auto-created via `after_insert` hook.
 - Auto-join of the project's assigned Agent Profiles and supervisors.
 - Custom Message Actions: escalate, log decision, approve skill, import skill.
 - Standard emoji set indicating agent state (executing, blocked, completed, review).
@@ -234,13 +234,13 @@ Raven reflects truth. Raven does not own truth — Frappe DocTypes do.
 
 Owns after porting:
 
-- `Agent Project` (from ERPNext Project) — container for related Agent Tasks.
-- `Agent Task` (from ERPNext Task) — unit of work, assignable to an Agent Profile.
-- `Agent Issue` (from ERPNext Issue) — blocker, escalation, or bug report.
+- `Agent Run` (from ERPNext Project) — container for related Agent Jobs.
+- `Agent Job` (from ERPNext Task) — unit of work, assignable to an Agent Profile.
+- `Agent Blocker` (from ERPNext Issue) — blocker, escalation, or bug report.
 - Native Kanban and Gantt views.
 - Task dependencies and time tracking.
 
-Friday adds to `Agent Task`:
+Friday adds to `Agent Job`:
 
 - `assigned_to_profile` link to Agent Profile.
 - `required_skills` table.
@@ -272,16 +272,16 @@ Reading the sequence diagram in §1.2 as a narrative for reference:
 
 ```
 1. Supervisor opens Framework Console.
-   Creates an Agent Project ("Customer Onboarding Sprint").
-   Adds Agent Tasks tagged with required_skills and target Agent Profiles.
+   Creates an Agent Run ("Customer Onboarding Sprint").
+   Adds Agent Jobs tagged with required_skills and target Agent Profiles.
 
-2. Frappe `after_insert` hook fires on Agent Project.
+2. Frappe `after_insert` hook fires on Agent Run.
    Friday creates a Raven channel "war-room/customer-onboarding-sprint".
    Linked Users of assigned Agent Profiles are added to the channel.
    The project brief and emoji legend are pinned.
 
 3. Dispatcher (60s scheduled job).
-   Queries Agent Task where workflow_state is dispatchable AND assigned_to_profile is null.
+   Queries Agent Job where workflow_state is dispatchable AND assigned_to_profile is null.
    Matches each task to an eligible Agent Profile (required_skills ⊆ permitted_skills).
    Atomically claims: SELECT ... FOR UPDATE SKIP LOCKED.
    Sets workflow_state='Assigned'.
@@ -310,15 +310,15 @@ Reading the sequence diagram in §1.2 as a narrative for reference:
 
 8. Gateway records the outcome.
    Submits an Execution Log row.
-   Advances the Agent Task workflow_state (e.g. → Review or → Completed).
+   Advances the Agent Job workflow_state (e.g. → Review or → Completed).
    Posts "✅ Task X completed" in War Room with a link to the created document.
 
 9. Raven Timeline integration.
-   The message is pushed to the Agent Task's Frappe Timeline.
+   The message is pushed to the Agent Job's Frappe Timeline.
    The project record carries the conversation as audit history.
 
 10. Supervisor reviews.
-    Opens the War Room or Agent Task.
+    Opens the War Room or Agent Job.
     Right-clicks the agent's "completed" message.
     Uses the Raven Message Action "Approve & close task".
     The Task transitions to workflow_state='Completed'.
@@ -339,9 +339,9 @@ Agent Role Profile (Friday) ──── grants ────→ Roles (Frappe)
                                               ↓ permit
                                               DocTypes (Frappe + ported)
 
-Agent Project (ported)
+Agent Run (ported)
   ↓ has many
-Agent Task (ported + Friday fields)
+Agent Job (ported + Friday fields)
   ↓ has many
   • Execution Log (Friday, submittable)
   • Permission Decision Log (Friday, submittable)
@@ -351,7 +351,7 @@ Agent Task (ported + Friday fields)
 
 Skill (Friday, dual storage)
   ↓ referenced by
-Agent Task.required_skills (link table)
+Agent Job.required_skills (link table)
 Agent Profile.permitted_skills (link table)
 ```
 
@@ -426,15 +426,15 @@ The War Room is the project's command centre, not just a chat channel.
 | Element | Backed by |
 |---|---|
 | Real-time conversation | Raven channel |
-| Active task list | Frappe List View on Agent Task filtered by project |
-| Kanban board | Frappe Kanban View on Agent Task |
+| Active task list | Frappe List View on Agent Job filtered by project |
+| Kanban board | Frappe Kanban View on Agent Job |
 | Agent status panel | Custom Vue component reading Agent Profile + recent Execution Logs |
 | Document feed | Raven document sharing |
 | Quick actions | Raven Message Actions + Frappe form actions |
 | Pinned project brief | Raven pinned message |
-| Audit timeline | Frappe Timeline on Agent Project |
+| Audit timeline | Frappe Timeline on Agent Run |
 
-Composition: a Frappe v16 Workspace per Agent Project, pulling the Raven channel embed, Kanban, list view, and custom panels into one screen.
+Composition: a Frappe v16 Workspace per Agent Run, pulling the Raven channel embed, Kanban, list view, and custom panels into one screen.
 
 ---
 
@@ -445,7 +445,7 @@ Composition: a Frappe v16 Workspace per Agent Project, pulling the Raven channel
 | AIAgent loop | ADAPT — keep loop, replace state plumbing |
 | Prompt builder | ADAPT — replace file reads with DocType reads |
 | Skill markdown system | REWRITE — replaced by Skill DocType + file mirror |
-| Kanban dashboard | REWRITE — replaced by Frappe Workflow + Kanban View on Agent Task |
+| Kanban dashboard | REWRITE — replaced by Frappe Workflow + Kanban View on Agent Job |
 | Platform adapters | ADAPT for CLI (Phase 1); Raven is the human chat surface |
 | Cron / scheduler | REWRITE — replaced by Frappe Scheduler |
 | Session storage (SQLite + FTS5) | REWRITE — replaced by PostgreSQL + tsvector |
@@ -453,7 +453,7 @@ Composition: a Frappe v16 Workspace per Agent Project, pulling the Raven channel
 | Memory / vector | REWRITE — replaced by pgvector (Phase 2) |
 | Tirith command scanner | REUSE as external dependency (Phase 2) |
 | LLM provider abstraction | REUSE pattern, build minimal version Phase 1 |
-| Inter-agent dispatching | REWRITE — replaced by Dispatcher querying Agent Task |
+| Inter-agent dispatching | REWRITE — replaced by Dispatcher querying Agent Job |
 
 Hermes is a reference implementation of agentic ideas, not a codebase to fork. Friday is a fresh implementation on the Frappe + Raven + ported-ERPNext substrate.
 
@@ -471,7 +471,7 @@ This document refines Phase 1 from the integrated-stack perspective. Where it co
 - bench retained as the operational CLI; `friday` command group added.
 - Framework Console as the default workspace.
 - Raven installed; War Room from day one if the spike confirms low risk.
-- Agent Project, Agent Task, Agent Issue ported from ERPNext into the Friday tree.
+- Agent Run, Agent Job, Agent Blocker ported from ERPNext into the Friday tree.
 - Agent kernel: Agent Profile, Agent Role Profile, Skill (with file mirror), Execution Log, Permission Decision Log, Workflow Request.
 - Gateway, Dispatcher, Permission Engine, Docker sandbox at the 42 §5 minimum bar.
 - CLI adapter.

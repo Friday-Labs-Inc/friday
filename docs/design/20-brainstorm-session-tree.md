@@ -89,7 +89,7 @@ FRIDAY
 ```
 7. RAVEN DISCOVERED
    └─ Open-source Slack-like, built on Frappe
-      └─ Channels = War Rooms (one per Agent Project)
+      └─ Channels = War Rooms (one per Agent Run)
          ├─ Message Actions → trigger Friday workflows
          ├─ Document sharing with embedded previews
          ├─ Custom emoji as status indicators
@@ -97,9 +97,9 @@ FRIDAY
 
 8. ERPNext PROJECT/TASK/ISSUE PORTED
    └─ Do not depend on ERPNext — port the DocTypes
-      ├─ Agent Project (from ERPNext Project)
-      ├─ Agent Task (+ assigned_to_profile, required_skills)
-      └─ Agent Issue for blockers
+      ├─ Agent Run (from ERPNext Project)
+      ├─ Agent Job (+ assigned_to_profile, required_skills)
+      └─ Agent Blocker for blockers
          └─ Frappe Workflow + Kanban view replaces Hermes' fixed Kanban
 
 9. FOUR LAYERS LOCKED

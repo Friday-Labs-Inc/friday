@@ -15,7 +15,7 @@ Friday adopts Raven for:
 
 | Purpose | Raven feature |
 |---|---|
-| Project War Room | Public / private channel per Agent Project |
+| Project War Room | Public / private channel per Agent Run |
 | Direct human ↔ agent chat | Direct messages |
 | File sharing in context | Native uploads with permission inheritance |
 | Status indicators | Custom emoji reactions |
@@ -31,11 +31,11 @@ Raven reflects truth. Raven does not own truth — Frappe DocTypes do.
 
 ### 2.1 War Room as a Raven channel
 
-Every Agent Project auto-creates one Raven channel on `after_insert`. Naming: `war-room/{project-code}`.
+Every Agent Run auto-creates one Raven channel on `after_insert`. Naming: `war-room/{project-code}`.
 
 | Property | Value |
 |---|---|
-| Channel visibility | Mirrors Agent Project visibility (public / private / restricted) |
+| Channel visibility | Mirrors Agent Run visibility (public / private / restricted) |
 | Members on creation | Linked Users of all assigned Agent Profiles + supervisors |
 | Pinned message | Project brief + emoji legend |
 | Archive policy | Channel becomes read-only on project Completed; see §6 |
@@ -69,13 +69,13 @@ Permission: each action is gated by the underlying DocType's role permissions. O
 
 Raven document-share renders an inline preview with workflow buttons. Friday extends it for:
 
-- **Agent Task share** → state, assignee, due date; buttons: reassign, change priority, mark blocked.
+- **Agent Job share** → state, assignee, due date; buttons: reassign, change priority, mark blocked.
 - **Execution Log share** → skill, parameters (masked), result; button: re-run with parameters.
 - **Skill share** → L0 header; button: open L1 / L2 in the Framework Console.
 
 ### 2.4 Timeline sync
 
-Every War Room message mirrors into the Agent Project's Frappe Timeline. Timeline is the canonical audit record; Raven is the live-conversation view.
+Every War Room message mirrors into the Agent Run's Frappe Timeline. Timeline is the canonical audit record; Raven is the live-conversation view.
 
 ```python
 # friday/integrations/raven/timeline_sync.py
@@ -84,7 +84,7 @@ def on_raven_message(message):
         project = resolve_project_from_channel(message.channel)
         frappe.get_doc({
             "doctype": "Communication",
-            "reference_doctype": "Agent Project",
+            "reference_doctype": "Agent Run",
             "reference_name": project.name,
             "content": message.text,
             "sender": message.sender,
@@ -121,7 +121,7 @@ Supervisors can DM an Agent Profile's linked User. The agent treats DMs as direc
 
 | Concern | Mitigation |
 |---|---|
-| Channel membership reveals project scope | Channel visibility mirrors Agent Project permission; users without project access cannot see the channel exists |
+| Channel membership reveals project scope | Channel visibility mirrors Agent Run permission; users without project access cannot see the channel exists |
 | Messages may contain secrets | Field masking (`13-frappe-v16-leverage-strategy.md` §4) applies on Timeline; Raven respects the same masking via render hook |
 | Message Action abuse | Each action gates on the underlying DocType permission |
 | Channel archive | When project closes, channel becomes read-only. Deletion is a separate, explicit operator action |
@@ -136,10 +136,10 @@ On Friday installation with Raven:
 1. Verify Raven app is installed: `bench --site {site} list-apps | grep raven`.
 2. Install the Friday-Raven bridge: `bench --site {site} install-app friday-raven-bridge`.
 3. Migrate: `bench --site {site} migrate`.
-4. The bridge installs Message Action definitions, the standard emoji set, and hooks on Agent Project, Agent Task, Workflow Request.
+4. The bridge installs Message Action definitions, the standard emoji set, and hooks on Agent Run, Agent Job, Workflow Request.
 5. First-run wizard creates a default "Friday Operations" channel for system-wide notifications.
 
-If Raven is not installed, Friday falls back to Frappe Comments on Agent Project. Functional but degraded — no real-time, no Message Actions, no rich UX.
+If Raven is not installed, Friday falls back to Frappe Comments on Agent Run. Functional but degraded — no real-time, no Message Actions, no rich UX.
 
 ---
 
@@ -147,7 +147,7 @@ If Raven is not installed, Friday falls back to Frappe Comments on Agent Project
 
 ### A — Task execution with real-time coordination
 
-1. Supervisor creates an Agent Task in the Framework Console.
+1. Supervisor creates an Agent Job in the Framework Console.
 2. War Room channel exists from project creation.
 3. Dispatcher claims the task → posts 🚀 in the channel.
 4. Agent executes, posting intermediate updates.
@@ -179,7 +179,7 @@ If Raven is not installed, Friday falls back to Frappe Comments on Agent Project
 | Active | Writeable, real-time |
 | Completed | Read-only; pinned message updated with completion summary |
 | Archived | Hidden from the default channel list; still searchable; Timeline preserved |
-| Deleted | Archived; Timeline retained on Agent Project for audit |
+| Deleted | Archived; Timeline retained on Agent Run for audit |
 
 Retention: channels persist indefinitely by default. Operators configure age-based archival (e.g. archive channels for projects completed > 180 days ago).
 
@@ -211,10 +211,10 @@ Retention: channels persist indefinitely by default. Operators configure age-bas
 
 - Raven app v2.0+ (Message Actions and document sharing).
 - Frappe v16 — the Friday fork target.
-- Friday Core DocTypes: Agent Project, Agent Task, Execution Log, Workflow Request, Skill, Agent Profile.
+- Friday Core DocTypes: Agent Run, Agent Job, Execution Log, Workflow Request, Skill, Agent Profile.
 
 ---
 
 ## 10. Rollback
 
-The integration ships as a separate Frappe app (`friday-raven-bridge`). If Raven proves unstable or becomes unmaintained, disabling the bridge falls back to Frappe Comments on Agent Project. No data loss — Timeline is the source of truth; Raven is the surface.
+The integration ships as a separate Frappe app (`friday-raven-bridge`). If Raven proves unstable or becomes unmaintained, disabling the bridge falls back to Frappe Comments on Agent Run. No data loss — Timeline is the source of truth; Raven is the surface.
