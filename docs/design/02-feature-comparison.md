@@ -12,7 +12,7 @@
 | Agent loop (perceive → plan → act) | AIAgent class | yes | Inherited from Hermes; runs on Agent Core Worker |
 | Skill system | Markdown + manifests | Skill registry | Skill DocType (database-backed, governed) |
 | Self-improving skills | Autonomous Curator | limited | Skill Draft DocType + human-review workflow |
-| Multi-agent / sub-agents | Kanban dispatcher | yes | Agent Project + Agent Task + Dispatcher |
+| Multi-agent / sub-agents | Kanban dispatcher | yes | Agent Run + Agent Job + Dispatcher |
 | Cron / scheduled jobs | jobs.json + 60s tick | yes | Frappe Scheduler + RQ workers |
 | Memory (persistent) | FTS5 + optional vector | Markdown + optional vector | PostgreSQL + pgvector |
 | User modeling | Honcho integration | none | User Model DocType |
@@ -83,7 +83,7 @@
 
 **Replaced (Hermes pattern → Friday primitive):**
 
-- Custom Kanban + SQLite → Agent Project + Agent Task + Frappe Kanban view
+- Custom Kanban + SQLite → Agent Run + Agent Job + Frappe Kanban view
 - Markdown skill files in `~/.hermes/skills/` → Skill DocType
 - `jobs.json` cron → Frappe Scheduler
 - `HERMES_HOME` profile folders → Agent Profile DocType + scoped database access

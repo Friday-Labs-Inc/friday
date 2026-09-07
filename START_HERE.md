@@ -30,7 +30,7 @@ That's the project in 6 sentences.
 What that means concretely:
 
 - The repo is an ordinary **Frappe app** (`friday`), installed on stock Frappe v16 alongside Raven. It began as a hard fork and was un-forked once the kernel proved it needed no framework changes; see `docs/design/45-fork-policy.md` for that history.
-- About 10 empty DocTypes exist (Agent Profile, Agent Task, Chat Message, Execution Log, etc.) — the data structures the rest of Friday will hang off.
+- About 10 empty DocTypes exist (Agent Profile, Agent Job, Chat Message, Execution Log, etc.) — the data structures the rest of Friday will hang off.
 - A `bench` env runs locally against PostgreSQL 17 with `pgvector` and `pg_trgm` enabled.
 - Slice 1 tests pass: `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist`.
 - **No agent logic, no permission engine, no chat handling, no skill execution yet.** That's slices 2–9.

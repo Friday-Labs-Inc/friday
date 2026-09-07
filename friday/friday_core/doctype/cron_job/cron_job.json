@@ -155,7 +155,7 @@
    "fieldname": "last_task",
    "fieldtype": "Link",
    "label": "Last Task",
-   "options": "Agent Task",
+   "options": "Agent Job",
    "read_only": 1
   }
  ],

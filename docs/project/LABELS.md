@@ -50,7 +50,7 @@ One per slice in `CODEX.md` §5.
 | Label | Colour | Area |
 |---|---|---|
 | `area:agent-kernel` | `#bfd4f2` blue-grey | Profile, Skill, Execution Log, dispatcher |
-| `area:workflow` | `#bfd4f2` blue-grey | Agent Task workflow, Kanban |
+| `area:workflow` | `#bfd4f2` blue-grey | Agent Job workflow, Kanban |
 | `area:sandbox` | `#bfd4f2` blue-grey | Docker isolation, resource caps |
 | `area:control-room` | `#bfd4f2` blue-grey | Operator-facing UI |
 | `area:cli` | `#bfd4f2` blue-grey | bench friday command group |

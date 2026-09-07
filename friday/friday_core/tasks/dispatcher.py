@@ -81,7 +81,7 @@ def _ready_to_dispatch(task_doc) -> bool:
 		emit_skip_deduped(task_doc.name, "milestone_not_dispatchable")
 		return False
 	for dep in task_doc.get("depends_on") or []:
-		if frappe.db.get_value("Agent Task", dep.task, "workflow_state") != "Completed":
+		if frappe.db.get_value("Agent Job", dep.task, "workflow_state") != "Completed":
 			emit_skip_deduped(
 				task_doc.name,
 				"parent_pending",
@@ -89,13 +89,13 @@ def _ready_to_dispatch(task_doc) -> bool:
 			)
 			return False
 	if task_doc.get("project"):
-		if frappe.db.get_value("Agent Project", task_doc.project, "status") == "On Hold":
+		if frappe.db.get_value("Agent Run", task_doc.project, "status") == "On Hold":
 			emit_skip_deduped(task_doc.name, "project_on_hold")
 			return False
 	return True
 
 
-def _fetch_dispatchable_tasks(limit: int = 5) -> list["Agent Task"]:
+def _fetch_dispatchable_tasks(limit: int = 5) -> list["Agent Job"]:
 	"""
 	Fetch tasks that are dispatchable, unclaimed, and in Pending state.
 
@@ -115,7 +115,7 @@ def _fetch_dispatchable_tasks(limit: int = 5) -> list["Agent Task"]:
 	rows = frappe.db.sql(
 		"""
 		SELECT name
-		FROM `tabAgent Task`
+		FROM `tabAgent Job`
 		WHERE dispatchable = 1
 		  AND assigned_to_profile IS NULL
 		  AND workflow_state = 'Pending'
@@ -135,10 +135,10 @@ def _fetch_dispatchable_tasks(limit: int = 5) -> list["Agent Task"]:
 		as_dict=True,
 	)
 
-	return [frappe.get_doc("Agent Task", row.name) for row in rows]
+	return [frappe.get_doc("Agent Job", row.name) for row in rows]
 
 
-def _claim_and_dispatch(task_doc: "AgentTask") -> None:
+def _claim_and_dispatch(task_doc: "AgentJob") -> None:
 	"""
 	Match an eligible profile, atomically assign the task, and emit event.
 
@@ -203,7 +203,7 @@ def _claim_and_dispatch(task_doc: "AgentTask") -> None:
 	frappe.flags.dispatcher_event_source = None
 
 
-def _match_profiles(task_doc: "AgentTask") -> list[str]:
+def _match_profiles(task_doc: "AgentJob") -> list[str]:
 	"""
 	Return Agent Profile names whose permitted skills cover all required skills.
 

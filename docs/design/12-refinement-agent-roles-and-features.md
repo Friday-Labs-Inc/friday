@@ -47,7 +47,7 @@ Default set; deployments extend, disable, or override.
 
 | Profile | Purpose | Typical roles | Typical skills | Approval threshold |
 |---|---|---|---|---|
-| `task_worker` | Executes individual Agent Tasks | Friday Agent, Task Executor | Skills tagged `low-risk`, `task_execution` | `high` |
+| `task_worker` | Executes individual Agent Jobs | Friday Agent, Task Executor | Skills tagged `low-risk`, `task_execution` | `high` |
 | `data_processor` | Reads, transforms, writes data documents | Friday Agent, Data Reader, Data Writer | Skills tagged `data_io` | `high` |
 | `qa_agent` | Reviews completed work, flags issues | Friday Agent, QA Reviewer | Read-only skills + Comment write | `always` for any write |
 | `supervisor_agent` | Oversees other agents, approves escalations | Friday Agent, Supervisor | Workflow Request decisions, agent delegation | `high` |
@@ -97,7 +97,7 @@ Agent A (profile X) wants to invoke a skill via Agent B (profile Y)
 | `to_agent_profile` | Link |
 | `requested_skill` | Link → Skill |
 | `parameters` | JSON |
-| `parent_task` | Link → Agent Task |
+| `parent_task` | Link → Agent Job |
 | `parent_execution_log` | Link → Execution Log |
 | `status` | Select (Pending / Running / Completed / Failed / Denied) |
 | `result_execution_log` | Link → Execution Log |
@@ -144,7 +144,7 @@ An agent escalates on:
 | Field | Type |
 |---|---|
 | `originating_agent_profile` | Link |
-| `originating_task` | Link → Agent Task |
+| `originating_task` | Link → Agent Job |
 | `reason_code` | Select (permission_denied / repeated_failure / explicit / timeout) |
 | `details` | Long Text |
 | `attempted_targets` | Table |
@@ -205,7 +205,7 @@ Onboarding 50 task workers is one profile selection per agent — or a bulk impo
 
 **Setup**
 - Agent Role Profiles: `task_worker`, `data_processor`, `supervisor_agent`.
-- One project: "Customer Onboarding Sprint" (Agent Project).
+- One project: "Customer Onboarding Sprint" (Agent Run).
 - Tasks created with `required_skills` tagged.
 
 **Agents**

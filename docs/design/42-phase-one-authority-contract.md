@@ -22,7 +22,7 @@ Phase 1 proves the governed framework loop and the Friday product feel.
 
 **The required proof:**
 
-> A user can create or send work into Friday. Friday resolves an Agent Profile, loads governed Skills from DocTypes, checks permissions, executes one approved skill in a sandboxed path, records immutable logs, updates an Agent Task through a configurable workflow, and shows the result in the Framework Console.
+> A user can create or send work into Friday. Friday resolves an Agent Profile, loads governed Skills from DocTypes, checks permissions, executes one approved skill in a sandboxed path, records immutable logs, updates an Agent Job through a configurable workflow, and shows the result in the Framework Console.
 
 That is the foundation. Everything else is breadth, not depth.
 
@@ -47,12 +47,12 @@ A business-automation flagship remains inside the Phase 1 program — but it sta
 - `Execution Log` (submittable — immutable audit trail)
 - `Permission Decision Log` (submittable — immutable audit trail)
 - `Workflow Request` schema
-- `Agent Project`
-- `Agent Task`
-- `Agent Task Event` (or equivalent event/timeline record)
+- `Agent Run`
+- `Agent Job`
+- `Agent Job Event` (or equivalent event/timeline record)
 
 ### Workflow and Board
-- Configurable Agent Task workflow (first template may be simple)
+- Configurable Agent Job workflow (first template may be simple)
 - Kanban renders workflow states as columns
 - States marked dispatchable; dispatcher claims only dispatchable tasks
 - Explicit outcomes: blocked / completed / failed
@@ -135,7 +135,7 @@ The first named business-automation use case is **not** v0.1. Whatever it turns 
 **Gate: v0.1 must be green before any business-automation track starts.**
 
 v0.1 gates for business-track readiness:
-1. Agent Project / Agent Task orchestration works
+1. Agent Run / Agent Job orchestration works
 2. Agent Profile and Skill governance works
 3. Permission and execution logs are reliable
 4. Dispatcher handles configurable workflows
@@ -158,7 +158,7 @@ v0.1 is complete when all of the following are true:
 
 - [ ] A Friday site installs and migrates cleanly from a fresh bench
 - [ ] Framework Console exists and is the default workspace
-- [ ] Agent Profile, Skill, Agent Project, Agent Task, Execution Log, and Permission Decision Log DocTypes exist
+- [ ] Agent Profile, Skill, Agent Run, Agent Job, Execution Log, and Permission Decision Log DocTypes exist
 - [ ] A user can create or submit a task
 - [ ] Dispatcher claims a dispatchable task exactly once (concurrency-safe)
 - [ ] Agent executes one approved skill through the governed path

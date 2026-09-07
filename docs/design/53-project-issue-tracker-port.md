@@ -41,7 +41,7 @@ Both live in **one** `Issue` tracker, told apart by a `source` field.
 
 ## 2. The big decision: GENERIC, not agent-namespaced
 
-**LOCKED.** The objects are **generic Friday-core objects**: `Project`, `Task`, `Issue` (+ Frappe `ToDo`). **Not** `Agent Project` / `Agent Task` / `Agent Issue`.
+**LOCKED.** The objects are **generic Friday-core objects**: `Project`, `Task`, `Issue` (+ Frappe `ToDo`). **Not** `Agent Run` / `Agent Job` / `Agent Blocker`.
 
 **An agent is one kind of *stakeholder user*, alongside humans.** This works cleanly because Frappe already gives us the seam: **each agent has its own Frappe `User` account** (the one-user-per-agent pattern, doc 23). So every assignee / stakeholder is just a **`User`** — some human, some agent — and one generic tracker serves both. When the assigned User happens to be an agent, Friday's execution machinery (sandbox, skills) runs; when it's a human, it's an ordinary task on their list.
 
@@ -53,7 +53,7 @@ Both live in **one** `Issue` tracker, told apart by a `source` field.
 
 Field lists below are the locked shape. "Ported" = the idea comes from the named ERPNext doctype; the Friday version is its own, trimmed.
 
-### 3.1 `Project` (ported from ERPNext **Project**; renamed from `Agent Project`)
+### 3.1 `Project` (ported from ERPNext **Project**; renamed from `Agent Run`)
 | Field | Type | Notes |
 |---|---|---|
 | `project_name` | Data, reqd | Title. |
@@ -66,7 +66,7 @@ Field lists below are the locked shape. "Ported" = the idea comes from the named
 
 `Project Stakeholder` (child): `user` (Link → User), `role` (Select: Manager / Contributor / Watcher).
 
-### 3.2 `Task` (ported from ERPNext **Task**; renamed from `Agent Task`)
+### 3.2 `Task` (ported from ERPNext **Task**; renamed from `Agent Job`)
 | Field | Type | Notes |
 |---|---|---|
 | `subject` | Data, reqd | |
@@ -80,7 +80,7 @@ Field lists below are the locked shape. "Ported" = the idea comes from the named
 | `description`, `result`, `started_at` | … | kept from today |
 
 `Task Depends On` (child): `task` (Link → Task).
-`Task Skill` (child, renamed from `Agent Task Skill`): `skill` (Link → Skill).
+`Task Skill` (child, renamed from `Agent Job Skill`): `skill` (Link → Skill).
 
 ### 3.3 `Issue` (NEW — ported from ERPNext **Issue**)
 | Field | Type | Notes |
@@ -156,14 +156,14 @@ A plain `priority` + optional `due date` covers urgency without dragging in SLA 
 
 ## 7. Migration (rename/fold what exists)
 
-`Agent Project`, `Agent Task`, `Agent Task Skill` already exist in `friday_core`. They become the generic objects:
+`Agent Run`, `Agent Job`, `Agent Job Skill` already exist in `friday_core`. They become the generic objects:
 
 | From | To |
 |---|---|
-| `Agent Project` | `Project` |
-| `Agent Task` | `Task` |
-| `Agent Task Skill` | `Task Skill` |
-| `Agent Task.assigned_to_profile` (Link → Agent Profile) | `Task.assigned_to` (Link → **User**) |
+| `Agent Run` | `Project` |
+| `Agent Job` | `Task` |
+| `Agent Job Skill` | `Task Skill` |
+| `Agent Job.assigned_to_profile` (Link → Agent Profile) | `Task.assigned_to` (Link → **User**) |
 
 - Use a Frappe `rename_doc` patch (preserves data) and update every code reference (`tasks/dispatcher.py`, `tasks/runner.py`, `tasks/workflow.py`, `warroom/publisher.py`, `gateway/service.py`, hooks).
 - `assigned_to_profile → assigned_to`: each Agent Profile resolves to its linked Frappe User (doc 23). The execution path keys off "is this User an agent?".
@@ -193,7 +193,7 @@ A plain `priority` + optional `due date` covers urgency without dragging in SLA 
 ## 10. Build order (tests-first, per workflow)
 
 1. **Tests first** — DocType existence + field contracts; dependency-wait auto-raise; failure auto-raise; assignment to a User (human and agent).
-2. **Rename/fold** `Agent Project/Task/Task Skill` → `Project/Task/Task Skill` (+ patch + reference updates). Green migrate.
+2. **Rename/fold** `Agent Run/Task/Task Skill` → `Project/Task/Task Skill` (+ patch + reference updates). Green migrate.
 3. **`Issue` DocType** + workflow.
 4. **Wiring:** `depends_on` park + `Dependency-Wait` auto-raise (D5); `Failure` auto-raise from `tasks/runner.py` (D6); War Room reference.
 5. **Rollout doc** `docs/rollouts/…` (plain-English narrative) in the same PR.

@@ -118,19 +118,19 @@ Types corrected to the **as-built** `agent_profile.json`. ⚠️ rows mark drift
 | `last_used` | Datetime | Read-only |
 | `created_by_agent` | Link → Agent Profile | Set when learned |
 
-### Agent Task
+### Agent Job
 
 | Field | Type | Notes |
 |---|---|---|
 | `title` | Data | |
 | `description` | Long Text | |
-| `project` | Link → Agent Project | |
+| `project` | Link → Agent Run | |
 | `assigned_to_profile` | Link → Agent Profile | Set by dispatcher |
 | `required_skills` | Table → Skill | Dispatcher matching input |
 | `workflow_state` | Link → Workflow State | Per Frappe Workflow |
 | `dispatchable` | Check | True only when current state is in the dispatchable set |
 | `priority` | Select | low / normal / high / urgent |
-| `dependencies` | Table → Agent Task | Blocking dependencies |
+| `dependencies` | Table → Agent Job | Blocking dependencies |
 | `current_execution` | Link → Execution Log | Active run, if any |
 | `result` | Long Text / JSON | |
 | `started_at`, `completed_at` | Datetime | |
@@ -155,7 +155,7 @@ Types corrected to the **as-built** `agent_profile.json`. ⚠️ rows mark drift
 |---|---|---|
 | `agent_profile` | Link | |
 | `skill` | Link | |
-| `task` | Link → Agent Task | Optional |
+| `task` | Link → Agent Job | Optional |
 | `parameters` | JSON | Masked at the boundary |
 | `result` | JSON | |
 | `status` | Select | success / failed / rejected / timeout |
@@ -282,7 +282,7 @@ doc_events = {
         # surface (CLI, Telegram, Slack, Raven, A2A) lands here.
         "after_insert": "friday.friday_core.gateway.service.handle_inbound",
     },
-    "Agent Task": {
+    "Agent Job": {
         "on_update": "friday.friday_core.tasks.workflow.on_state_change",
     },
 }

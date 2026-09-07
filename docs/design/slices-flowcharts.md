@@ -41,8 +41,8 @@ Each diagram shows:
 │                               │  Created tables:                        │  │
 │                               │  • tabAgent Profile                     │  │
 │                               │  • tabSkill                            │  │
-│                               │  • tabAgent Project                    │  │
-│                               │  • tabAgent Task                       │  │
+│                               │  • tabAgent Run                    │  │
+│                               │  • tabAgent Job                       │  │
 │                               │  • tabChat Message                     │  │
 │                               │  • tabChat Platform                    │  │
 │                               │  • tabExecution Log (submittable)      │  │

@@ -110,12 +110,12 @@ Note: Phase 1.5 token **generation** is implemented. Token **verification** in F
 
 ### Layer 6 — Approval Workflows
 
-**Claim:** Agent Task uses a Frappe Workflow with explicit Approved/Rejected states. Agents cannot activate workflows on their own.
+**Claim:** Agent Job uses a Frappe Workflow with explicit Approved/Rejected states. Agents cannot activate workflows on their own.
 
 **Evidence:**
-- [`frappe/friday/friday_core/doctype/agent_task/agent_task.json`](apps/frappe/friday/friday_core/doctype/agent_task/agent_task.json:1) — Agent Task DocType has `workflow_state` field.
-- [`frappe/friday/friday_core/tasks/workflow.py:1`](apps/frappe/friday/friday_core/tasks/workflow.py:1) — Workflow hook registered as `doc_events["Agent Task"]["on_update"]`; transitions are driven by Frappe Workflow engine, not by agent code.
-- [`frappe/friday/friday_core/doctype/agent_task/agent_task.json`](apps/frappe/friday/friday_core/doctype/agent_task/agent_task.json:1) — No field allows an agent to submit or approve its own task directly.
+- [`frappe/friday/friday_core/doctype/agent_job/agent_task.json`](apps/frappe/friday/friday_core/doctype/agent_job/agent_task.json:1) — Agent Job DocType has `workflow_state` field.
+- [`frappe/friday/friday_core/tasks/workflow.py:1`](apps/frappe/friday/friday_core/tasks/workflow.py:1) — Workflow hook registered as `doc_events["Agent Job"]["on_update"]`; transitions are driven by Frappe Workflow engine, not by agent code.
+- [`frappe/friday/friday_core/doctype/agent_job/agent_task.json`](apps/frappe/friday/friday_core/doctype/agent_job/agent_task.json:1) — No field allows an agent to submit or approve its own task directly.
 
 ---
 

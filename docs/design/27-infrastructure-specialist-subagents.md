@@ -102,7 +102,7 @@ Ambiguous cases → coordinator asks the supervisor in War Room.
 
 The coordinator:
 
-1. Creates a parent Agent Task with three sub-tasks.
+1. Creates a parent Agent Job with three sub-tasks.
 2. Sub-task A → Terraform Specialist (EKS provisioning).
 3. Sub-task B → Kubernetes Specialist (Helm deployment, depends on A).
 4. Sub-task C → Ansible Specialist (inventory update, depends on A).

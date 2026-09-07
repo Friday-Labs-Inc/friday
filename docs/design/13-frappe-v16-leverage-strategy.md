@@ -13,7 +13,7 @@
 |---|---|---|
 | Performance | Caffeine cache, leaner request lifecycle, ~30% server-load reduction | Lower dispatcher latency, faster permission checks, more agents per host |
 | Workspace | Redesigned workspace with embeddable views and persistent sidebar | Framework Console + War Room layouts |
-| Workflow | State transition **actions** that fire automatically | Skill triggers on Agent Task state changes with no custom hooks |
+| Workflow | State transition **actions** that fire automatically | Skill triggers on Agent Job state changes with no custom hooks |
 | Permissions | Faster matrix resolution; field-level masking | Hot-path permission check; PII/credential redaction in audit |
 | UI | Scrollable child tables with sticky columns; unlimited list columns | Kanban + Execution Log UX |
 | Background jobs | RQ retry observability; per-job tracing IDs | Agent execution observability |
@@ -45,11 +45,11 @@ Performance specifics live in `38-performance-optimization-bottleneck-analysis.m
 
 ## 3. Workflow state transition actions
 
-Side effects on Agent Task state changes are declared in the Workflow definition, not in scattered `on_update` hooks:
+Side effects on Agent Job state changes are declared in the Workflow definition, not in scattered `on_update` hooks:
 
 ```yaml
 # v16 workflow action declaration (conceptual)
-workflow: Agent Task
+workflow: Agent Job
 states:
   - name: Pending
     transitions:
@@ -93,7 +93,7 @@ Per-field masking by role eliminates a class of accidental disclosure: an operat
 Friday uses UUID naming on:
 
 - Agent Profile
-- Agent Task
+- Agent Job
 - Execution Log
 - Permission Decision Log
 
@@ -135,7 +135,7 @@ The v16 workspace with embeddable views composes the War Room as a single page:
 │ Pinned project brief (Raven message)                    │
 ├──────────────────────┬──────────────────────────────────┤
 │ Kanban view          │ Active Raven channel             │
-│ (Agent Task by state)│ (embedded chat)                  │
+│ (Agent Job by state)│ (embedded chat)                  │
 ├──────────────────────┴──────────────────────────────────┤
 │ Agent status panel (Vue component)                      │
 ├─────────────────────────────────────────────────────────┤

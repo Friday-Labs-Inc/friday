@@ -35,7 +35,7 @@ Each slice corresponds roughly to a week in `06-phase-one-scope.md`. Slices buil
 4. Create the Phase 1 DocTypes from 42 §3:
    - `Agent Profile`, `Agent Role Profile`
    - `Skill`, `Skill Draft`, `Skill Version`
-   - `Agent Project`, `Agent Task`, `Agent Task Event`
+   - `Agent Run`, `Agent Job`, `Agent Job Event`
    - `Chat Message`, `Chat Platform`
    - `Execution Log` (submittable)
    - `Permission Decision Log` (submittable)
@@ -146,11 +146,11 @@ Each slice corresponds roughly to a week in `06-phase-one-scope.md`. Slices buil
 
 **Deliverable:** Slice 6 still works end-to-end, but the skill now runs inside Docker.
 
-### Slice 8 — Agent Task + Dispatcher + native Kanban
+### Slice 8 — Agent Job + Dispatcher + native Kanban
 
 **Goal:** Tasks created manually are claimed by the dispatcher and executed by an agent.
 
-1. Frappe Workflow on Agent Task: Pending → Assigned → Executing → Blocked → Review → Completed → Cancelled. Role-permissioned transitions.
+1. Frappe Workflow on Agent Job: Pending → Assigned → Executing → Blocked → Review → Completed → Cancelled. Role-permissioned transitions.
 2. `friday/tasks/workflow.py` — `on_update` hook for state transitions and `dispatchable` derivation.
 3. `friday/tasks/dispatcher.py`:
    - Scheduled every 60s in `hooks.py`.
@@ -158,7 +158,7 @@ Each slice corresponds roughly to a week in `06-phase-one-scope.md`. Slices buil
    - Match `required_skills` against eligible Agent Profiles.
    - **Atomic claim using `SELECT ... FOR UPDATE SKIP LOCKED`** — concurrency-safe.
 4. On claim → emit `agent_task.assigned` on Redis pub/sub → runner picks up.
-5. Enable native Kanban view on Agent Task grouped by `workflow_state`.
+5. Enable native Kanban view on Agent Job grouped by `workflow_state`.
 6. Tests: two concurrent dispatcher invocations cannot double-claim the same task; task moves through states correctly; Kanban view loads with cards in the right columns.
 
 **Deliverable:** Create a Task in the Framework Console; watch it move across the Kanban board as the dispatcher and agent process it.

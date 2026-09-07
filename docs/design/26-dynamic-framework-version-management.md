@@ -18,7 +18,7 @@ Agents must always know **which exact framework version a project uses** and pul
 
 ## 2. Design goals
 
-1. Every Agent Project records the exact framework versions in play.
+1. Every Agent Run records the exact framework versions in play.
 2. Skills are versioned per framework version. A skill for "Frappe DocType creation" exists separately for v15 and v16.
 3. The dispatcher selects the right Skill version automatically based on project context.
 4. Documentation snapshots are stored locally so agents work offline and don't hallucinate against stale memory.
@@ -58,7 +58,7 @@ One row per (framework, version) pair supported.
 | `latest_known_release` | Check (one per framework) |
 | `breaking_changes_from_previous` | Long Text |
 
-### 3.3 Agent Project — child table
+### 3.3 Agent Run — child table
 
 `project_framework_versions`:
 
@@ -87,7 +87,7 @@ A single Skill row can apply to multiple framework versions when behaviour is id
 
 When the dispatcher matches a task to skills:
 
-1. Read the Agent Project's `project_framework_versions`.
+1. Read the Agent Run's `project_framework_versions`.
 2. Filter Skills whose `applicable_frameworks` includes any matching (framework, version) pair, or whose `min_version`/`max_version` window contains the project's version.
 3. Rank by version specificity: exact match > range match > generic Skill (no framework specified).
 4. Tie-break by most recent `last_used` or highest `success_rate`.
@@ -127,9 +127,9 @@ Agents call this skill **before** generating code, ensuring grounded responses. 
 
 On framework upgrade (e.g. Frappe v15 → v16 on a downstream app):
 
-1. Supervisor opens an "Agent Project Framework Upgrade" workflow.
+1. Supervisor opens an "Agent Run Framework Upgrade" workflow.
 2. The Migration Specialist agent (specialised profile per `25-domain-specialized-agent-profiles.md`) reads `breaking_changes_from_previous` for the target version.
-3. Generates an upgrade plan as Agent Tasks.
+3. Generates an upgrade plan as Agent Jobs.
 4. Each task references Skills filtered to the new version.
 5. Plan goes to War Room for human approval before execution.
 

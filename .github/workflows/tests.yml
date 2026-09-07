@@ -1,7 +1,7 @@
 # Kernel test gate. Builds a bench from STOCK frappe version-16 (Friday is an
 # app, not a fork), installs raven + erpnext + friday on a Postgres site with
 # pgvector — erpnext because "installs beside ERPNext" is a kernel invariant
-# (Agent Project/Task/Issue must coexist with ERPNext's) — and runs every test
+# (Agent Run/Task/Issue must coexist with ERPNext's) — and runs every test
 # module under friday/ through ci/run_tests.py.
 #
 # raven is fetched from its develop branch: that is the branch that tracks

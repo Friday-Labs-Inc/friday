@@ -89,20 +89,20 @@ The Docker container in which skill execution happens. Non-root user, resource-c
 
 ## Coordination Terms
 
-**Agent Task**
+**Agent Job**
 A unit of work assigned to an agent. A DocType derived from ERPNext Task and extended with Friday fields: `assigned_to_profile`, `required_skills`, `risk_level`, `dispatchable`, `current_execution`. Tasks move through Frappe Workflow states.
 
-**Agent Project**
-A container for related Agent Tasks. Derived from ERPNext Project. Has an associated War Room channel (if Raven is installed). One project = one workflow context = one set of assigned agent profiles.
+**Agent Run**
+A container for related Agent Jobs. Derived from ERPNext Project. Has an associated War Room channel (if Raven is installed). One project = one workflow context = one set of assigned agent profiles.
 
 **Dispatcher**
-A Frappe scheduled job (runs every 60 seconds) that queries dispatchable Agent Tasks, matches them to eligible Agent Profiles, and atomically claims them. Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent double-claiming.
+A Frappe scheduled job (runs every 60 seconds) that queries dispatchable Agent Jobs, matches them to eligible Agent Profiles, and atomically claims them. Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent double-claiming.
 
 **Dispatchable State**
-A workflow state on Agent Task explicitly marked as claimable by the dispatcher. Only tasks in dispatchable states enter the dispatcher's query. States like Blocked, Review, Completed are never dispatchable.
+A workflow state on Agent Job explicitly marked as claimable by the dispatcher. Only tasks in dispatchable states enter the dispatcher's query. States like Blocked, Review, Completed are never dispatchable.
 
 **War Room**
-A Raven channel auto-created per Agent Project. The real-time communication surface for the project — agents post status updates, humans post instructions, escalations surface here. War Room reflects truth; it does not own it. Frappe DocTypes own truth.
+A Raven channel auto-created per Agent Run. The real-time communication surface for the project — agents post status updates, humans post instructions, escalations surface here. War Room reflects truth; it does not own it. Frappe DocTypes own truth.
 
 ---
 
@@ -115,7 +115,7 @@ A persistent, vector-indexed record of something an agent learned, observed, or 
 A skill (`memory_search`) the agent calls explicitly to retrieve relevant past memories. Memory is never auto-injected into every prompt — only fetched on demand.
 
 **Domain**
-A tag on Skills, Agent Role Profiles, Memory Entries, and Agent Projects that scopes knowledge and learning. Examples: `customer-support`, `infra-kubernetes`, `general`. Prevents cross-contamination between unrelated domains.
+A tag on Skills, Agent Role Profiles, Memory Entries, and Agent Runs that scopes knowledge and learning. Examples: `customer-support`, `infra-kubernetes`, `general`. Prevents cross-contamination between unrelated domains.
 
 ---
 

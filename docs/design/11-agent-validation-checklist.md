@@ -41,7 +41,7 @@
 **DocTypes created** (per `42-phase-one-authority-contract.md` §3)
 - [ ] Agent Profile, Agent Role Profile
 - [ ] Skill, Skill Draft, Skill Version
-- [ ] Agent Project, Agent Task, Agent Task Event
+- [ ] Agent Run, Agent Job, Agent Job Event
 - [ ] Chat Message, Chat Platform
 - [ ] Execution Log (`is_submittable=1`)
 - [ ] Permission Decision Log (`is_submittable=1`)
@@ -219,7 +219,7 @@
 ## Slice 8 — Tasks, Dispatcher, Kanban
 
 **Workflow**
-- [ ] Frappe Workflow on Agent Task: Pending, Assigned, Executing, Blocked, Review, Completed, Cancelled.
+- [ ] Frappe Workflow on Agent Job: Pending, Assigned, Executing, Blocked, Review, Completed, Cancelled.
 - [ ] Transitions are role-permissioned.
 
 **Dispatcher**
@@ -236,7 +236,7 @@
 - [ ] Result stored on the Task DocType.
 
 **Kanban**
-- [ ] Native Kanban view on Agent Task grouped by `workflow_state`.
+- [ ] Native Kanban view on Agent Job grouped by `workflow_state`.
 - [ ] Live updates — state changes reflect in the Kanban view in real time.
 
 **Tests**

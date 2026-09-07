@@ -50,14 +50,14 @@ def probe_force_kill_audit(scenario, session_id: str) -> dict:
 	try:
 		task = frappe.get_doc(
 			{
-				"doctype": "Agent Task",
+				"doctype": "Agent Job",
 				"title": f"eval force-kill {session_id}",
 				"priority": "normal",
 				"workflow_state": "Executing",
 				"originating_session": session_id,
 			}
 		).insert(ignore_permissions=True)
-		created.append(("Agent Task", task.name))
+		created.append(("Agent Job", task.name))
 
 		# We deliberately do NOT insert an inbound Chat Message to fake an in-flight chat
 		# job. Inserting one fires the gateway `after_insert` (gateway.service.handle_inbound),
@@ -69,7 +69,7 @@ def probe_force_kill_audit(scenario, session_id: str) -> dict:
 		result = force_kill_session(session_id, _FORCE_KILL_OPERATOR)
 
 		state = frappe.db.get_value(
-			"Agent Task",
+			"Agent Job",
 			task.name,
 			["workflow_state", "force_killed_by", "force_kill_reason"],
 			as_dict=True,

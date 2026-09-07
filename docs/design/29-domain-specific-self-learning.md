@@ -133,9 +133,9 @@ Prevents domain proliferation that would defeat specialisation.
 
 ## 11. Multi-domain projects
 
-Some Agent Projects span domains (e.g. "Build an internal ops dashboard" needs `frontend-react` + `erpnext-finance`). The project's `domains` field is a child table.
+Some Agent Runs span domains (e.g. "Build an internal ops dashboard" needs `frontend-react` + `erpnext-finance`). The project's `domains` field is a child table.
 
-When an Agent Task is created in such a project, the supervisor (or System Manager Agent) assigns the task a primary domain. Skill resolution and memory access scope to that primary domain. Cross-domain skills require the task to split into sub-tasks, each with its own primary domain.
+When an Agent Job is created in such a project, the supervisor (or System Manager Agent) assigns the task a primary domain. Skill resolution and memory access scope to that primary domain. Cross-domain skills require the task to split into sub-tasks, each with its own primary domain.
 
 Forces clarity at task boundaries.
 
@@ -145,7 +145,7 @@ Forces clarity at task boundaries.
 
 | Phase | Scope |
 |---|---|
-| 1 (v0.1) | Domain as a string tag on Skills, Agent Role Profiles, Memory Entries, and Agent Projects. No Domain DocType. No learning loop. Manual skill authoring. |
+| 1 (v0.1) | Domain as a string tag on Skills, Agent Role Profiles, Memory Entries, and Agent Runs. No Domain DocType. No learning loop. Manual skill authoring. |
 | 2 | Domain DocType; tag enforcement; memory and skill resolution filtered by domain |
 | 3 | Curator scoped per domain; Skill Draft + Skill Version per domain; domain metrics dashboard; cross-domain promotion workflow |
 | 4 | Nested sub-domains (e.g. `customer-support-import` vs `customer-support-local`); domain-specific evaluation harnesses; domain-level performance budgets |

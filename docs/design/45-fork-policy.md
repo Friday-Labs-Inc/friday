@@ -74,7 +74,7 @@ The single `Friday-Labs-Inc/friday` repository contains:
 
 - **Frappe v16 source code** absorbed from upstream (`frappe/frappe`) at v16.18.2 as the base
 - **Agent-native modifications to Frappe core**: actor context, trace propagation, audit hooks, agent-scoped auth, infrastructure adaptations
-- **Friday's agent kernel modules** — Agent Profile, Skill, Execution Log, Permission Decision Log, Agent Task, etc. — built into the Frappe source tree (e.g. under `friday/friday_core/` or appropriate module paths)
+- **Friday's agent kernel modules** — Agent Profile, Skill, Execution Log, Permission Decision Log, Agent Job, etc. — built into the Frappe source tree (e.g. under `friday/friday_core/` or appropriate module paths)
 - **Friday's design docs** (`docs/`)
 - **Governance and policies** (`CODEX.md`, `START_HERE.md`, `docs/contributing/AI_CONTRIBUTORS.md`)
 - **Scripts**, GitHub templates, project infrastructure

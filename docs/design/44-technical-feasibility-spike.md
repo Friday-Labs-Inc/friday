@@ -112,7 +112,7 @@ Decision criterion: if "included path" works in under 4 hours of spike effort, R
 Two paths to test:
 
 - **Dependency path:** install ERPNext, use ERPNext's Project/Task/Issue DocTypes from the spike app (read + write).
-- **Ported path:** create `Agent Project`, `Agent Task`, `Agent Issue` as native DocTypes in the spike app, no ERPNext install.
+- **Ported path:** create `Agent Run`, `Agent Job`, `Agent Blocker` as native DocTypes in the spike app, no ERPNext install.
 
 Decision criterion per doc 41: ported is preferred for framework independence unless dependency path has a strong Phase 1 use case. For Phase 1, default is ported.
 

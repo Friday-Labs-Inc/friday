@@ -26,7 +26,7 @@ import frappe
 
 # Three tests below record usage / crash a runner AS profile "Friday". The dev
 # site has that profile from `bench friday setup`; a fresh CI site does not, and
-# the Link validation on LLM Usage Log / Agent Task made emit() swallow the row —
+# the Link validation on LLM Usage Log / Agent Job made emit() swallow the row —
 # events came back empty. A test must not depend on operator setup.
 FIXTURE_PROFILE = "Friday"
 
@@ -55,19 +55,19 @@ def _clear_all_events() -> None:
 
 
 def _ensure_test_task() -> str:
-	existing = frappe.get_all("Agent Task", limit=1, pluck="name")
+	existing = frappe.get_all("Agent Job", limit=1, pluck="name")
 	if existing:
 		return existing[0]
-	project = frappe.get_all("Agent Project", limit=1, pluck="name")
+	project = frappe.get_all("Agent Run", limit=1, pluck="name")
 	project_name = project[0] if project else None
 	if not project_name:
 		proj = frappe.get_doc(
-			{"doctype": "Agent Project", "project_name": "Test Write Sites Project"}
+			{"doctype": "Agent Run", "project_name": "Test Write Sites Project"}
 		).insert(ignore_permissions=True)
 		project_name = proj.name
 	task = frappe.get_doc(
 		{
-			"doctype": "Agent Task",
+			"doctype": "Agent Job",
 			"title": "Test Write Sites Task",
 			"project": project_name,
 			"workflow_state": "Pending",
@@ -105,7 +105,7 @@ class TestWorkflowEmits(unittest.TestCase):
 
 	def test_state_change_emits_with_trigger_source(self):
 		"""A save with the dispatcher_event_source flag set carries that source."""
-		task = frappe.get_doc("Agent Task", self.task_name)
+		task = frappe.get_doc("Agent Job", self.task_name)
 		# Force a state change.
 		task.workflow_state = (
 			"Pending" if task.workflow_state != "Pending" else "Cancelled"
@@ -123,7 +123,7 @@ class TestWorkflowEmits(unittest.TestCase):
 
 	def test_unknown_source_when_no_flag_set(self):
 		"""Direct user save with no flag → trigger_source = unknown."""
-		task = frappe.get_doc("Agent Task", self.task_name)
+		task = frappe.get_doc("Agent Job", self.task_name)
 		new_state = "Pending" if task.workflow_state != "Pending" else "Cancelled"
 		task.workflow_state = new_state
 		# Ensure no flag set.
@@ -138,18 +138,18 @@ class TestWorkflowEmits(unittest.TestCase):
 	def test_executing_token_released_event_fires(self):
 		"""Moving away from Executing while a token was set emits a release event."""
 		# Force the task into Executing with a token, then transition out.
-		task = frappe.get_doc("Agent Task", self.task_name)
+		task = frappe.get_doc("Agent Job", self.task_name)
 		# Use db_set to bypass the hook's clearing logic so we can simulate
 		# a real Executing-with-token state.
 		frappe.db.sql(
-			"UPDATE `tabAgent Task` SET workflow_state = 'Executing', "
+			"UPDATE `tabAgent Job` SET workflow_state = 'Executing', "
 			"executing_token = 'unit-test-token' WHERE name = %s",
 			(self.task_name,),
 		)
 		frappe.db.commit()
 		_clear_events_for_task(self.task_name)  # fresh window
 
-		task = frappe.get_doc("Agent Task", self.task_name)
+		task = frappe.get_doc("Agent Job", self.task_name)
 		task.workflow_state = "Pending"
 		task.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -387,7 +387,7 @@ class TestIssueRaisedEmit(unittest.TestCase):
 			self.task_name, error_type="UnitTestError", details="simulated"
 		)
 		frappe.db.commit()
-		self.assertTrue(frappe.db.exists("Agent Issue", issue_name))
+		self.assertTrue(frappe.db.exists("Agent Blocker", issue_name))
 
 		events = _events_for(self.task_name, "issue.raised")
 		self.assertEqual(len(events), 1)
@@ -395,7 +395,7 @@ class TestIssueRaisedEmit(unittest.TestCase):
 		self.assertIn("UnitTestError", events[0]["summary"])
 
 		# Cleanup the issue row so we don't leak.
-		frappe.db.sql("DELETE FROM `tabAgent Issue` WHERE name = %s", (issue_name,))
+		frappe.db.sql("DELETE FROM `tabAgent Blocker` WHERE name = %s", (issue_name,))
 		frappe.db.commit()
 
 	def tearDown(self):

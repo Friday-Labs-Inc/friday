@@ -147,8 +147,8 @@ After each slice: run tests, run `bench migrate`, commit with a conventional com
 3. Create these DocTypes (field schemas are in `docs/design/05-module-design.md` §"Core DocTypes"):
    - `Agent Profile` — in module `Agents`
    - `Skill` — in module `Skills`
-   - `Agent Task` — in module `Tasks`
-   - `Agent Project` — in module `Tasks`
+   - `Agent Job` — in module `Tasks`
+   - `Agent Run` — in module `Tasks`
    - `Chat Message` — in module `Messaging`
    - `Chat Platform` — in module `Messaging`
    - `Execution Log` — in module `Agents`, **is_submittable = 1**
@@ -332,17 +332,17 @@ After each slice: run tests, run `bench migrate`, commit with a conventional com
 
 ---
 
-### Slice 8 — Agent Task + Dispatcher + Kanban
+### Slice 8 — Agent Job + Dispatcher + Kanban
 
 **Goal:** Tasks can be created in the Desk. The dispatcher automatically picks them up, assigns them to an agent, and the agent executes them. You can watch this happen in real time on a Kanban board.
 
 **What to build:**
 
-1. Define a Frappe Workflow on `Agent Task`:
+1. Define a Frappe Workflow on `Agent Job`:
    - States: Pending → Assigned → Executing → Blocked → Review → Completed / Cancelled
    - Transitions with role-based permissions
    - Mark which states are "dispatchable" (eligible for dispatcher to claim)
-2. `friday/tasks/workflow.py` — hook on Agent Task `on_update` for state transitions
+2. `friday/tasks/workflow.py` — hook on Agent Job `on_update` for state transitions
 3. `friday/tasks/dispatcher.py`:
    - Scheduled job every 60 seconds via `hooks.py`
    - Query Tasks in dispatchable states with no `assigned_to_profile`
@@ -350,7 +350,7 @@ After each slice: run tests, run `bench migrate`, commit with a conventional com
    - **Atomic claim** — use `SELECT ... FOR UPDATE SKIP LOCKED` so two dispatcher runs cannot claim the same task
    - Emit Frappe real-time event when task is claimed
 4. Gateway picks up the real-time event → routes task to the assigned agent's runner
-5. Enable native Kanban view on `Agent Task` grouped by `workflow_state`
+5. Enable native Kanban view on `Agent Job` grouped by `workflow_state`
 
 **Tests to write:**
 - Concurrency test: 100 Tasks, 5 simultaneous dispatcher runs → each task claimed exactly once, no double-claims

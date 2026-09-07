@@ -12,7 +12,7 @@
   contract, provided by design_studio; until then it is still `required_apps` and still the chat front door.
   **No new kernel file may mention Raven** — `tests/test_surface_boundary.py` enforces it (allow-list only shrinks).
   Raven's own AI stays **off** regardless (`bootstrap_raven` pins `is_ai_bot = 0`).
-- Work objects are `Agent Project` / `Agent Task` / `Agent Issue`. ERPNext owns `Project` / `Task` / `Issue`.
+- Work objects are `Agent Run` / `Agent Job` / `Agent Blocker`. ERPNext owns `Project` / `Task` / `Issue`.
 
 ## Dev loop
 - Dev container: `~/friday-dev` (`up.sh`). This repo is bind-mounted at `/workspace/friday_app`;

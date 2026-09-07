@@ -141,7 +141,7 @@ Open issues for every Slice 1 sub-task so first contributors have something to g
 - [ ] `[Build]: Slice 1 — Scaffold friday app and modules.txt` (labels: `slice:1-foundations`, `phase:v0.1`, `area:framework-core`, `good-first-task`, `for:humans`)
 - [ ] `[Build]: Slice 1 — Create Agent Profile DocType` (labels: `slice:1-foundations`, `phase:v0.1`, `area:agent-kernel`)
 - [ ] `[Build]: Slice 1 — Create Skill DocType` (labels: same)
-- [ ] `[Build]: Slice 1 — Create Agent Task and Agent Project DocTypes` (labels: same, `area:workflow`)
+- [ ] `[Build]: Slice 1 — Create Agent Job and Agent Run DocTypes` (labels: same, `area:workflow`)
 - [ ] `[Build]: Slice 1 — Create Chat Message and Chat Platform DocTypes` (labels: same, `area:cli`)
 - [ ] `[Build]: Slice 1 — Create Execution Log (submittable) DocType` (labels: same, `area:agent-kernel`)
 - [ ] `[Build]: Slice 1 — Create Permission Decision Log (submittable) DocType` (labels: same, `area:permissions`)

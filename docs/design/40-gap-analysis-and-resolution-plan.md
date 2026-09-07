@@ -59,7 +59,7 @@ All eight stack decisions are resolved in `docs/decisions/spike-results.md`. All
 
 **Was:** Multiple documents were unclear whether Friday depends on ERPNext or ports selected DocTypes.
 
-**Resolution:** **No ERPNext dependency.** Spike decision D4: ERPNext is not relevant to Phase 1. Specific DocTypes (Agent Project from ERPNext Project, Agent Task from ERPNext Task) are ported into the Friday app. See `41-porting-strategy-hermes-erpnext-raven.md` §3 for the field-level porting decision.
+**Resolution:** **No ERPNext dependency.** Spike decision D4: ERPNext is not relevant to Phase 1. Specific DocTypes (Agent Run from ERPNext Project, Agent Job from ERPNext Task) are ported into the Friday app. See `41-porting-strategy-hermes-erpnext-raven.md` §3 for the field-level porting decision.
 
 ---
 

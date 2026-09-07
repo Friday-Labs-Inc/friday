@@ -27,8 +27,8 @@ The agent is **stateless** between turns. All state lives in Frappe DocTypes.
 | **Agent Role Profile** | Groups Frappe roles for RBAC permission resolution |
 | **Skill** | A callable tool with a handler, schema, and risk level |
 | **Skill Credential** | Per-skill secrets injected into the sandbox at runtime |
-| **Agent Project** | Groups related tasks under a business objective |
-| **Agent Task** | A unit of work tracked through a Kanban workflow |
+| **Agent Run** | Groups related tasks under a business objective |
+| **Agent Job** | A unit of work tracked through a Kanban workflow |
 | **Chat Message** | A single inbound or outbound message in a session |
 | **Chat Platform** | A delivery channel (CLI, webhook, etc.) |
 | **Execution Log** | Record of every skill execution attempt (success/failed/rejected) |
@@ -88,7 +88,7 @@ Docker-based skill execution environment.
 ### `friday.friday_core.tasks`
 Async task dispatch and execution (Slice 8).
 
-- **Workflow hook** — derives `dispatchable` from workflow state on every Agent Task save
+- **Workflow hook** — derives `dispatchable` from workflow state on every Agent Job save
 - **Dispatcher** — cron job (every 60s) that claims pending tasks via `FOR UPDATE SKIP LOCKED` and matches them to profiles
 - **Runner** — listens on Redis pub/sub for `agent_task.assigned` events, executes in sandbox, transitions state
 
@@ -155,7 +155,7 @@ Key layers:
 | Slice 5 | LLM integration (Minimax) |
 | Slice 6 | First skill (`create_note`) |
 | Slice 7 | Docker sandbox |
-| Slice 8 | Agent Task + Kanban + Dispatcher |
+| Slice 8 | Agent Job + Kanban + Dispatcher |
 | Slice 9 | Polish, docs, CI (you are here) |
 
 See [ROADMAP.md](ROADMAP.md) for Phase 1.5 and Phase 2 plans.
