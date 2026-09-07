@@ -6,7 +6,7 @@
 PLAIN ENGLISH
 =============
 Friday now has more than one live streamed chat surface (the guest intake chat and the
-authenticated project chat, both proxied by RandomPack). They differ only in WHO talks,
+authenticated project chat, both proxied by the product app). They differ only in WHO talks,
 WHAT the assistant is told, and WHAT structured events ride alongside the reply. All the
 hard-won plumbing is identical — so it lives HERE, once:
 

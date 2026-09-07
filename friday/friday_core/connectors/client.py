@@ -51,7 +51,7 @@ def _headers(connector) -> dict:
 # `X-RP-Signature` seam. When the Connector carries an `outbound_signing_secret`,
 # every JSON call is signed over the EXACT raw bytes sent, so the external system
 # can verify "this caller really is Friday" beyond the token auth. (Found live:
-# RandomPack's `_require_friday()` gates its integration writes on this header;
+# A consuming system's inbound guard (e.g. a `_require_friday()`) gates its writes on this header;
 # without it every attach_deliverable/request_gate_open/get_project 403'd.)
 SIGNATURE_HEADER_OUT = "X-Friday-Signature"
 

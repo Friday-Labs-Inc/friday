@@ -4,7 +4,7 @@
 """
 Domain Bundle (Design 75) — the unit that defines a whole domain as DATA.
 
-A domain (RandomPack brand identity, data-center ops, a research project) is a
+A domain (a brand-identity studio, data-center ops, a research project) is a
 bundle of: a work-item DocType + a Frappe Workflow on it + the per-transition
 agentic config (Friday Workflow Transition Meta) + the agent profiles/roles +
 the skills. This doctype is the manifest + the export/import unit: exporting a

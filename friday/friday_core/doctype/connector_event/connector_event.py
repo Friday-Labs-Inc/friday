@@ -9,7 +9,7 @@ Every inbound signed event a Connector receives becomes one Connector Event
 row — the unified, governed audit trail across all integrations (the
 surpass-Hermes line: Hermes has per-adapter config but no single audited
 integration surface). `event_id` is unique, so a duplicate delivery is a clean
-no-op. This DocType is the generic successor of the RandomPack-specific event
+no-op. This DocType is the generic successor of the product-specific event
 ledger (renamed in place to preserve history).
 """
 

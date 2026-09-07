@@ -11,7 +11,7 @@ Run once per site:
 
 Idempotent — re-runs safely add nothing.
 
-Unlike per-DocType skills (``get-brand-brief``, ``remember``), the read tools
+Unlike per-DocType skills (``project-status``, ``remember``), the read tools
 do NOT carry a fixed ``required_doctypes`` set: they read whatever the
 caller asks, gated by ``frappe.has_permission`` against the agent's User.
 That's deliberate — one tool covers every DocType the agent already has
