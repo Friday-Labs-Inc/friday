@@ -111,7 +111,7 @@ so a search MCP server's tools become governed skills with audit for free:
 ## Open Q-locks (proposals; confirm or override)
 
 - **Q1 — Handoff mechanism.** PROPOSED: project file upload (zero new UI), as above.
-- **Q2 — Roles.** PROPOSED: keep TWO workflow roles even if one human (Rajiv) holds
+- **Q2 — Roles.** PROPOSED: keep TWO workflow roles even if one human (the Creative Director) holds
   both today — `Brand Creative Director` (CD Creative stage + CD Internal Gate) stays
   distinct from the client-gate role, so a future hire separates cleanly. The AI
   profile keeps the name `Creative Director` (it is the apprentice of that seat) but
