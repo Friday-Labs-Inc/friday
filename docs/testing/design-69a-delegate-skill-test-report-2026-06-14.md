@@ -18,7 +18,7 @@ passes. Also records the patch-ordering fix that unblocked `bench migrate`.
 | File | Change |
 |------|--------|
 | `frappe/patches.txt` | Moved `friday_core.patches.v1_0.backfill_agent_role` from `[pre_model_sync]` to `[post_model_sync]`. The patch queries the `agent_role` column, which does not exist until model sync applies it — running it pre-sync raised `psycopg2.errors.UndefinedColumn`. |
-| `frappe/friday_core/tests/test_delegate_skill.py` | Rewrote the suite for the 69a contract (details below). Test-only; no production handler change. |
+| `friday/friday_core/tests/test_delegate_skill.py` | Rewrote the suite for the 69a contract (details below). Test-only; no production handler change. |
 
 ### Test-file migration detail
 
@@ -69,7 +69,7 @@ Run under a bound site (role-gated skill visibility — the loader hides
 role gate):
 
 ```
-bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_skill_loader
+bench --site friday.localhost run-tests --module friday.friday_core.tests.test_skill_loader
 Ran 8 tests in 0.984s
 OK
 ```

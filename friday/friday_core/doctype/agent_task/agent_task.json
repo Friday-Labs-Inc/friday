@@ -1,0 +1,320 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "description",
+  "project",
+  "assigned_to_profile",
+  "required_skills",
+  "workflow_state",
+  "dispatchable",
+  "priority",
+  "result",
+  "started_at",
+  "completed_at",
+  "execution_mode",
+  "backend_ref",
+  "depends_on",
+  "assigned_at",
+  "last_heartbeat_at",
+  "executing_token",
+  "blocked_reason",
+  "retry_count",
+  "originating_session",
+  "originating_platform",
+  "parent_task",
+  "cron_job",
+  "work_item_doctype",
+  "work_item_name",
+  "phase_key",
+  "gantt_section",
+  "exp_start_date",
+  "exp_end_date",
+  "progress",
+  "color",
+  "is_milestone",
+  "duration_ms",
+  "cost_usd",
+  "force_killed_by",
+  "force_killed_at",
+  "force_kill_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Long Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Agent Project",
+   "options": "Agent Project"
+  },
+  {
+   "fieldname": "assigned_to_profile",
+   "fieldtype": "Link",
+   "label": "Assigned To Profile",
+   "options": "Agent Profile"
+  },
+  {
+   "fieldname": "required_skills",
+   "fieldtype": "Table",
+   "label": "Required Skills",
+   "options": "Task Skill"
+  },
+  {
+   "description": "Pipeline state. A Select over the canonical state set so it validates on save and powers the Task Pipeline Kanban (design 65b). Driven by the dispatcher/runner/reconciler, not by hand.",
+   "fieldname": "workflow_state",
+   "fieldtype": "Select",
+   "label": "Workflow State",
+   "options": "Pending\nAssigned\nExecuting\nReview\nCompleted\nBlocked\nCancelled\nForceKilled"
+  },
+  {
+   "default": "0",
+   "fieldname": "dispatchable",
+   "fieldtype": "Check",
+   "label": "Dispatchable"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Priority",
+   "options": "low\nnormal\nhigh\nurgent",
+   "reqd": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "JSON",
+   "label": "Result (JSON)"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "default": "mechanical",
+   "description": "mechanical = run required_skills in sequence (no model). agentic = the matched profile runs a real governed turn (design 60, Q2). milestone = never auto-dispatched; completed by events (gate decisions) or humans.",
+   "fieldname": "execution_mode",
+   "fieldtype": "Select",
+   "label": "Execution Mode",
+   "options": "mechanical\nagentic\nmilestone"
+  },
+  {
+   "description": "The external backend's reference for this task/phase (write-back key). Empty = no write-back.",
+   "fieldname": "backend_ref",
+   "fieldtype": "Data",
+   "label": "Backend Ref"
+  },
+  {
+   "description": "AND-gated dependencies: this task dispatches only when ALL linked tasks are Completed.",
+   "fieldname": "depends_on",
+   "fieldtype": "Table",
+   "label": "Depends On",
+   "options": "Task Dependency"
+  },
+  {
+   "description": "Set by the dispatcher at Pending \u2192 Assigned. The reconciler uses this + a 30s grace to detect Assigned-but-never-picked-up tasks (lost enqueue) and re-fire the runner trigger.",
+   "fieldname": "assigned_at",
+   "fieldtype": "Datetime",
+   "label": "Assigned At",
+   "read_only": 1
+  },
+  {
+   "description": "Updated by the runner during execution (every 30s for agentic, per skill boundary for mechanical). The reconciler treats Executing tasks without a fresh heartbeat as runner_lost (15 min default) and Blocks them, raising a Failure Issue.",
+   "fieldname": "last_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Last Heartbeat At",
+   "read_only": 1
+  },
+  {
+   "description": "Idempotent claim token written by the runner in a single check-and-set transaction (Assigned \u2192 Executing). A duplicate trigger sees a non-empty token and exits cleanly \u2014 the runner becomes at-least-once-trigger / exactly-once-effect.",
+   "fieldname": "executing_token",
+   "fieldtype": "Data",
+   "label": "Executing Token",
+   "read_only": 1
+  },
+  {
+   "description": "Structured reason a Pending or Blocked task is parked (e.g. no_profile_for_skills:create-brand-direction, profile_has_no_llm_provider, dependency_failed). Surfaced on the Pipeline Health page; the reconciler clears it once the underlying condition changes.",
+   "fieldname": "blocked_reason",
+   "fieldtype": "Data",
+   "label": "Blocked Reason",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Count of automated retries the reconciler has issued for transient failures (oom, timeout, runner_lost). Capped at 3; beyond that the task stays Blocked for a human.",
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count",
+   "read_only": 1
+  },
+  {
+   "description": "The Chat Message session_id that triggered this task, if it was born from a conversation. On a terminal transition the agent writes a reply back to this session (design 62). Empty = no chat report-back (e.g. RandomPack pipeline tasks, whose report-back is the backend write-back).",
+   "fieldname": "originating_session",
+   "fieldtype": "Data",
+   "label": "Originating Session",
+   "read_only": 1
+  },
+  {
+   "description": "The surface the originating session lives on (raven / cli / telegram / ...). Used to route the report-back Chat Message.",
+   "fieldname": "originating_platform",
+   "fieldtype": "Data",
+   "label": "Originating Platform",
+   "read_only": 1
+  },
+  {
+   "description": "The parent Task that delegated this one (design 69). NULL for top-level tasks and chat-originated delegations. The chain parent_task \u2192 parent_task forms the delegation graph, queryable via a recursive CTE.",
+   "fieldname": "parent_task",
+   "fieldtype": "Link",
+   "label": "Parent Task",
+   "options": "Agent Task",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Design 87: the Cron Job that spawned this task. Set on scheduled runs; on completion the cron handler delivers this task's result to the job's target. Empty for all non-cron tasks.",
+   "fieldname": "cron_job",
+   "fieldtype": "Link",
+   "label": "Cron Job",
+   "options": "Cron Job",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Design 75: the domain work-item DocType this task advances (e.g. a domain work-item). With work_item_name it links the Task to the record whose Frappe Workflow drives the pipeline. Empty for freeform / chat-originated tasks.",
+   "fieldname": "work_item_doctype",
+   "fieldtype": "Link",
+   "label": "Work Item DocType",
+   "options": "DocType"
+  },
+  {
+   "description": "Design 75: the specific work-item record (Dynamic Link on work_item_doctype) this task advances.",
+   "fieldname": "work_item_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Work Item",
+   "options": "work_item_doctype"
+  },
+  {
+   "description": "Design 75: the Friday Workflow Transition Meta phase_key this task executes. On completion the engine resolves the transition by (workflow, from_state, action) via this key and fires the next state \u2014 never keyed on the target state (back-edge safe).",
+   "fieldname": "phase_key",
+   "fieldtype": "Data",
+   "label": "Phase Key"
+  },
+  {
+   "fieldname": "gantt_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline & Display"
+  },
+  {
+   "description": "Planned start (from the pipeline plan or derived from dependencies). Drives the Gantt view.",
+   "fieldname": "exp_start_date",
+   "fieldtype": "Date",
+   "label": "Expected Start Date"
+  },
+  {
+   "description": "Planned finish. Drives the Gantt view.",
+   "fieldname": "exp_end_date",
+   "fieldtype": "Date",
+   "label": "Expected End Date"
+  },
+  {
+   "default": "0",
+   "description": "0/50/100 by workflow_state (Pending / Executing / terminal). Powers Gantt + Kanban progress bars (design 65d).",
+   "fieldname": "progress",
+   "fieldtype": "Percent",
+   "label": "Progress",
+   "read_only": 1
+  },
+  {
+   "description": "Bar color in Gantt/Kanban, defaulted from the assigned agent profile.",
+   "fieldname": "color",
+   "fieldtype": "Color",
+   "label": "Color"
+  },
+  {
+   "default": "0",
+   "description": "Mirrors execution_mode == milestone. A milestone is a gate, not work.",
+   "fieldname": "is_milestone",
+   "fieldtype": "Check",
+   "label": "Is Milestone",
+   "read_only": 1
+  },
+  {
+   "description": "Execution duration in milliseconds, from the result envelope on completion.",
+   "fieldname": "duration_ms",
+   "fieldtype": "Int",
+   "label": "Duration (ms)",
+   "read_only": 1
+  },
+  {
+   "description": "LLM spend for this task's run, from the result envelope (design 65d). Renders blank when usage telemetry is absent \u2014 never a fabricated 0.",
+   "fieldname": "cost_usd",
+   "fieldtype": "Currency",
+   "label": "Cost (USD)",
+   "options": "USD",
+   "read_only": 1
+  },
+  {
+   "description": "Design 83b: the User who issued /stop force. Set together with workflow_state='ForceKilled'. Operator-initiated only (the reconciler auto-heal is left untouched).",
+   "fieldname": "force_killed_by",
+   "fieldtype": "Link",
+   "label": "Force-Killed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Design 83b: when the task was force-killed. Correlate with the gateway.force_kill Dispatcher Event audit row.",
+   "fieldname": "force_killed_at",
+   "fieldtype": "Datetime",
+   "label": "Force-Killed At",
+   "read_only": 1
+  },
+  {
+   "description": "Design 83b: free-text reason, e.g. 'operator /stop force'. Distinct from blocked_reason so reports separate operator kills from auto-heal blocks.",
+   "fieldname": "force_kill_reason",
+   "fieldtype": "Small Text",
+   "label": "Force-Kill Reason",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "module": "Friday Core",
+ "name": "Agent Task",
+ "naming_rule": "Autoincrement",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

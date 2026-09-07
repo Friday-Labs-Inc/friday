@@ -50,7 +50,7 @@ Every line you type and every reply you get is recorded as a `Chat Message` row 
 | Agent has skills permitted | Reply says `"You have N tool(s) available: a, b, c."` followed by `echo: <your line>`. |
 | Agent has no skills permitted | Reply says `"You have 0 tool(s) available: (none)."` |
 
-All proven by 15 tests in `frappe/friday_core/tests/test_chat_flow.py` (chat flow + routing helper + recovery sweeper).
+All proven by 15 tests in `friday/friday_core/tests/test_chat_flow.py` (chat flow + routing helper + recovery sweeper).
 
 ---
 
@@ -163,12 +163,12 @@ Per `docs/design/47-gateway-design-decisions.md` §8 these subsystems are NOT in
 ## Numbers for the record
 
 - **10 files added/modified:**
-  - `frappe/friday_core/gateway/` — 4 new files (init, service, batching, recovery)
-  - `frappe/friday_core/routing/` — 2 new files (init, resolve)
-  - `frappe/friday_core/agent_runner/` — 2 new files (init, runner)
-  - `frappe/friday_core/cli/` — 3 new files (init, chat, commands)
-  - `frappe/friday_core/tests/test_chat_flow.py` — new test file
-  - `frappe/friday_core/doctype/{chat_platform,chat_message,skill}.json` — 6 field additions across 3 DocTypes
+  - `friday/friday_core/gateway/` — 4 new files (init, service, batching, recovery)
+  - `friday/friday_core/routing/` — 2 new files (init, resolve)
+  - `friday/friday_core/agent_runner/` — 2 new files (init, runner)
+  - `friday/friday_core/cli/` — 3 new files (init, chat, commands)
+  - `friday/friday_core/tests/test_chat_flow.py` — new test file
+  - `friday/friday_core/doctype/{chat_platform,chat_message,skill}.json` — 6 field additions across 3 DocTypes
   - `frappe/hooks.py` — added `Chat Message.after_insert` hook + scheduler entry for sweeper
   - `frappe/commands/__init__.py` — registered the `friday` click Group
   - `docs/design/47-gateway-design-decisions.md` — new design contract
@@ -185,7 +185,7 @@ Per `docs/design/47-gateway-design-decisions.md` §8 these subsystems are NOT in
   (shows --profile option)
 
   $ bench --site friday.localhost execute \
-      frappe.friday_core.cli.chat.handle_user_message \
+      friday.friday_core.cli.chat.handle_user_message \
       --args "['FRIDAY-SLICE4V2-PROFILE-TOOLS', 'demo-1', 'hello via unified gateway']"
   → "You have 1 tool(s) available: slice4v2-skill.\necho: hello via unified gateway"
   ```

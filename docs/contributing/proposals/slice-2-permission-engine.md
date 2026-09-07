@@ -20,11 +20,11 @@ This proposal specifies the design and implementation of vertical Slice 2.
 
 ## 2. Proposed Changes & Architecture
 
-The Permission Engine will live inside the framework under `frappe/friday_core/permissions/`.
+The Permission Engine will live inside the framework under `friday/friday_core/permissions/`.
 
 ```mermaid
 graph TD
-    A[Gateway/Runner] -->|1. check_permission| B(frappe.friday_core.permissions.matrix)
+    A[Gateway/Runner] -->|1. check_permission| B(friday.friday_core.permissions.matrix)
     B -->|2. Check Cache| C{Redis Cache Hit?}
     C -->|Yes| D[Return Permission Matrix]
     C -->|No| E[Build Permission Matrix]
@@ -37,7 +37,7 @@ graph TD
     J -->|4. Log Synchronously| K
 ```
 
-### 2.1 Matrix Module (`frappe/friday_core/permissions/matrix.py`)
+### 2.1 Matrix Module (`friday/friday_core/permissions/matrix.py`)
 
 This module implements permission evaluation and matrix construction.
 
@@ -71,7 +71,7 @@ class Decision(TypedDict):
 
 ---
 
-### 2.2 Cache Module (`frappe/friday_core/permissions/cache.py`)
+### 2.2 Cache Module (`friday/friday_core/permissions/cache.py`)
 
 Synchronous permission checks must be exceptionally fast (<10ms). We will leverage Redis caching via Frappe's built-in caching engine (`frappe.cache()`).
 
@@ -83,7 +83,7 @@ Synchronous permission checks must be exceptionally fast (<10ms). We will levera
 
 ---
 
-### 2.3 Decisions Module (`frappe/friday_core/permissions/decisions.py`)
+### 2.3 Decisions Module (`friday/friday_core/permissions/decisions.py`)
 
 Every permission check outcome is logged synchronously to ensure a tamper-proof audit trail.
 
@@ -99,24 +99,24 @@ Every permission check outcome is logged synchronously to ensure a tamper-proof 
 
 ---
 
-### 2.4 Integration and Hooks Configuration (`frappe/friday_core/hooks.py`)
+### 2.4 Integration and Hooks Configuration (`friday/friday_core/hooks.py`)
 
 Register the cache invalidation triggers inside the framework's hook configuration:
 
 ```python
 doc_events = {
     "Agent Profile": {
-        "on_update": "frappe.friday_core.permissions.cache.invalidate_for_profile",
-        "on_trash": "frappe.friday_core.permissions.cache.invalidate_for_profile"
+        "on_update": "friday.friday_core.permissions.cache.invalidate_for_profile",
+        "on_trash": "friday.friday_core.permissions.cache.invalidate_for_profile"
     },
     "Role": {
-        "on_update": "frappe.friday_core.permissions.cache.invalidate_all"
+        "on_update": "friday.friday_core.permissions.cache.invalidate_all"
     },
     "DocPerm": {
-        "on_update": "frappe.friday_core.permissions.cache.invalidate_all"
+        "on_update": "friday.friday_core.permissions.cache.invalidate_all"
     },
     "Custom DocPerm": {
-        "on_update": "frappe.friday_core.permissions.cache.invalidate_all"
+        "on_update": "friday.friday_core.permissions.cache.invalidate_all"
     }
 }
 ```

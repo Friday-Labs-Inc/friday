@@ -87,7 +87,7 @@ A RandomPack project page with **9–10 named files** instead of 4:
 
 ## How we proved it works
 
-- `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_randompack_integration` → **14/14 green**, including 5 new tests:
+- `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_randompack_integration` → **14/14 green**, including 5 new tests:
   - `test_project_created_creates_local_friday_project`
   - `test_project_created_replay_reuses_existing_friday_project`
   - `test_push_deliverables_unions_brief_and_friday_project_files`

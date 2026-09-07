@@ -107,7 +107,7 @@ def on_state_change(doc: "Agent Task", method: str) -> None:
 Created as part of Slice 8 to own all task-lifecycle code:
 
 ```
-frappe/friday_core/tasks/
+friday/friday_core/tasks/
 ├── __init__.py
 ├── workflow.py        # on_state_change hook
 ├── dispatcher.py      # Scheduled task claim + dispatch
@@ -303,7 +303,7 @@ def _execute_skill_in_sandbox(skill_name: str, task: "Agent Task") -> SandboxRes
     """Execute one skill from the task's required_skills in a Docker sandbox.
     Uses the task-level API token scoped to this task + profile."""
 
-    from frappe.friday_core.sandbox.runner import execute as execute_sandbox
+    from friday.friday_core.sandbox.runner import execute as execute_sandbox
 
     parameters = _parse_task_parameters(task, skill_name)
 
@@ -360,24 +360,24 @@ Both paths share the same `SandboxResult` → `Execution Log` writing. The task 
 
 | File | Purpose |
 |---|---|
-| `frappe/friday_core/tasks/__init__.py` | Package marker |
-| `frappe/friday_core/tasks/workflow.py` | `on_state_change` hook; `DISPATCHABLE_STATES` |
-| `frappe/friday_core/tasks/dispatcher.py` | `tick()`, `_fetch_dispatchable_tasks()`, `_claim_and_dispatch()`, `_match_profiles()` |
-| `frappe/friday_core/tasks/runner.py` | `on_agent_task_assigned()` event consumer; task execution loop |
-| `frappe/friday_core/doctype/agent_task_skill/agent_task_skill.json` | Already exists; verify fields |
-| `frappe/friday_core/tests/test_task_workflow.py` | Workflow state transitions; dispatchable derivation |
-| `frappe/friday_core/tests/test_task_dispatcher.py` | Atomic claim; concurrent dispatcher; profile matching |
+| `friday/friday_core/tasks/__init__.py` | Package marker |
+| `friday/friday_core/tasks/workflow.py` | `on_state_change` hook; `DISPATCHABLE_STATES` |
+| `friday/friday_core/tasks/dispatcher.py` | `tick()`, `_fetch_dispatchable_tasks()`, `_claim_and_dispatch()`, `_match_profiles()` |
+| `friday/friday_core/tasks/runner.py` | `on_agent_task_assigned()` event consumer; task execution loop |
+| `friday/friday_core/doctype/agent_task_skill/agent_task_skill.json` | Already exists; verify fields |
+| `friday/friday_core/tests/test_task_workflow.py` | Workflow state transitions; dispatchable derivation |
+| `friday/friday_core/tests/test_task_dispatcher.py` | Atomic claim; concurrent dispatcher; profile matching |
 
 ### Modified files
 
 | File | Change |
 |---|---|
 | `frappe/frappe/hooks.py` | Add `Agent Task.on_update → friday.tasks.workflow.on_state_change`; Wire `*/1 * * * *` cron to `friday.tasks.dispatcher.tick` |
-| `frappe/frappe/friday_core/doctype/agent_task/agent_task.json` | Add `workflow_state` field type override (ensure `Data` with workflow-state-like values; the actual states are driven by the Frappe Workflow document, not hardcoded in the DocType schema) |
-| `frappe/frappe/friday_core/doctype/agent_task/agent_task.json` | Add `dependencies` field (Table → Agent Task Dependency, Phase 1 can be a stub, needed for ordering) |
-| `frappe/frappe/friday_core/doctype/agent_task/agent_task.json` | Add `current_execution` Link → Execution Log (Point to active Execution Log row during execution) |
-| `frappe/frappe/friday_core/agent_runner/dispatcher.py` | Add comment clarifying that `dispatch()` handles chat-driven (tool-call) tasks; task-driven dispatch goes through `tasks/dispatcher.tick()` |
-| `frappe/frappe/friday_core/agent_runner/runner.py` | Subscribe to `agent_task.assigned` realtime event and hand off to task runner when task is claimed for the profile |
+| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `workflow_state` field type override (ensure `Data` with workflow-state-like values; the actual states are driven by the Frappe Workflow document, not hardcoded in the DocType schema) |
+| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `dependencies` field (Table → Agent Task Dependency, Phase 1 can be a stub, needed for ordering) |
+| `frappe/friday/friday_core/doctype/agent_task/agent_task.json` | Add `current_execution` Link → Execution Log (Point to active Execution Log row during execution) |
+| `frappe/friday/friday_core/agent_runner/dispatcher.py` | Add comment clarifying that `dispatch()` handles chat-driven (tool-call) tasks; task-driven dispatch goes through `tasks/dispatcher.tick()` |
+| `frappe/friday/friday_core/agent_runner/runner.py` | Subscribe to `agent_task.assigned` realtime event and hand off to task runner when task is claimed for the profile |
 | `docs/contributing/proposals/slice-8-agent-task-kanban.md` | This file |
 
 ---
@@ -385,7 +385,7 @@ Both paths share the same `SandboxResult` → `Execution Log` writing. The task 
 ## 4. Module Structure (updated)
 
 ```
-frappe/friday_core/
+friday/friday_core/
 ├── agent_runner/          ← chat-drive tool-call dispatch (Slices 1–7)
 │   ├── dispatcher.py     ← dispatch() — chat tool calls → skill execution
 │   └── runner.py         ← run_turn() — LLM + tool call detection
@@ -451,16 +451,16 @@ All Slice 7 sandbox tests and Slice 6 dispatcher tests must remain green. The on
 ### Slice 7 Regression
 
 ```
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_sandbox_runner
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_dispatcher
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_sandbox_runner
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_dispatcher
 ```
 → **All green**
 
 ### Task Workflow Tests
 
 ```
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_task_workflow
-$ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_task_dispatcher
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_task_workflow
+$ bench --site friday.localhost run-tests --module friday.friday_core.tests.test_task_dispatcher
 ```
 → **≥ 10/10 green**
 
@@ -469,7 +469,7 @@ $ bench --site friday.localhost run-tests --module frappe.friday_core.tests.test
 1. Open Frappe Framework Console on `friday.localhost`.
 2. Create an `Agent Task` row: title="Test Kanban Task", priority="high", required_skills=`[create_note]`.
 3. Verify `workflow_state` defaults to `Pending` and `dispatchable=1`.
-4. Run: `bench --site friday.localhost execute frappe.friday_core.tasks.dispatcher.tick`.
+4. Run: `bench --site friday.localhost execute friday.friday_core.tasks.dispatcher.tick`.
 5. Observe: task moves to `Assigned` state → `Assigned to Profile` set → `dispatchable=0`.
 6. Open the **Kanban view** for `Agent Task` in the Desk sidebar.
 7. Observe: column "Pending" is empty; column "Assigned" shows the task card.

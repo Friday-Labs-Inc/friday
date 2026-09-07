@@ -75,10 +75,10 @@ high-stakes rubrics) is a natural Slice 3 option.
 ```bash
 # Needs TWO active LLM Providers on the sandbox: the agent's, and a different one to
 # judge. With only one, rubric scenarios report SKIP (everything else still runs).
-bench --site <sandbox-site> execute frappe.friday_core.evals.run.run
+bench --site <sandbox-site> execute friday.friday_core.evals.run.run
 
 # name the judge explicitly (must differ from the agent's provider):
-bench --site <sandbox-site> execute frappe.friday_core.evals.run.run --kwargs '{"judge_provider": "Claude"}'
+bench --site <sandbox-site> execute friday.friday_core.evals.run.run --kwargs '{"judge_provider": "Claude"}'
 ```
 
 Sandbox-only, as in Slice 1: it drives the real agent path and makes real LLM calls

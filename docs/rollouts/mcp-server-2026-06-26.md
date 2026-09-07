@@ -12,7 +12,7 @@ Friday already spoke MCP as a **client** (`mcp/client.py` — discover + call to
 remote servers). This adds the inverse: a **server** endpoint that exposes Friday's own
 skills as MCP tools over the same streamable-HTTP JSON-RPC 2.0 subset.
 
-- **Endpoint:** `POST /api/method/frappe.friday_core.mcp.server.handle`
+- **Endpoint:** `POST /api/method/friday.friday_core.mcp.server.handle`
 - **Auth:** `Authorization: Bearer <token>` (the MCP transport-level auth).
 - **Methods:** `initialize` · `notifications/initialized` · `tools/list` · `tools/call`.
 

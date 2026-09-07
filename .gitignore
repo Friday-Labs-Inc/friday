@@ -209,3 +209,6 @@ cypress/videos
 .helix/
 # Aider AI Chat
 .aider*
+
+# local host tooling, not part of the app
+bin/

@@ -53,5 +53,5 @@ lists when no key was set.
 ## Operator note
 
 No migration needed. Call
-`/api/method/frappe.friday_core.llm.model_discovery.list_models?provider_name=<name>`
-or `bench execute frappe.friday_core.llm.model_discovery.list_models --args "['Minimax']"`.
+`/api/method/friday.friday_core.llm.model_discovery.list_models?provider_name=<name>`
+or `bench execute friday.friday_core.llm.model_discovery.list_models --args "['Minimax']"`.

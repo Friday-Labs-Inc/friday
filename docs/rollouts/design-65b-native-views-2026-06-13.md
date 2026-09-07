@@ -78,7 +78,7 @@ the surpass axis (a real project plane + a live push-driven console) is 65c;
 
 ## Why we know it works
 
-9 unit tests in `frappe/friday_core/tests/test_console_views.py`: card/chart/
+9 unit tests in `friday/friday_core/tests/test_console_views.py`: card/chart/
 kanban/workspace creation, idempotency, failure isolation, the
 Kanban-columns ↔ Task-state coupling, and that the Workspace `content` blob
 references only cards/charts that exist as child rows. The full pipeline suite

@@ -98,12 +98,12 @@ Three new tests lock the security behavior:
 
 ## How we proved it works
 
-- `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_skill_loader`
+- `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_skill_loader`
   → 11/11 green (8 existing + 3 new role-gate tests).
-- `bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_delegate_skill`
+- `bench --site friday.localhost run-tests --module friday.friday_core.tests.test_delegate_skill`
   → 10/10 green (no regression in existing delegation flow).
 - `bench --site friday.localhost migrate` → clean.
-- `bench --site friday.localhost execute frappe.friday_core.skills.bootstrap_delegate.provision`
+- `bench --site friday.localhost execute friday.friday_core.skills.bootstrap_delegate.provision`
   → `Skill.role_gate = "Agent Delegator"` confirmed in the DB.
 
 ## What this unblocks

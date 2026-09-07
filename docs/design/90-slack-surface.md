@@ -57,7 +57,7 @@ them unchanged. The only Slack-specific code is the transport + signature.
 Create a Slack app → add a bot token + signing secret to **Slack Config** in Desk
 → set `bot_user_id` + `default_agent_profile` + enable → point the app's Event
 Subscriptions request URL at
-`…/api/method/frappe.friday_core.surfaces.slack_adapter.receive_event` and
+`…/api/method/friday.friday_core.surfaces.slack_adapter.receive_event` and
 subscribe to `message.im` + `app_mention`.
 
 ## Tests

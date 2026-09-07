@@ -1,0 +1,119 @@
+{
+    "_comment": "Singleton via the autoname-on-hidden-field trick: every doc is named the same value via a hidden field, so only one row can exist (uniqueness on `name` enforces it). The after_migrate hook in friday.friday_core.llm.after_migrate creates the row on fresh sites. We use this rather than `issingle: 1` because Single doctypes store all fields in tabSingles as key-value rows which is less efficient and harder to reason about; a regular DocType with autoname-on-constant gives us the same admin UX (one row, edit-only) with normal column semantics.",
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "field:__default",
+    "autoincrement": false,
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "default_provider",
+        "compression_model",
+        "setup_complete",
+        "max_delegation_depth",
+        "delegation_depth_hard_ceiling",
+        "max_concurrent_turns",
+        "memory_review_interval",
+        "skill_review_interval",
+        "review_model",
+        "model_routes"
+    ],
+    "fields": [
+        {
+            "fieldname": "__default",
+            "fieldtype": "Data",
+            "hidden": 1,
+            "label": "Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "default_provider",
+            "fieldtype": "Link",
+            "label": "Default LLM Provider",
+            "options": "LLM Provider",
+            "description": "Fallback provider used when an Agent Profile has no model_provider set. Leave blank if you always set model_provider explicitly on each profile."
+        },
+        {
+            "fieldname": "compression_model",
+            "fieldtype": "Link",
+            "label": "Compression (Aux) Model Provider",
+            "options": "LLM Provider",
+            "description": "Optional cheap/fast provider used to summarise old turns when a conversation is compressed (Feature C). Leave blank to reuse the agent's own provider. If neither resolves, compression is skipped with a logged warning (turns are never silently dropped)."
+        },
+        {
+            "default": "0",
+            "description": "Set by the Friday Setup wizard (design 64) when setup is finished AND verified (a live provider probe + a non-down pipeline health). A proxy for 'Friday is ready'; the minimum-viable signal is still default_provider + one Active Agent Profile.",
+            "fieldname": "setup_complete",
+            "fieldtype": "Check",
+            "label": "Setup Complete",
+            "read_only": 1
+        },
+        {
+            "default": "3",
+            "description": "Maximum depth of the parent_task chain for delegated tasks (design 69, Q3). An orchestrator at depth 3 cannot delegate further. Enforced at dispatch time.",
+            "fieldname": "max_delegation_depth",
+            "fieldtype": "Int",
+            "label": "Max Delegation Depth"
+        },
+        {
+            "default": "8",
+            "description": "Absolute ceiling for delegation depth (design 69, Q3). Cannot be exceeded even if max_delegation_depth is set higher. Safety backstop; change only via bench console.",
+            "fieldname": "delegation_depth_hard_ceiling",
+            "fieldtype": "Int",
+            "label": "Delegation Depth Hard Ceiling",
+            "read_only": 1
+        },
+        {
+            "default": "1",
+            "description": "How many agent turns the dedicated 'friday' queue runs at once. 1 (default) = today's single-worker behaviour, zero change. Higher values start that many friday worker PROCESSES so concurrent chats/tasks overlap their model-wait instead of queueing (proven ~5x throughput at 10 concurrent turns on Legion). Clamped to 1..16 in code. Takes effect when the friday worker is (re)started.",
+            "fieldname": "max_concurrent_turns",
+            "fieldtype": "Int",
+            "label": "Max Concurrent Turns"
+        },
+        {
+            "default": "3",
+            "description": "Self-improvement review (design 79/80): after every N conversational turns the agent reflects on the conversation and saves durable facts/preferences to memory. 0 = off. Only conversational (gateway) turns count; pipeline tasks never trigger it.",
+            "fieldname": "memory_review_interval",
+            "fieldtype": "Int",
+            "label": "Memory Review Interval"
+        },
+        {
+            "default": "0",
+            "description": "Governed skill-proposal review (design 79 Slice 2): after every N conversational turns the agent reviews the conversation for reusable how-to lessons and PROPOSES skill changes (Skill Proposal rows, Pending human approval — never auto-applied). 0 = off (default until validated in production).",
+            "fieldname": "skill_review_interval",
+            "fieldtype": "Int",
+            "label": "Skill Review Interval"
+        },
+        {
+            "description": "Optional LLM Provider used to RUN the self-improvement review (a cheap model is fine — it just reads the conversation and writes short facts). Leave blank to use the agent's own provider.",
+            "fieldname": "review_model",
+            "fieldtype": "Link",
+            "label": "Review Model Provider",
+            "options": "LLM Provider"
+        },
+        {
+            "description": "Design 96 — route non-text mediums (image, doc-render; video/audio when providers land) to a specific LLM Provider, independent of each agent's text provider. Example: agents chat on Codex but 'image' routes to an OpenAI gpt-image provider. A medium with no route falls through to the agent's own provider chain; the routed provider's Design-94 fallback chain still applies.",
+            "fieldname": "model_routes",
+            "fieldtype": "Table",
+            "label": "Model Routes (per medium)",
+            "options": "Model Route"
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Agent Settings",
+    "naming_rule": "Set by user",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 0,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

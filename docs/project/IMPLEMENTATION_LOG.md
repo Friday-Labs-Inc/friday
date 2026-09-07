@@ -322,10 +322,10 @@ history, except for correcting factual mistakes.
 - Added kernel module package:
 
   ```text
-  frappe/friday_core/
+  friday/friday_core/
   ```
 
-- Added 8 main DocTypes and 3 child-table DocTypes under `frappe/friday_core/doctype/`:
+- Added 8 main DocTypes and 3 child-table DocTypes under `friday/friday_core/doctype/`:
 
   ```text
   Agent Profile
@@ -344,7 +344,7 @@ history, except for correcting factual mistakes.
 - Added test module:
 
   ```text
-  frappe/friday_core/tests/test_doctypes_exist.py
+  friday/friday_core/tests/test_doctypes_exist.py
   ```
 
 - Created local `Agent Supervisor` role. Frappe also creates missing roles referenced by DocType permissions during DocType installation.
@@ -363,7 +363,7 @@ history, except for correcting factual mistakes.
 - Ran Slice 1 tests successfully:
 
   ```bash
-  bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+  bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
   ```
 
   Result:
@@ -415,11 +415,11 @@ history, except for correcting factual mistakes.
   ```
 - Ran Slice 1 tests successfully on the PostgreSQL backend:
   ```bash
-  bench --site friday.localhost run-tests --module frappe.friday_core.tests.test_doctypes_exist
+  bench --site friday.localhost run-tests --module friday.friday_core.tests.test_doctypes_exist
   ```
   Result:
   ```text
-  frappe.friday_core.tests.test_doctypes_exist.TestDocTypesExist
+  friday.friday_core.tests.test_doctypes_exist.TestDocTypesExist
       ✔  test_each_doctype_exists_with_required_fields
       ✔  test_submittable_doctypes_are_submittable
 
@@ -430,17 +430,17 @@ history, except for correcting factual mistakes.
 ## 2026-05-27 — Slice 2: Permission engine
 
 - Shipped the gateway pre-check engine specified in `docs/design/10-agent-execution-guide.md` §Slice 2.
-- New package `frappe/friday_core/permissions/` with three modules:
+- New package `friday/friday_core/permissions/` with three modules:
   - `matrix.py` — `build_matrix`, `evaluate`, `check` + `Decision` / `PermissionMatrix` dataclasses.
   - `cache.py` — Redis cache (`friday:perm_matrix:{profile}`, 60s TTL) with per-profile and broad invalidation.
   - `decisions.py` — writes immutable Permission Decision Log rows.
 - `frappe/hooks.py` wired: `Agent Profile.on_update` → per-profile invalidation; `Role.on_update` → broad invalidation.
-- 10 tests in `frappe/friday_core/tests/test_permissions.py`, all green on PostgreSQL 17.
+- 10 tests in `friday/friday_core/tests/test_permissions.py`, all green on PostgreSQL 17.
 - Slice 1 regression: 2/2 green.
 - Deliverable verified:
   ```
   bench --site friday.localhost execute \
-      frappe.friday_core.permissions.matrix.check \
+      friday.friday_core.permissions.matrix.check \
       --args "['FRIDAY-TEST-PROFILE-A', 'friday-test-skill-active']"
   → {"allowed": true, "reason": "Allowed"}
   ```
@@ -450,16 +450,16 @@ history, except for correcting factual mistakes.
 ## 2026-05-27 — Slice 3: Skill loader
 
 - Shipped the agent's tool-menu builder specified in `docs/design/10-agent-execution-guide.md` §Slice 3.
-- New package `frappe/friday_core/skills/` with one module:
+- New package `friday/friday_core/skills/` with one module:
   - `loader.py` — `load_for_profile`, `to_tool_definition`, three invalidation hooks, `SkillDefinition` dataclass.
 - Filter chain (cheapest-first, short-circuits on first miss): `Skill.status == "Active"` → `skill in profile.permitted_skills` → `permissions.matrix.evaluate(matrix, skill).allowed`. Uses `evaluate()` (pure) not `check()` (logs), so listing the menu does not write decision-log rows.
 - `frappe/hooks.py` extended: `Skill.on_update` → surgical per-affected-profile flush; `Agent Profile.on_update` and `Role.on_update` events now fire both permissions and skills cache invalidation.
-- 8 tests in `frappe/friday_core/tests/test_skill_loader.py`, all green.
+- 8 tests in `friday/friday_core/tests/test_skill_loader.py`, all green.
 - Regression: Slice 1 → 2/2, Slice 2 → 10/10.
 - Deliverable verified:
   ```
   bench --site friday.localhost execute \
-      frappe.friday_core.skills.loader.load_for_profile \
+      friday.friday_core.skills.loader.load_for_profile \
       --args "['FRIDAY-SLICE3-PROFILE-FULL']"
   → [{"name": "slice3-skill-active", "description": "...", "parameters_schema": {...}, ...}]
   ```
@@ -471,10 +471,10 @@ history, except for correcting factual mistakes.
 - Shipped the first interactive surface AND laid the unified gateway every future surface plugs into. Replaces the in-process CLI approach from the closed PR #29.
 - Decision contract: `docs/design/47-gateway-design-decisions.md` (new — consolidates every Q1–Q5 decision and the design for deferred subsystems).
 - New packages:
-  - `frappe/friday_core/gateway/` — `service.py` (the chokepoint hook), `batching.py` (Q4-C stub), `recovery.py` (Q5 half-step sweeper).
-  - `frappe/friday_core/routing/` — `resolve.py` (Q3 stub; reads `Chat Platform.default_agent_profile`).
-  - `frappe/friday_core/agent_runner/` — `runner.py` (stub: tool menu + echo; Slice 5 replaces body).
-  - `frappe/friday_core/cli/` — `chat.py` (REPL + `handle_user_message`; direct DB read for outbound per Q2 Option A), `commands.py` (click group `friday`).
+  - `friday/friday_core/gateway/` — `service.py` (the chokepoint hook), `batching.py` (Q4-C stub), `recovery.py` (Q5 half-step sweeper).
+  - `friday/friday_core/routing/` — `resolve.py` (Q3 stub; reads `Chat Platform.default_agent_profile`).
+  - `friday/friday_core/agent_runner/` — `runner.py` (stub: tool menu + echo; Slice 5 replaces body).
+  - `friday/friday_core/cli/` — `chat.py` (REPL + `handle_user_message`; direct DB read for outbound per Q2 Option A), `commands.py` (click group `friday`).
 - DocType field additions (single migration, all nullable/defaulted):
   - `Chat Platform`: `dispatch_mode` (Select sync|async), `default_agent_profile` (Link), `batch_idle_ms` (Int).
   - `Chat Message`: `retry_count` (Int), `failure_reason` (Small Text).
@@ -483,13 +483,13 @@ history, except for correcting factual mistakes.
   - `frappe/hooks.py`: `doc_events["Chat Message"]["after_insert"]` → gateway chokepoint; `scheduler_events["all"]` → recovery sweeper (no-op on pure-sync deployments).
   - `frappe/commands/__init__.py`: appended friday click Group to `get_commands()`.
 - Architectural choice (per `feedback-unified-gateway-service` and `feedback-single-tenant-not-saas`): unified gateway for all surfaces (CLI today; Telegram, Slack, Raven, A2A later); sized for one tenant. Subsystems with no v0.1 user (batching, dedup, per-tool idempotency framework) are documented in the design doc and stubbed in code — they activate when the slice that introduces their real user lands.
-- 15 tests in `frappe/friday_core/tests/test_chat_flow.py` (chat flow + routing helper + recovery sweeper), all green.
+- 15 tests in `friday/friday_core/tests/test_chat_flow.py` (chat flow + routing helper + recovery sweeper), all green.
 - Regression: Slice 1 → 2/2, Slice 2 → 10/10, Slice 3 → 8/8. **Total: 35/35.**
 - Deliverable verified:
   ```
   bench --site friday.localhost friday chat --help     # lists --profile
   bench --site friday.localhost execute \
-      frappe.friday_core.cli.chat.handle_user_message \
+      friday.friday_core.cli.chat.handle_user_message \
       --args "['FRIDAY-SLICE4V2-PROFILE-TOOLS', 'demo-1', 'hello via unified gateway']"
   → "You have 1 tool(s) available: slice4v2-skill.\necho: hello via unified gateway"
   ```
@@ -501,11 +501,11 @@ history, except for correcting factual mistakes.
 - Shipped real LLM integration. Replaces the Slice 4 echo stub. End-to-end loop: CLI → gateway → prompt builder → provider adapter → Minimax M2 → outbound Chat Message row → CLI prints. Same gateway path for every surface (Slice 4 contract unchanged).
 - Decision contract appended: `docs/design/47-gateway-design-decisions.md` §11 (10 dated decisions Q11.1–Q11.10).
 - New packages and DocTypes:
-  - `frappe/friday_core/llm/` — `provider.py` (LLMProvider ABC + MinimaxProvider), `prompt_builder.py` (system prompt + history + tools), `__init__.py` (public exports), `after_migrate.py` (ensures Agent Settings singleton row exists on fresh sites).
-  - `frappe/friday_core/doctype/llm_provider/` — per-row provider config (provider_name, provider_type, api_key (Password), base_url, default_model, default_max_tokens, default_temperature, is_active).
-  - `frappe/friday_core/doctype/agent_settings/` — singleton holding default_provider Link.
+  - `friday/friday_core/llm/` — `provider.py` (LLMProvider ABC + MinimaxProvider), `prompt_builder.py` (system prompt + history + tools), `__init__.py` (public exports), `after_migrate.py` (ensures Agent Settings singleton row exists on fresh sites).
+  - `friday/friday_core/doctype/llm_provider/` — per-row provider config (provider_name, provider_type, api_key (Password), base_url, default_model, default_max_tokens, default_temperature, is_active).
+  - `friday/friday_core/doctype/agent_settings/` — singleton holding default_provider Link.
 - Schema change: `Agent Profile.model_provider` is now `Link → LLM Provider` (was incorrectly `Link → DocType`).
-- Wiring in Frappe core: `frappe/hooks.py` `after_migrate` list now includes `frappe.friday_core.llm.after_migrate.ensure_agent_settings`.
+- Wiring in Frappe core: `frappe/hooks.py` `after_migrate` list now includes `friday.friday_core.llm.after_migrate.ensure_agent_settings`.
 - Audit findings (all fixed in commit on slice-5/llm-integration before merge):
   - Class name typo `MinimixProvider` → `MinimaxProvider` (bulk rename across 4 files).
   - Inactive linked provider silently fell through to defaults; now raises `LLMError` (Q11.3).

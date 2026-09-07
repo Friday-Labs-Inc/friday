@@ -125,9 +125,9 @@ bench --site friday.localhost friday setup --provider-type minimax --model MiniM
 Provision the skills and the specialist profile:
 
 ```bash
-bench --site friday.localhost execute frappe.friday_core.skills.bootstrap_brand.provision
-bench --site friday.localhost execute frappe.friday_core.skills.bootstrap_delegate.provision
-bench --site friday.localhost execute frappe.friday_core.cli.setup.provision_profile --kwargs "{'profile_name':'Copywriter','provider_name':'Minimax','system_prompt':'You are a senior brand copywriter. Sharp, distinctive, ready-to-use copy.'}"
+bench --site friday.localhost execute friday.friday_core.skills.bootstrap_brand.provision
+bench --site friday.localhost execute friday.friday_core.skills.bootstrap_delegate.provision
+bench --site friday.localhost execute friday.friday_core.cli.setup.provision_profile --kwargs "{'profile_name':'Copywriter','provider_name':'Minimax','system_prompt':'You are a senior brand copywriter. Sharp, distinctive, ready-to-use copy.'}"
 ```
 
 ✅ **Expect:** `✓ Brand skills provisioned…`, `✓ Delegation provisioned…`, and
@@ -155,14 +155,14 @@ Open a **second terminal**: `cd ~/friday-bench`
 
 ### Test 1 — the agent answers (smoke test)
 ```bash
-bench --site friday.localhost execute frappe.friday_core.agent_runner.runner.run_turn --args "['Friday','legion-1','In one sentence, who are you?']"
+bench --site friday.localhost execute friday.friday_core.agent_runner.runner.run_turn --args "['Friday','legion-1','In one sentence, who are you?']"
 ```
 ✅ **Expect:** a real one-sentence MiniMax reply, with no `<think>` leakage.
 
 ### Test 2 — brand directions (the product)
 ```bash
 bench --site friday.localhost execute frappe.client.insert --kwargs "{'doc':{'doctype':'Brand Brief','business_name':'Legion Coffee','industry':'Specialty roastery','what_they_do':'Single-origin subscription coffee','target_audience':'Urban pros 25-40','brand_personality':'warm, crafted, honest','status':'Ready'}}"
-bench --site friday.localhost execute frappe.friday_core.cli.chat.handle_user_message --args "['Friday','legion-brand','Generate 3 distinct brand directions for brief BB-0001, each with palette, typography, logo concept and taglines.']"
+bench --site friday.localhost execute friday.friday_core.cli.chat.handle_user_message --args "['Friday','legion-brand','Generate 3 distinct brand directions for brief BB-0001, each with palette, typography, logo concept and taglines.']"
 bench --site friday.localhost execute frappe.client.get_list --kwargs "{'doctype':'Brand Direction','filters':{'brief':'BB-0001'},'fields':['name','direction_name']}"
 ```
 ✅ **Expect:** the agent describes 3 directions, and the last command lists 3
@@ -170,7 +170,7 @@ saved `Brand Direction` rows.
 
 ### Test 3 — multi-agent delegation
 ```bash
-bench --site friday.localhost execute frappe.friday_core.cli.chat.handle_user_message --args "['Friday','legion-deleg','Delegate to the Copywriter profile: write 3 taglines for Legion Coffee. Then tell me your favorite and why.']"
+bench --site friday.localhost execute friday.friday_core.cli.chat.handle_user_message --args "['Friday','legion-deleg','Delegate to the Copywriter profile: write 3 taglines for Legion Coffee. Then tell me your favorite and why.']"
 bench --site friday.localhost execute frappe.client.get_list --kwargs "{'doctype':'Task','filters':{'workflow_state':'Completed'},'fields':['name','assigned_to_profile'],'order_by':'creation desc','limit_page_length':1}"
 ```
 ✅ **Expect:** Friday returns the Copywriter's taglines + its own pick, and a

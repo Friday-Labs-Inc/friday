@@ -1,0 +1,219 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "field:provider_name",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "provider_name",
+        "provider_type",
+        "is_active",
+        "fallback_provider",
+        "auth_mode",
+        "api_key",
+        "base_url",
+        "default_model",
+        "image_model",
+        "default_max_tokens",
+        "default_temperature",
+        "input_cost_per_million",
+        "output_cost_per_million",
+        "request_timeout_seconds",
+        "request_stale_seconds",
+        "oauth_section",
+        "oauth_flavor",
+        "oauth_access_token",
+        "oauth_refresh_token",
+        "oauth_expires_at",
+        "oauth_account_id",
+        "oauth_pkce_verifier",
+        "oauth_state",
+        "oauth_device_id"
+    ],
+    "fields": [
+        {
+            "fieldname": "provider_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Provider Name",
+            "reqd": 1,
+            "unique": 1,
+            "description": "Human-readable name, e.g. 'Production Minimax' or 'Dev OpenAI'."
+        },
+        {
+            "fieldname": "provider_type",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Provider Type",
+            "options": "minimax\nopenai\nanthropic\nopenrouter",
+            "reqd": 1,
+            "description": "Which LLM provider API to call. Determines the adapter used. NOTE: only 'minimax' is implemented in Slice 5 — the other options are reserved for future slices and will raise LLMError if selected until their adapter classes land. Adding a new option here requires both extending this Select AND adding a subclass + branch in friday/friday_core/llm/provider.py."
+        },
+        {
+            "default": "1",
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Active",
+            "description": "Only active providers can be used. Inactive providers are skipped during fallback resolution."
+        },
+        {
+            "fieldname": "fallback_provider",
+            "fieldtype": "Link",
+            "label": "Fallback Provider",
+            "options": "LLM Provider",
+            "description": "Design 94 — if a call to this provider fails beyond its own retries, the turn hands over to this backup on the spot (transitive, max 3 hops; cycles are guarded at runtime). The backup answers with ITS OWN Default Model. Leave empty for no failover."
+        },
+        {
+            "default": "api_key",
+            "fieldname": "auth_mode",
+            "fieldtype": "Select",
+            "label": "Auth Mode",
+            "options": "api_key\noauth",
+            "description": "api_key = a static key in the API Key field (default). oauth = log in with a Claude Max / Codex subscription (design 63b-OAuth); the OAuth section below holds the encrypted tokens."
+        },
+        {
+            "fieldname": "api_key",
+            "fieldtype": "Password",
+            "label": "API Key",
+            "description": "The API key for this provider (required when Auth Mode = api_key). Stored encrypted at rest. Leave blank for OAuth providers.",
+            "depends_on": "eval:doc.auth_mode!='oauth'"
+        },
+        {
+            "fieldname": "base_url",
+            "fieldtype": "Data",
+            "label": "Base URL (optional)",
+            "description": "Override the provider's default API endpoint. Leave blank to use the adapter default. For Minimax the adapter default is https://api.minimax.io (international OpenAI-compat endpoint); override with https://api.minimaxi.com for the China endpoint. Also useful for proxies like OpenRouter."
+        },
+        {
+            "default": "MiniMax-Standard",
+            "fieldname": "default_model",
+            "fieldtype": "Data",
+            "label": "Default Model",
+            "description": "Model to use when the Agent Profile does not specify one. E.g. MiniMax-Standard, gpt-4o, claude-3-sonnet."
+        },
+        {
+            "default": "image-01",
+            "fieldname": "image_model",
+            "fieldtype": "Data",
+            "label": "Image Model",
+            "description": "Image model for the generate-image skill — e.g. image-01 (MiniMax) or gpt-image-1 (OpenAI). Empty falls back to the provider's default."
+        },
+        {
+            "default": "2048",
+            "fieldname": "default_max_tokens",
+            "fieldtype": "Int",
+            "label": "Default Max Tokens"
+        },
+        {
+            "default": "0.7",
+            "fieldname": "default_temperature",
+            "fieldtype": "Float",
+            "label": "Default Temperature",
+            "description": "Sampling temperature. 0.0 = deterministic, 2.0 = very random. Typical range: 0.0–1.0."
+        },
+        {
+            "fieldname": "input_cost_per_million",
+            "fieldtype": "Float",
+            "label": "Input Cost per 1M Tokens (USD)",
+            "precision": "6",
+            "description": "Operator-set rate used to compute LLM Usage Log.estimated_cost. Leave blank to skip cost estimation. (Hermes derives rates from a bundled pricing dataset; Friday keeps them on the provider row.)"
+        },
+        {
+            "fieldname": "output_cost_per_million",
+            "fieldtype": "Float",
+            "label": "Output Cost per 1M Tokens (USD)",
+            "precision": "6",
+            "description": "Operator-set rate for output/completion tokens. Leave blank to skip cost estimation."
+        },
+        {
+            "fieldname": "request_timeout_seconds",
+            "fieldtype": "Int",
+            "label": "Request Timeout (seconds)",
+            "description": "Per-call wall-clock budget. Leave blank for the Hermes-parity default of 1800s (30 min) — appropriate for long goal-mode generations. Maps to httpx.Timeout.write and acts as an overall cap on the streaming session."
+        },
+        {
+            "fieldname": "request_stale_seconds",
+            "fieldtype": "Int",
+            "label": "Stream Stale Timeout (seconds)",
+            "description": "Streaming watchdog — kills the call if no token arrives for this many seconds. Maps to httpx.Timeout.read. Default 120s matches Hermes's HERMES_STREAM_READ_TIMEOUT. This is the knob that actually fires on a hung provider; the request_timeout_seconds is the total-session cap behind it. Lower it for fast-fail; raise it for slow-prefill local providers."
+        },
+        {
+            "fieldname": "oauth_section",
+            "fieldtype": "Section Break",
+            "label": "OAuth (subscription login)",
+            "depends_on": "eval:doc.auth_mode=='oauth'"
+        },
+        {
+            "fieldname": "oauth_flavor",
+            "fieldtype": "Select",
+            "label": "OAuth Flavor",
+            "options": "\nanthropic-claude\nopenai-codex",
+            "description": "Which OAuth login this provider uses. anthropic-claude = Claude Pro/Max (Messages API). openai-codex = ChatGPT/Codex subscription (Responses API)."
+        },
+        {
+            "fieldname": "oauth_access_token",
+            "fieldtype": "Password",
+            "label": "OAuth Access Token",
+            "read_only": 1,
+            "description": "Set by the login flow; refreshed automatically. Encrypted at rest."
+        },
+        {
+            "fieldname": "oauth_refresh_token",
+            "fieldtype": "Password",
+            "label": "OAuth Refresh Token",
+            "read_only": 1,
+            "description": "Used to renew the access token. Encrypted at rest."
+        },
+        {
+            "fieldname": "oauth_expires_at",
+            "fieldtype": "Datetime",
+            "label": "Access Token Expires At",
+            "read_only": 1
+        },
+        {
+            "fieldname": "oauth_account_id",
+            "fieldtype": "Data",
+            "label": "OAuth Account ID",
+            "read_only": 1,
+            "description": "Codex ChatGPT-Account-ID (from the access-token JWT). Sent as a required header at inference time."
+        },
+        {
+            "fieldname": "oauth_pkce_verifier",
+            "fieldtype": "Password",
+            "label": "OAuth PKCE Verifier (transient)",
+            "read_only": 1,
+            "description": "Held only between starting and completing a login; cleared after the code exchange."
+        },
+        {
+            "fieldname": "oauth_state",
+            "fieldtype": "Data",
+            "label": "OAuth State (transient)",
+            "read_only": 1,
+            "description": "CSRF state held between starting and completing a login; cleared after exchange."
+        },
+        {
+            "fieldname": "oauth_device_id",
+            "fieldtype": "Data",
+            "label": "OAuth Device Auth ID (transient)",
+            "read_only": 1,
+            "description": "Codex device_auth_id held between starting the device login and a successful poll."
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "LLM Provider",
+    "naming_rule": "Set by user",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

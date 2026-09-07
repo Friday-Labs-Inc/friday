@@ -80,7 +80,7 @@ After merging, on each existing bench, run:
 
 ```bash
 bench --site <yoursite> execute \
-  frappe.friday_core.skills.bootstrap_files.provision
+  friday.friday_core.skills.bootstrap_files.provision
 ```
 
 The Friday profile gains three skills, the `Friday File Author` role

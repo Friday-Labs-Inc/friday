@@ -21,10 +21,10 @@
 
 **Friday** = a hard fork of Frappe v16 stable that makes AI agents
 first-class framework primitives. The kernel lives at
-`apps/frappe/frappe/friday_core/` inside the fork (not a separate app).
+`apps/frappe/friday/friday_core/` inside the fork (not a separate app).
 Every agent action is **permission-checked → logged (immutable
 submittable DocType) → sandboxed → audited**. Single chokepoint is
-`frappe.friday_core.gateway.service.handle_inbound` (wired as
+`friday.friday_core.gateway.service.handle_inbound` (wired as
 `Chat Message.after_insert` in `frappe/hooks.py`). A domain is **DATA**
 (Domain Bundle + Frappe Workflow + Friday Workflow Transition Meta +
 Agent Profiles with `discriminator_role`), not Python. Friday IS the
@@ -55,8 +55,8 @@ PR numbering is up to **#132** on `main`. The codebase is past
 ### 1.2 Two products under one org
 
 - **Friday** = the engine (this fork). Generic, governed, agentic.
-- **RandomPack** = the first domain (a brand studio productising Rajiv
-  Ranjan's design work). Lives at `~/Documents/RandomPack/randompack-bench`,
+- **RandomPack** = the first domain (a brand studio productising its founding
+  Creative Director's design work). Lives at `~/Documents/RandomPack/randompack-bench`,
   separate Frappe v15 bench. **RandomPack is Friday's proof, not
   Friday's definition.**
 
@@ -117,7 +117,7 @@ Friday Core has three generic pillars: (1) agent runtime [Hermes port],
 `system`). Future: 81c MCP, 81d chat, 81e A2A.
 
 ### 2.4 The law (apply to every line)
-**If code names a brand, "Rajiv", a gate, or a "direction," it belongs
+**If code names a brand, a person, a gate, or a "direction," it belongs
 in a domain bundle or the RandomPack app — NEVER Friday Core.** Core
 must make equal sense for a law firm, a manufacturer, a hospital.
 
@@ -137,7 +137,7 @@ sub-stream.
   default 1, capped at 16). Runs the governed execution loop.
 
 ### 3.2 Single chokepoint
-`frappe.friday_core.gateway.service.handle_inbound` is the
+`friday.friday_core.gateway.service.handle_inbound` is the
 `Chat Message.after_insert` hook in `frappe/hooks.py`. Every inbound
 message from any surface (CLI today; Raven/Telegram/Slack/A2A later)
 lands here. The flow:
@@ -417,7 +417,7 @@ Every shipped change carries:
    record. Append a one-paragraph dated entry to
    `docs/project/IMPLEMENTATION_LOG.md`.
 
-### 5.11 Rajiv's design bar (for creative / UI work)
+### 5.11 The Creative Director's design bar (for creative / UI work)
 TWO reference systems — Draft. (austere-mono) + Rajive Studio
 (warm-luxe). They diverge on surface rules but share one soul. Gate
 on the **PRINCIPLE**, not on one brand's hard-nos as universal:
@@ -445,7 +445,7 @@ findings:
 ### 5.13 The 3 things that make RandomPack a system (not "run some prompts")
 1. **Shared token set** (stage 5): brand + site render from one source
    of truth. Coherence trick — they can't drift apart.
-2. **Two gates** = the ONLY human touchpoints. Rajiv's taste enters
+2. **Two gates** = the ONLY human touchpoints. The Creative Director's taste enters
    once at the direction level and propagates. ~1 hr/project = the
    economic engine.
 3. **Flywheel** (Gate 1 → critic): every accept/reject trains the critic
@@ -605,7 +605,7 @@ A patch that **POPULATES a newly-added field** goes in
 **`[post_model_sync]`** (NOT above it). Pre-sync runs before model
 sync creates the column → fresh `bench migrate` dies with
 `UndefinedColumn`. friday_core lives INSIDE frappe
-(`apps/frappe/frappe/friday_core`), so its patches register in
+(`apps/frappe/friday/friday_core`), so its patches register in
 `apps/frappe/frappe/patches.txt`, not a standalone app patches.txt.
 
 ### 6.12 Connector framework gotcha

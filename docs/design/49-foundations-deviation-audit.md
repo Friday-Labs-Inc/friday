@@ -131,7 +131,7 @@ At the point we currently emit (dispatcher and/or workflow hook), call:
 
 ```python
 frappe.enqueue(
-    "frappe.friday_core.tasks.runner.on_agent_task_assigned",
+    "friday.friday_core.tasks.runner.on_agent_task_assigned",
     queue="long",
     message={"task_name": ..., "assigned_to_profile": ...},
 )

@@ -37,7 +37,7 @@ plan below (`agent_runner/` not `agents/`, no `messaging/` / `approvals/` / `mem
 `tools/` / `api/v1/`).
 
 ```
-frappe/friday_core/
+friday/friday_core/
 ├── doctype/         ← ALL agent-kernel DocTypes live here (agent_profile, skill,
 │                       agent_task, execution_log, permission_decision_log, chat_message, …)
 ├── gateway/         ← unified inbound chokepoint (service.handle_inbound), run-turn pipeline
@@ -59,7 +59,7 @@ of these directories do **not exist** yet (`messaging/`, `approvals/`, `memory/`
 a roadmap, not a map of today's code.
 
 ```
-frappe/friday_core/
+friday/friday_core/
 ├── gateway/                ← session orchestrator, prompt builder, response delivery
 ├── agents/                 ← profile + execution            (built as agent_runner/)
 ├── skills/                 ← schema, loader, curator, learner
@@ -255,7 +255,7 @@ All endpoints under `/api/method/friday.api.v1.*`. Used by sandbox containers an
 ## Hooks wiring (`hooks.py`)
 
 **AS BUILT (`main @ 0f2cdd9`).** Two corrections from earlier drafts: the module prefix is
-`frappe.friday_core.` (not `friday.`), and the inbound chokepoint is
+`friday.friday_core.` (not `friday.`), and the inbound chokepoint is
 **`gateway.service.handle_inbound`** (not the fictional `gateway.session_manager.on_new_message`).
 There are **no** curator/learner scheduler entries (those jobs are out of v0.1 scope, above).
 
@@ -263,36 +263,36 @@ There are **no** curator/learner scheduler entries (those jobs are out of v0.1 s
 doc_events = {
     "Agent Profile": {
         "on_update": [
-            "frappe.friday_core.permissions.cache.invalidate_for_profile",
-            "frappe.friday_core.skills.loader.invalidate_for_profile",
+            "friday.friday_core.permissions.cache.invalidate_for_profile",
+            "friday.friday_core.skills.loader.invalidate_for_profile",
         ],
     },
     "Role": {
         "on_update": [
-            "frappe.friday_core.permissions.cache.invalidate_all",
-            "frappe.friday_core.skills.loader.invalidate_all",
+            "friday.friday_core.permissions.cache.invalidate_all",
+            "friday.friday_core.skills.loader.invalidate_all",
         ],
     },
     "Skill": {
         # on_update only — no after_insert; method is invalidate_for_skill
-        "on_update": "frappe.friday_core.skills.loader.invalidate_for_skill",
+        "on_update": "friday.friday_core.skills.loader.invalidate_for_skill",
     },
     "Chat Message": {
         # The unified gateway chokepoint — every inbound message from any
         # surface (CLI, Telegram, Slack, Raven, A2A) lands here.
-        "after_insert": "frappe.friday_core.gateway.service.handle_inbound",
+        "after_insert": "friday.friday_core.gateway.service.handle_inbound",
     },
     "Agent Task": {
-        "on_update": "frappe.friday_core.tasks.workflow.on_state_change",
+        "on_update": "friday.friday_core.tasks.workflow.on_state_change",
     },
 }
 
 scheduler_events = {
     "cron": {
         # Every 60 seconds — task dispatcher claims dispatchable tasks.
-        "*/1 * * * *": ["frappe.friday_core.tasks.dispatcher.tick"],
+        "*/1 * * * *": ["friday.friday_core.tasks.dispatcher.tick"],
         # Sweeps orphaned inbound Chat Messages (async-dispatch recovery).
-        # "<cron>": ["frappe.friday_core.gateway.recovery.sweep_orphans"],
+        # "<cron>": ["friday.friday_core.gateway.recovery.sweep_orphans"],
     },
 }
 ```

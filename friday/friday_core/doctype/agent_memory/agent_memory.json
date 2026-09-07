@@ -1,0 +1,94 @@
+{
+    "actions": [],
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "memory",
+        "agent_profile",
+        "project",
+        "subject",
+        "memory_type",
+        "status",
+        "source_session"
+    ],
+    "fields": [
+        {
+            "description": "The durable fact, preference, or decision — one per row. Written by the `remember` skill or by the team in Desk.",
+            "fieldname": "memory",
+            "fieldtype": "Small Text",
+            "in_list_view": 1,
+            "label": "Memory",
+            "reqd": 1
+        },
+        {
+            "description": "Whose memory this is. Recall is strictly profile-scoped — an agent never sees another profile's memories.",
+            "fieldname": "agent_profile",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Agent Profile",
+            "options": "Agent Profile",
+            "reqd": 1
+        },
+        {
+            "description": "Project this memory belongs to (Design 73). Set when the memory is learned in a project room. Recall in a project room returns THIS project's memories + untagged/global ones — never another project's. Blank = global.",
+            "fieldname": "project",
+            "fieldtype": "Link",
+            "label": "Agent Project",
+            "options": "Agent Project"
+        },
+        {
+            "description": "Optional grouping tag — a client, a record ID (e.g. 'PRJ-0007'), a topic. For filtering in Desk.",
+            "fieldname": "subject",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Subject"
+        },
+        {
+            "default": "general",
+            "description": "Hermes USER.md/MEMORY.md split (design 80): 'user_profile' = a fact about the USER (role, preferences, working style, pet peeves); 'general' = the agent's own notes (decisions, conventions, learnings). Recall labels them so the model treats user facts as 'about you'.",
+            "fieldname": "memory_type",
+            "fieldtype": "Select",
+            "label": "Memory Type",
+            "options": "general\nuser_profile"
+        },
+        {
+            "default": "Active",
+            "description": "Active memories are injected into every turn (newest first, token-capped). Archive instead of deleting — the audit trail stays.",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Active\nArchived"
+        },
+        {
+            "description": "The session in which this memory was learned (audit trail).",
+            "fieldname": "source_session",
+            "fieldtype": "Data",
+            "label": "Source Session",
+            "read_only": 1
+        }
+    ],
+    "links": [],
+    "module": "Friday Core",
+    "name": "Agent Memory",
+    "naming_rule": "Autoincrement",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "read": 1,
+            "role": "System Manager",
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "Agent Supervisor",
+            "write": 1
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

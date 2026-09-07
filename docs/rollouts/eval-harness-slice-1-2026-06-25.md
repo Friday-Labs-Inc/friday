@@ -32,7 +32,7 @@ A new package, `friday_core/evals/`, with six small files:
 ## How to run it
 
 ```bash
-bench --site <sandbox-site> execute frappe.friday_core.evals.run.run
+bench --site <sandbox-site> execute friday.friday_core.evals.run.run
 # optional: run each scenario 5×  →  ... evals.run.run --kwargs '{"n": 5}'
 ```
 

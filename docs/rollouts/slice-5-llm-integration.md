@@ -82,7 +82,7 @@ Same chokepoint discipline as Slice 4, extended with provider plumbing:
 | Per-profile provider choice | A `Link` field on Agent Profile. When set, overrides the default. |
 | Agent Settings singleton | A normal DocType row named "Agent Settings" — created by the `after_migrate` hook so a fresh `bench new-site` Just Works without manual steps. |
 | Permission check pre-LLM-call | Already done by the gateway in Slice 4; the provider call inherits that gate. (Per-skill permission check is Slice 6 territory.) |
-| HTTP call code | Python class (`MinimaxProvider`) in `frappe/friday_core/llm/provider.py`. **Cannot** live in a DocType field — Frappe's Server Script sandbox blocks `import requests`. This is the only piece that has to be in a `.py` file. |
+| HTTP call code | Python class (`MinimaxProvider`) in `friday/friday_core/llm/provider.py`. **Cannot** live in a DocType field — Frappe's Server Script sandbox blocks `import requests`. This is the only piece that has to be in a `.py` file. |
 
 The runtime flow that ties it all together:
 
@@ -118,7 +118,7 @@ Frappe-native end to end. Admins manage providers through Desk forms; engineers 
 | Decision | Hermes does | Friday does | Justification |
 |---|---|---|---|
 | Provider list source-of-truth | Hardcoded in `anthropic_adapter.py` and config files; e.g., context-window table at line 119 hardcodes Minimax's window | DocType rows seeded via fixtures; admin-editable | **Different — strategic.** Hermes is one product per deployment; Friday is N tenants × N providers (per-tenant). Code-as-config doesn't fit. |
-| Provider abstraction | One file per provider (`anthropic_adapter.py`, `bedrock_adapter.py`) | One Python class per provider TYPE in `frappe/friday_core/llm/provider.py`, plus DocType rows naming which instance to use | **Same pattern, Frappe-flavored.** Code lives in files because Python needs that; config lives in DocTypes. |
+| Provider abstraction | One file per provider (`anthropic_adapter.py`, `bedrock_adapter.py`) | One Python class per provider TYPE in `friday/friday_core/llm/provider.py`, plus DocType rows naming which instance to use | **Same pattern, Frappe-flavored.** Code lives in files because Python needs that; config lives in DocTypes. |
 | API key location | `HERMES_HOME/config.yaml` + env vars | Frappe `Password` field on the LLM Provider row (per-row, encrypted at rest) | **Different — forced** by Friday's "everything in DocType for audit" stance. |
 | Retry semantics | Per-provider, configurable | Hardcoded 3 retries with exponential backoff in `MinimaxProvider` | **Same pattern, simpler defaults.** Configurability deferred to when a customer asks. |
 | Error handling | Verbose stack traces in Hermes Error Log including request data | Redacted: error type only, response keys not values, never raw exception messages | **Different — strategic.** Friday's audit log is queryable in Desk; we don't want secrets or PII leaking via exception messages. |
@@ -213,14 +213,14 @@ This PR is the v2 of Slice 5 — the original commits (01b0901 + 80fcf8b) shippe
 ## Numbers for the record
 
 - **16 files added/modified** in Slice 5:
-  - `frappe/friday_core/llm/` (4 files: `__init__.py`, `provider.py`, `prompt_builder.py`, `after_migrate.py`)
-  - `frappe/friday_core/doctype/llm_provider/` (3 files)
-  - `frappe/friday_core/doctype/agent_settings/` (3 files)
-  - `frappe/friday_core/doctype/agent_profile/agent_profile.json` (model_provider Link options updated to `LLM Provider`)
-  - `frappe/friday_core/agent_runner/runner.py` (body rewritten; signature unchanged)
-  - `frappe/friday_core/tests/test_llm_provider.py` (NEW, 25 tests)
-  - `frappe/friday_core/tests/test_prompt_builder.py` (NEW, 20 tests)
-  - `frappe/friday_core/tests/test_chat_flow.py` (updated to patch provider instead of using the echo stub)
+  - `friday/friday_core/llm/` (4 files: `__init__.py`, `provider.py`, `prompt_builder.py`, `after_migrate.py`)
+  - `friday/friday_core/doctype/llm_provider/` (3 files)
+  - `friday/friday_core/doctype/agent_settings/` (3 files)
+  - `friday/friday_core/doctype/agent_profile/agent_profile.json` (model_provider Link options updated to `LLM Provider`)
+  - `friday/friday_core/agent_runner/runner.py` (body rewritten; signature unchanged)
+  - `friday/friday_core/tests/test_llm_provider.py` (NEW, 25 tests)
+  - `friday/friday_core/tests/test_prompt_builder.py` (NEW, 20 tests)
+  - `friday/friday_core/tests/test_chat_flow.py` (updated to patch provider instead of using the echo stub)
   - `frappe/hooks.py` (after_migrate hook for Agent Settings)
   - `docs/contributing/proposals/slice-5-llm-integration.md` (the implementation proposal)
   - `docs/rollouts/slice-5-llm-integration.md` (this file)
