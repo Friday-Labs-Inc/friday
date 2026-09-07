@@ -1,7 +1,7 @@
 # Design 98 — The surface contract (Raven leaves the kernel)
 
 **Status:** DECIDED 2026-09-07 (debated; owner agreed). Build after the stage-table
-driver (Design 01 in design_studio), alongside the back-office SPA. Issue #222.
+driver (Design 01 in randompack), alongside the back-office SPA. Issue #222.
 **Supersedes:** Design 58's "Raven is required, fail loudly" — right for a kernel
 that *was* the human interface; wrong for one that sits under a studio console.
 Raven AI stays **off** regardless (58 §Raven AI still applies).
@@ -51,7 +51,7 @@ Rules:
 
 ## Where Raven goes
 
-`design_studio/surfaces/raven/` — adapter, bootstrap, war room, project
+`randompack/surfaces/raven/` — adapter, bootstrap, war room, project
 channels, the 17 kernel test modules that touch Raven tables. A package, so it
 can be lifted into a `friday_raven` app later if a non-studio deployment wants it.
 
@@ -59,9 +59,9 @@ can be lifted into a `friday_raven` app later if a non-studio deployment wants i
 
 1. Land the contract types + hook + CLI surface + health signal, with Raven
    still in the kernel but *calling through the contract* (no behaviour change).
-2. Move the Raven package to design_studio; kernel allow-list goes to zero.
-3. Flip `required_apps`. Kernel CI stops installing Raven; design_studio CI keeps it.
-4. SPA renders approvals from the record (design_studio #11); Raven's approve
+2. Move the Raven package to randompack; kernel allow-list goes to zero.
+3. Flip `required_apps`. Kernel CI stops installing Raven; randompack CI keeps it.
+4. SPA renders approvals from the record (randompack #11); Raven's approve
    action resolves the same record.
 
 ## What does not change
