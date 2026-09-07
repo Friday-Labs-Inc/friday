@@ -9,6 +9,12 @@ dependencies = [
     # Sandboxed skill execution. Imported lazily; declared so a deploy that
     # intends to use the sandbox fails at install, not at first agent turn.
     "docker>=7.1.0",
+    # llm/provider.py: the OpenAI-compatible client (MiniMax, OpenAI, …) and the
+    # httpx timeout/exception types it wires. Neither was declared; the dev bench
+    # only had openai because raven pulls it in, and httpx not at all — CI on a
+    # stock bench surfaced 18 ModuleNotFoundError cases.
+    "openai>=1.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
