@@ -113,6 +113,10 @@ jobs:
           for app in raven erpnext friday; do
             bench --site test.localhost install-app "$app"
           done
+          # install-app does NOT run after_migrate hooks; migrate does. The kernel's
+          # Postgres side-channel schema (tsvector/pgvector columns) lives there,
+          # and "migrate clean" is part of the definition of done anyway.
+          bench --site test.localhost migrate
           bench --site test.localhost set-config allow_tests true
 
       - name: Run the kernel suite (ratchet gate)
