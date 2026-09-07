@@ -85,3 +85,7 @@ normally, and Friday installs beside ERPNext. The one upstream fix it still
 carries is documented in `friday/friday_core/compat.py`.
 
 Derived from [Frappe Framework](https://github.com/frappe/frappe), GPL v3.
+
+## License
+
+AGPL-3.0-or-later. See [LICENSE](LICENSE). Friday runs on [Frappe](https://github.com/frappe/frappe) (MIT) beside [ERPNext](https://github.com/frappe/erpnext) (GPL-3.0) and [Raven](https://github.com/The-Commit-Company/raven) (AGPL-3.0).

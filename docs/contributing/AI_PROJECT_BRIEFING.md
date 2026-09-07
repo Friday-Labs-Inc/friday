@@ -55,8 +55,8 @@ PR numbering is up to **#132** on `main`. The codebase is past
 ### 1.2 Two products under one org
 
 - **Friday** = the engine (this fork). Generic, governed, agentic.
-- **RandomPack** = the first domain (a brand studio productising Rajiv
-  Ranjan's design work). Lives at `~/Documents/RandomPack/randompack-bench`,
+- **RandomPack** = the first domain (a brand studio productising its founding
+  Creative Director's design work). Lives at `~/Documents/RandomPack/randompack-bench`,
   separate Frappe v15 bench. **RandomPack is Friday's proof, not
   Friday's definition.**
 
@@ -117,7 +117,7 @@ Friday Core has three generic pillars: (1) agent runtime [Hermes port],
 `system`). Future: 81c MCP, 81d chat, 81e A2A.
 
 ### 2.4 The law (apply to every line)
-**If code names a brand, "Rajiv", a gate, or a "direction," it belongs
+**If code names a brand, a person, a gate, or a "direction," it belongs
 in a domain bundle or the RandomPack app — NEVER Friday Core.** Core
 must make equal sense for a law firm, a manufacturer, a hospital.
 
@@ -417,7 +417,7 @@ Every shipped change carries:
    record. Append a one-paragraph dated entry to
    `docs/project/IMPLEMENTATION_LOG.md`.
 
-### 5.11 Rajiv's design bar (for creative / UI work)
+### 5.11 The Creative Director's design bar (for creative / UI work)
 TWO reference systems — Draft. (austere-mono) + Rajive Studio
 (warm-luxe). They diverge on surface rules but share one soul. Gate
 on the **PRINCIPLE**, not on one brand's hard-nos as universal:
@@ -445,7 +445,7 @@ findings:
 ### 5.13 The 3 things that make RandomPack a system (not "run some prompts")
 1. **Shared token set** (stage 5): brand + site render from one source
    of truth. Coherence trick — they can't drift apart.
-2. **Two gates** = the ONLY human touchpoints. Rajiv's taste enters
+2. **Two gates** = the ONLY human touchpoints. The Creative Director's taste enters
    once at the direction level and propagates. ~1 hr/project = the
    economic engine.
 3. **Flywheel** (Gate 1 → critic): every accept/reject trains the critic

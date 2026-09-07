@@ -342,7 +342,7 @@ def dispatch(
 		# Run the skill AS THE AGENT'S OWN USER. Without this, handlers'
 		# frappe.has_permission checks run as the AMBIENT session user — whoever
 		# happened to trigger the turn. Found live on the Friday Labs E2E, twice:
-		# a human (Rajiv) firing "Creative Ready" leaked HIS narrower perms into
+		# the human Creative Director firing "Creative Ready" leaked HIS narrower perms into
 		# a phase worker, and a connector webhook leaked the GATEWAY
 		# user (gateway+brand@…) into the AI Production turn — both denied file
 		# reads the agent's own user was fully permitted to make. An agent turn
