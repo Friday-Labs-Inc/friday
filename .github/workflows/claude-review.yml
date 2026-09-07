@@ -1,0 +1,77 @@
+# Automated PR review by Claude, against this repo's CLAUDE.md.
+#
+# Runs on every non-draft PR (open, push, ready-for-review, reopen). Posts inline
+# comments for specific findings and ONE summary review: "request changes" when
+# any CRITICAL or HIGH finding survives, otherwise a comment. A human still
+# merges; branch protection on main requires the Tests check + one approval.
+#
+# Auth: the secret is created by `/install-github-app` in Claude Code. It stores
+# CLAUDE_CODE_OAUTH_TOKEN (subscription) or ANTHROPIC_API_KEY (metered) — either
+# input below works; the unused one stays empty.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are the reviewer of record for this pull request. Read CLAUDE.md first —
+            its rules are the review standard — then review the diff (`gh pr diff`), reading
+            surrounding code with Read/Grep where the diff alone cannot settle a question.
+
+            Look for, in this order of severity:
+            - CRITICAL: a security hole (secrets, injection, an AI write path that bypasses the
+              permission matrix / Execution Log, a client-facing endpoint without auth or rate
+              limit), data loss, or a change that breaks install/migrate.
+            - HIGH: a correctness bug with a concrete failing input, a Postgres transaction-abort
+              hazard (an unguarded query on a table that may not exist), a test that cannot fail,
+              domain vocabulary leaking into the kernel, or a new kernel file naming Raven.
+            - MEDIUM: missing test for changed behaviour, a rule in CLAUDE.md not followed,
+              a migration/patch without the module guard, misleading docs or commit message.
+            - LOW: naming, clarity, small simplifications.
+
+            Verify before you report: every finding must name file:line and a concrete
+            failure scenario. Do not report style preferences as findings. Do not restate
+            the PR description. Praise is not a finding.
+
+            Then act:
+            1. Post each CRITICAL/HIGH/MEDIUM finding as an inline comment on the exact line.
+            2. Post ONE summary review with `gh pr review`:
+               - if any CRITICAL or HIGH remains: `gh pr review --request-changes --body "..."`
+               - otherwise: `gh pr review --comment --body "..."`
+               The body: a severity-ranked list (one line each, file:line, the claim), then the
+               verification checklist from the PR template with what you could and could not
+               confirm. Under 300 words.
+            Never approve — approval is a human's.
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
