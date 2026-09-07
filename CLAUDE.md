@@ -6,9 +6,12 @@
 - The kernel contains **no domain code and no domain vocabulary**. Studio-specific logic lives in
   `Friday-Labs-Inc/design_studio` and plugs in through six seams declared in `friday/hooks.py`:
   `friday_skill_handlers`, `friday_skill_definitions`, `friday_task_transition_hooks`,
-  `friday_reference_registry`, the `doc_events["*"]` engine subscription, and the Domain Bundle field map.
-- **Raven is required and is the surface** (channels, DMs, bot identity). Raven's own AI stays **off** —
-  `surfaces/bootstrap_raven.py` pins `is_ai_bot = 0`; `health/pipeline_health.py` reports it degraded if flipped.
+  `friday_reference_registry`, the `doc_events["*"]` engine subscription, and the Domain Bundle field map
+  (a seventh, `friday_surfaces`, is specified in Design 98).
+- **Raven is leaving the kernel** (Design 98, #222): it becomes one surface behind the `friday_surfaces`
+  contract, provided by design_studio; until then it is still `required_apps` and still the chat front door.
+  **No new kernel file may mention Raven** — `tests/test_surface_boundary.py` enforces it (allow-list only shrinks).
+  Raven's own AI stays **off** regardless (`bootstrap_raven` pins `is_ai_bot = 0`).
 - Work objects are `Agent Project` / `Agent Task` / `Agent Issue`. ERPNext owns `Project` / `Task` / `Issue`.
 
 ## Dev loop
@@ -34,7 +37,9 @@
 - Branch `feat/<issue#>-short-name` (also `fix/`, `refactor/`, `ci/`, `docs/`).
 - Conventional commits: `feat | fix | refactor | docs | test | chore | perf | ci`.
 - Before opening a PR: gate green locally, migrate clean, `code-reviewer` + `security-reviewer` run and every CRITICAL/HIGH fixed.
-- PRs use `.github/pull_request_template.md`. **A human merges; Claude never merges.**
+- PRs use `.github/pull_request_template.md`. Every PR gets an automated Claude review (`claude-review.yml`):
+  CRITICAL/HIGH → *changes requested*, otherwise a comment; `@claude` in any comment asks a follow-up.
+  `main` requires the Tests check and one human approval. **A human merges; Claude never merges or approves.**
 - Definition of done: tests green · no new red module · migrate clean · review findings addressed · `docs/design` updated if a decision changed.
 
 ## Where things are
