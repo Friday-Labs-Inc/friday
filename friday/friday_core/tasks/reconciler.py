@@ -358,7 +358,7 @@ def _reconcile_transient_blocked() -> int:
 
 def _reconcile_connector_events() -> int:
 	"""
-	The connector durability gap (Design 81; was Q7a for RandomPack). The
+	The connector durability gap (Design 81; was Q7a for the first connector). The
 	intake acks 200 and persists the event row as `Received`, then enqueues
 	processing on the friday queue. If that worker was down at the moment of
 	enqueue, the event sits Received forever — the source sees `Delivered` but

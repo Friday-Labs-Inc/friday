@@ -7,7 +7,7 @@ The generic governed read tools (design 66a).
 Why this exists, in plain English
 =================================
 Until today every Friday skill was a one-directional verb:
-``create-brand-direction`` writes a row, ``remember`` writes a row,
+``remember`` writes a row,
 ``update-task`` writes rows. None of them read anything back. So when an
 operator asked "which Issues are open on PRJ-7?", the agent
 had no tool to fetch them — and the LLM, faced with a missing capability,
