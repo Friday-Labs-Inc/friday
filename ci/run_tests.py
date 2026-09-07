@@ -3,9 +3,17 @@
 
     python ci/run_tests.py --site test.localhost --app friday --known-red ci/known-red.txt
 
-Runs `bench --site <site> run-tests --app <app>` (Frappe v16 discovers every
-test_*.py under the app), tees the output to test-output.log, and reads the
-FAIL:/ERROR: lines to find which test MODULES went red.
+Default mode runs ONE `bench run-tests --module <m>` PROCESS PER TEST MODULE, in
+sorted order. That is deterministic on every machine and state leaked by one
+module (a lingering mock, an after_commit callback, a patched global) cannot
+poison the next — `bench run-tests --app` runs everything in one process in
+os.walk order, which differs between a dev container and CI and made the same
+suite report different red modules on each (friday#215).
+
+`--whole-suite` runs the single-process `--app` mode instead: faster, stricter,
+and the right tool for hunting those leaks.
+
+Output is teed to test-output.log; FAIL:/ERROR: lines say which MODULES went red.
 
 The gate then fails if:
   - any module NOT listed in known-red went red        (a regression), or
@@ -42,6 +50,19 @@ def read_known(path: Path | None) -> set[str]:
 	}
 
 
+def discover_modules(app_path: Path) -> list[str]:
+	"""Same rule as frappe.testing.discovery.discover_all_tests, but SORTED."""
+	skip = {"node_modules", "locals", "public", "__pycache__"}
+	found = []
+	for path in sorted(app_path.rglob("test_*.py")):
+		if path.name == "test_runner.py" or any(part in skip or part.startswith(".") for part in path.parts):
+			continue
+		if "doctype/doctype/boilerplate" in path.as_posix():
+			continue
+		found.append(".".join(path.relative_to(app_path.parent).with_suffix("").parts))
+	return found
+
+
 def module_of(dotted: str) -> str:
 	"""friday.friday_core.tests.test_x.TestCase.test_method -> ...tests.test_x
 
@@ -67,24 +88,43 @@ def main() -> int:
 		"--min-tests", type=int, default=0,
 		help="fail if fewer tests ran (guards against discovery silently collapsing)",
 	)
+	ap.add_argument("--whole-suite", action="store_true", help="single process via --app (leak hunting)")
+	ap.add_argument("--app-path", type=Path, help="package dir of the app (default apps/<app>/<app>)")
 	args = ap.parse_args()
 
-	cmd = ["bench", "--site", args.site, "run-tests", "--app", args.app]
-	print("+", " ".join(cmd), flush=True)
 	red: set[str] = set()
 	ran = None
+	returncode = 0
 	with args.log.open("w") as log:
-		proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-		assert proc.stdout
-		for line in proc.stdout:
-			sys.stdout.write(line)
-			log.write(line)
-			if m := RED_LINE.match(line):
-				red.add(module_of(m.group(1)))
-			elif m := RAN_LINE.match(line):
-				# one "Ran N tests" line per suite block — accumulate, don't overwrite
-				ran = (ran or 0) + int(m.group(1))
-		proc.wait()
+		if args.whole_suite:
+			cmds = [["bench", "--site", args.site, "run-tests", "--app", args.app]]
+		else:
+			app_path = args.app_path or Path("apps") / args.app / args.app
+			modules = discover_modules(app_path)
+			print(f"{len(modules)} test modules under {app_path}", flush=True)
+			cmds = [["bench", "--site", args.site, "run-tests", "--module", m] for m in modules]
+		for cmd in cmds:
+			print("+", " ".join(cmd), flush=True)
+			log.write("+ " + " ".join(cmd) + "\n")
+			ran_here = None
+			proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+			assert proc.stdout
+			for line in proc.stdout:
+				sys.stdout.write(line)
+				log.write(line)
+				if m := RED_LINE.match(line):
+					red.add(module_of(m.group(1)))
+				elif m := RAN_LINE.match(line):
+					# one "Ran N tests" line per suite block — accumulate, don't overwrite
+					ran_here = (ran_here or 0) + int(m.group(1))
+			proc.wait()
+			if ran_here is not None:
+				ran = (ran or 0) + ran_here
+			if not args.whole_suite and (proc.returncode != 0 or ran_here is None):
+				# a module that crashes before reporting, or exits non-zero with no
+				# parsable FAIL/ERROR line, is red — never silently green
+				red.add(cmd[-1])
+			returncode = returncode or proc.returncode
 
 	known = read_known(args.known_red)
 	new_red = sorted(red - known)
@@ -101,8 +141,8 @@ def main() -> int:
 		status = 1
 	# A non-zero exit is expected only while known-red modules are still red.
 	expected_failure = bool(red) and red <= known and ran is not None
-	if proc.returncode != 0 and not expected_failure and not new_red:
-		print(f"GATE: bench exited {proc.returncode} without a matching red module — treating as a crash")
+	if returncode != 0 and not expected_failure and not new_red:
+		print(f"GATE: bench exited {returncode} without a matching red module — treating as a crash")
 		status = 1
 	if new_red:
 		print("GATE: NEW red modules (regressions):")

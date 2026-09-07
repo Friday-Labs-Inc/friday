@@ -121,6 +121,7 @@ jobs:
           python "$GITHUB_WORKSPACE/friday/ci/run_tests.py" \
             --site test.localhost --app friday \
             --known-red "$GITHUB_WORKSPACE/friday/ci/known-red.txt" \
+            --app-path "$GITHUB_WORKSPACE/friday/friday" \
             --min-tests 1200
 
       - uses: actions/upload-artifact@v4

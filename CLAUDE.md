@@ -17,7 +17,7 @@
 - Whole suite, ~15 s:   `bench --site unfork.localhost run-tests --app friday`
 - One module:           `bench --site unfork.localhost run-tests --module friday.friday_core.tests.test_x`
 - The gate (same script CI runs, against the local site):
-  `python ci/run_tests.py --site unfork.localhost --app friday --known-red ci/known-red.txt --min-tests 1200`
+  `python ci/run_tests.py --site unfork.localhost --app friday --app-path friday --known-red ci/known-red.txt --min-tests 1200` (one process per module, sorted; add `--whole-suite` to hunt cross-module leaks)
 - Schema:               `bench --site unfork.localhost migrate` must be clean.
 
 ## Rules
