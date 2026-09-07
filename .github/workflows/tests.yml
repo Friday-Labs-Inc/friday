@@ -1,0 +1,136 @@
+# Kernel test gate. Builds a bench from STOCK frappe version-16 (Friday is an
+# app, not a fork), installs raven + erpnext + friday on a Postgres site with
+# pgvector — erpnext because "installs beside ERPNext" is a kernel invariant
+# (Agent Project/Task/Issue must coexist with ERPNext's) — and runs every test
+# module under friday/ through ci/run_tests.py.
+#
+# raven is fetched from its develop branch: that is the branch that tracks
+# Frappe v16 (no release tag does yet). If a raven push turns this red, pin
+# the last good SHA here and open an issue.
+#
+# The gate is a ratchet: a module going red that is not in ci/known-red.txt
+# fails the build; a known-red module going green also fails until its line
+# is removed. So the list can only shrink.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel:
+    name: friday · stock Frappe v16 · Postgres + pgvector
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: root
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis-cache:
+        image: redis:alpine
+        ports: ["13000:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis-queue:
+        image: redis:alpine
+        ports: ["11000:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: friday
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24  # frappe v16 requires >=24
+
+      - name: Install bench
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpq-dev postgresql-client
+          pip install --quiet frappe-bench
+
+      - name: Init bench on stock frappe version-16
+        run: |
+          bench init --skip-redis-config-generation --skip-assets \
+            --frappe-branch version-16 --python "$(which python)" frappe-bench
+          cd frappe-bench
+          bench set-config -g db_host 127.0.0.1
+          bench set-config -g redis_cache  redis://127.0.0.1:13000
+          bench set-config -g redis_queue  redis://127.0.0.1:11000
+          bench set-config -g redis_socketio redis://127.0.0.1:11000
+
+      - name: Parser self-test
+        run: python -m unittest friday/ci/test_run_tests.py
+
+      - name: Get apps (raven is required_apps; erpnext for coexistence; friday from this checkout)
+        working-directory: frappe-bench
+        run: |
+          bench get-app --skip-assets raven   https://github.com/The-Commit-Company/raven --branch develop
+          bench get-app --skip-assets erpnext https://github.com/frappe/erpnext --branch version-16
+          bench get-app --skip-assets friday "$GITHUB_WORKSPACE/friday"
+
+      - name: Create site with pgvector + pg_trgm, install apps
+        working-directory: frappe-bench
+        run: |
+          bench new-site test.localhost --db-type postgres \
+            --db-host 127.0.0.1 --db-port 5432 \
+            --db-root-username postgres --db-root-password root \
+            --admin-password admin
+          DB=$(python -c "import json;print(json.load(open('sites/test.localhost/site_config.json'))['db_name'])")
+          PGPASSWORD=root psql -h 127.0.0.1 -U postgres -d "$DB" \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm'
+          for app in raven erpnext friday; do
+            bench --site test.localhost install-app "$app"
+          done
+          # install-app does NOT run after_migrate hooks; migrate does. The kernel's
+          # Postgres side-channel schema (tsvector/pgvector columns) lives there,
+          # and "migrate clean" is part of the definition of done anyway.
+          bench --site test.localhost migrate
+          bench --site test.localhost set-config allow_tests true
+
+      - name: Run the kernel suite (ratchet gate)
+        working-directory: frappe-bench
+        run: |
+          python "$GITHUB_WORKSPACE/friday/ci/run_tests.py" \
+            --site test.localhost --app friday \
+            --known-red "$GITHUB_WORKSPACE/friday/ci/known-red.txt" \
+            --app-path "$GITHUB_WORKSPACE/friday/friday" \
+            --min-tests 1200
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output
+          path: frappe-bench/test-output.log
+          retention-days: 7

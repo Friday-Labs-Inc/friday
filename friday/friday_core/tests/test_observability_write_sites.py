@@ -24,6 +24,25 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+# Three tests below record usage / crash a runner AS profile "Friday". The dev
+# site has that profile from `bench friday setup`; a fresh CI site does not, and
+# the Link validation on LLM Usage Log / Agent Task made emit() swallow the row —
+# events came back empty. A test must not depend on operator setup.
+FIXTURE_PROFILE = "Friday"
+
+
+def setUpModule():
+	if not frappe.db.exists("Agent Profile", FIXTURE_PROFILE):
+		frappe.get_doc(
+			{
+				"doctype": "Agent Profile",
+				"profile_name": FIXTURE_PROFILE,
+				"agent_role": "Specialist",
+				"status": "Active",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+
 
 def _clear_events_for_task(task_name: str) -> None:
 	frappe.db.sql("DELETE FROM `tabDispatcher Event` WHERE task = %s", (task_name,))

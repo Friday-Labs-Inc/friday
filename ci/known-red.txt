@@ -1,0 +1,7 @@
+# Test modules known to be red. The gate fails on any OTHER red module, and on
+# any module listed here that turns green (delete its line). One issue each.
+friday.friday_core.tests.test_llm_provider            # #211
+friday.friday_core.tests.test_openai_provider         # #211
+friday.friday_core.tests.test_chat_flow               # #212
+friday.friday_core.tests.test_dispatcher              # #213
+friday.friday_core.tests.test_command_center          # #214

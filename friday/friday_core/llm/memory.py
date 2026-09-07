@@ -134,9 +134,16 @@ def recall_block(
 	the original recency-only behaviour — never breaking the prompt build.
 	"""
 	if query and query.strip() and frappe.db.db_type == "postgres":
+		# A failed statement ABORTS the Postgres transaction, so without a
+		# savepoint the recency fallback below would die too — with
+		# "current transaction is aborted" — and take the whole turn with it.
+		# Seen on a site whose after_migrate DDL had not run (no memory_search
+		# column): every prompt build failed. Roll back JUST the scored attempt.
 		try:
+			frappe.db.savepoint("friday_recall_scored")
 			return _recall_scored(profile_name, project, token_budget, query)
 		except Exception:
+			frappe.db.rollback(save_point="friday_recall_scored")
 			frappe.logger("friday.memory").warning(
 				"scored recall failed; falling back to recency-only", exc_info=True
 			)
