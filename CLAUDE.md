@@ -37,7 +37,9 @@
 - Branch `feat/<issue#>-short-name` (also `fix/`, `refactor/`, `ci/`, `docs/`).
 - Conventional commits: `feat | fix | refactor | docs | test | chore | perf | ci`.
 - Before opening a PR: gate green locally, migrate clean, `code-reviewer` + `security-reviewer` run and every CRITICAL/HIGH fixed.
-- PRs use `.github/pull_request_template.md`. **A human merges; Claude never merges.**
+- PRs use `.github/pull_request_template.md`. Every PR gets an automated Claude review (`claude-review.yml`):
+  CRITICAL/HIGH → *changes requested*, otherwise a comment; `@claude` in any comment asks a follow-up.
+  `main` requires the Tests check and one human approval. **A human merges; Claude never merges or approves.**
 - Definition of done: tests green · no new red module · migrate clean · review findings addressed · `docs/design` updated if a decision changed.
 
 ## Where things are
