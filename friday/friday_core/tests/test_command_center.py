@@ -12,7 +12,7 @@ Mock-based — no DB, no model. Pins:
   - the Project command-loop skills: validation + state changes
 
 The domain halves (the write-back bridge and the studio event handlers) live
-with their app, as design_studio/tests/test_command_center.py. The pipeline
+with their app, as randompack/tests/test_command_center.py. The pipeline
 template tests went with the pre-Design-75 pipeline they covered.
 """
 

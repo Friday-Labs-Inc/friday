@@ -10,7 +10,7 @@ A skill handler is the Python function that runs when the agent calls a skill.
 The kernel keeps ONE registry (``_SKILL_HANDLERS``); any app adds handlers by
 listing the modules that register them in its ``hooks.py``::
 
-    friday_skill_handlers = ["design_studio.skills.handlers_brand"]
+    friday_skill_handlers = ["randompack.skills.handlers_brand"]
 
 Those modules are imported lazily, once per site, the first time a handler is
 looked up (``get_skill_handler``). Importing a module runs its

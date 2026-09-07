@@ -61,7 +61,7 @@ through published seams — never by editing this kernel:
 | `friday_task_transition_hooks` | `fn(doc, state)` after every Task transition |
 | `friday_reference_registry` | `@REC-0001` reference prefixes |
 
-[`design_studio`](https://github.com/Friday-Labs-Inc/design_studio) is a
+[`randompack`](https://github.com/Friday-Labs-Inc/randompack) is a
 worked example: an entire design-studio pipeline — phases, gates, personas,
 client surfaces — with no kernel changes.
 
