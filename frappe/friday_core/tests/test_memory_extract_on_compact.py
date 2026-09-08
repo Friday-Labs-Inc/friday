@@ -25,6 +25,11 @@ from unittest.mock import MagicMock, patch
 
 from frappe.friday_core.llm import compression as C
 
+# embed.enqueue_embed runs the REAL frappe.enqueue(enqueue_after_commit=True) — the
+# handler module's frappe is mocked here, embed's is not — so without this patch a
+# MagicMock doc name leaks into frappe.db.after_commit and poisons the next commit
+# anywhere in the suite (a fresh-site CI run saw it kill eight unrelated modules).
+_EMB = "frappe.friday_core.llm.embed.enqueue_embed"
 _C = "frappe.friday_core.llm.compression"
 _MEM = "frappe.friday_core.llm.memory.project_for_session"
 
@@ -76,7 +81,7 @@ class TestExtractFactsBeforeCompaction(unittest.TestCase):
 
 	def test_writes_new_memory_rows(self):
 		provider = self._provider('[{"memory": "Loop hates serifs", "subject": "WI-1"}]')
-		with patch(f"{_C}.frappe") as fr, patch(_MEM, return_value="PROJ-1"):
+		with patch(f"{_C}.frappe") as fr, patch(_EMB), patch(_MEM, return_value="PROJ-1"):
 			fr.db.exists.return_value = False
 			doc = MagicMock()
 			fr.get_doc.return_value = doc
@@ -92,7 +97,7 @@ class TestExtractFactsBeforeCompaction(unittest.TestCase):
 
 	def test_dedup_skips_existing(self):
 		provider = self._provider('[{"memory": "already known"}]')
-		with patch(f"{_C}.frappe") as fr, patch(_MEM, return_value=None):
+		with patch(f"{_C}.frappe") as fr, patch(_EMB), patch(_MEM, return_value=None):
 			fr.db.exists.return_value = True  # the agent already holds it
 			written = C._extract_facts_before_compaction("Friday", "s", [{"content": "x"}], provider)
 		self.assertEqual(written, 0)
@@ -101,14 +106,14 @@ class TestExtractFactsBeforeCompaction(unittest.TestCase):
 	def test_provider_failure_is_best_effort(self):
 		provider = MagicMock()
 		provider.chat.side_effect = RuntimeError("model down")
-		with patch(f"{_C}.frappe") as fr, patch(_MEM, return_value=None):
+		with patch(f"{_C}.frappe") as fr, patch(_EMB), patch(_MEM, return_value=None):
 			written = C._extract_facts_before_compaction("Friday", "s", [{"content": "x"}], provider)
 		self.assertEqual(written, 0)
 		fr.logger.return_value.warning.assert_called()  # logged, not raised
 
 	def test_no_facts_writes_nothing(self):
 		provider = self._provider("[]")
-		with patch(f"{_C}.frappe") as fr, patch(_MEM, return_value=None):
+		with patch(f"{_C}.frappe") as fr, patch(_EMB), patch(_MEM, return_value=None):
 			written = C._extract_facts_before_compaction("Friday", "s", [{"content": "x"}], provider)
 		self.assertEqual(written, 0)
 		fr.get_doc.assert_not_called()

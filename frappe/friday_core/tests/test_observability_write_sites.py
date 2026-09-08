@@ -24,6 +24,18 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+# Three tests record usage / crash a runner AS profile "Friday". A dev site has it
+# from `bench friday setup`; a fresh site does not, and the Link validation on
+# LLM Usage Log / Task makes emit() swallow the row. A test must not depend on
+# operator setup.
+FIXTURE_PROFILE = "Friday"
+
+
+def setUpModule():
+	if not frappe.db.exists("Agent Profile", FIXTURE_PROFILE):
+		frappe.get_doc({"doctype": "Agent Profile", "profile_name": FIXTURE_PROFILE, "agent_role": "Specialist", "status": "Active"}).insert(ignore_permissions=True)
+		frappe.db.commit()
+
 
 def _clear_events_for_task(task_name: str) -> None:
 	frappe.db.sql("DELETE FROM `tabDispatcher Event` WHERE task = %s", (task_name,))
