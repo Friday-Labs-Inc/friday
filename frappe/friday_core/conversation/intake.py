@@ -27,7 +27,7 @@ The pure pieces — `build_extraction_messages`, `parse_deltas`, `extract_deltas
 plain data + an injectable provider and never touch Frappe. `stream_intake_turn`
 orchestrates them with injectable `history_fn` / `persist_fn` / `provider`, so the
 whole turn is unit-testable with a fake provider and no DB. The field VOCABULARY is
-injected (`fields`), never hardcoded — the consuming product (RandomPack's wizard)
+injected (`fields`), never hardcoded — the consuming product's wizard
 owns the field names; Friday stays semantic.
 """
 

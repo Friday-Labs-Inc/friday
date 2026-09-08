@@ -728,3 +728,7 @@ friday_task_transition_hooks = []
 # Dotted paths to dicts of {"@PREFIX-": (doctype, content_fields)} merged into
 # the @-reference registry (see llm/references.py).
 friday_reference_registry = []
+
+# Dotted paths to list[tuple[file_name_prefix, customer_title]] — which phase
+# outputs a customer receives, contributed by domain apps.
+friday_customer_title_map = []

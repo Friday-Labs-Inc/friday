@@ -6,7 +6,7 @@ every integration with an external ecosystem.
 
 This package is CORE / `integration` track: the signed-event intake, the
 dispatch, the outbound client, and the audit are generic. The *meaning* of a
-connector's events (e.g. RandomPack's project.created -> engine) lives in that
+connector's events (e.g. a studio app's project.created -> engine) lives in that
 connector's domain module, pointed to by Connector.handler_module. The seam is
 generic; the meaning is domain data.
 """

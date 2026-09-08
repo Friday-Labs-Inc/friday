@@ -40,7 +40,7 @@ _PREFIX = "deliverable-"
 # The internal deliverable-*.md/.pdf files above are working artifacts. What a
 # paying client receives is different: branded PDFs with HUMAN names ("Friday
 # Labs Inc — Brand Guidelines.pdf", not brand-guidelines8e02e8.md), and ONLY
-# the finished work — the Friday Labs E2E pushed the Creative Director's
+# the finished work — an early E2E pushed a human reviewer's
 # internal refinement notes to the customer because nothing marked the
 # boundary. The boundary is the `is_customer_facing` flag on File (ensured by
 # after_migrate below); the bridge pushes only flagged files.
@@ -51,16 +51,26 @@ CUSTOMER_FLAG_FIELD = "is_customer_facing"
 # Phase-output file patterns → the human titles the customer sees. Matched by
 # file_name prefix against the Friday Project's attached files; for patterns
 # with multiple versions (refine rounds re-attach), the NEWEST wins. Anything
-# not in this map (working notes, the CD's system doc, drafts) stays internal
-# unless the CD flags it customer-facing in Desk himself.
-CUSTOMER_TITLE_MAP: list[tuple[str, str]] = [
-	("brand-guidelines", "Brand Guidelines"),
-	("production-package", "Brand System — Production Package"),
-	("gate2-final-review", "Final Review (Gate 2)"),
-	("gate1-client-presentation", "Direction Presentation (Gate 1)"),
-	("naming-candidates", "Naming Candidates"),
-	("strategy", "Brand Strategy"),
-]
+# not in the map (working notes, drafts) stays internal unless a human flags it
+# customer-facing in Desk.
+#
+# The kernel ships the map EMPTY: which phase outputs a customer receives is
+# domain knowledge. A domain app contributes its rows through the
+# ``friday_customer_title_map`` hook — dotted paths to ``list[tuple[str, str]]``.
+CUSTOMER_TITLE_MAP: list[tuple[str, str]] = []
+
+
+def customer_title_map() -> list[tuple[str, str]]:
+	"""The kernel's (empty) map plus every domain app's rows, first match wins."""
+	rows = list(CUSTOMER_TITLE_MAP)
+	for path in frappe.get_hooks("friday_customer_title_map") or []:
+		try:
+			rows.extend(frappe.get_attr(path))
+		except Exception:
+			frappe.logger("friday.deliverables").warning(
+				f"friday_customer_title_map entry {path!r} failed to load", exc_info=True
+			)
+	return rows
 
 
 def ensure_customer_facing_field() -> None:
@@ -255,14 +265,14 @@ def _deliverable_html(title: str, body_html: str, brand_context: "dict | None" =
 def select_customer_sources(files: "list[dict]") -> "list[tuple[str, dict]]":
 	"""Pick the customer-deliverable set from a Project's File rows. Pure.
 
-	`files` rows need {name, file_name, creation}. For each CUSTOMER_TITLE_MAP
+	`files` rows need {name, file_name, creation}. For each customer_title_map()
 	pattern, the NEWEST matching .md wins (refine rounds re-attach new versions —
 	the customer gets the latest, once). Returns [(human_title, file_row)] in map
 	order. Anything unmatched (refinement notes, the CD's working docs, images)
 	is NOT selected — internal stays internal unless the CD flags it himself.
 	"""
 	out: list[tuple[str, dict]] = []
-	for prefix, human_title in CUSTOMER_TITLE_MAP:
+	for prefix, human_title in customer_title_map():
 		candidates = [
 			f
 			for f in files

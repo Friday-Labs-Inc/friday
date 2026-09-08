@@ -11,7 +11,7 @@ said "@Friday plan the pipeline" gets a direct "done" in their own
 channel — not just a line in the shared War Room.
 
 Independently-dispatched pipeline tasks with no originating session
-(e.g. RandomPack projects, whose report-back is the backend write-back)
+(e.g. a studio app's projects, whose report-back is the backend write-back)
 write nothing here — the War Room post remains their only signal.
 
 Never raises: a report-back failure must not break the task pipeline
