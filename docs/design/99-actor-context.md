@@ -34,6 +34,16 @@ Two hooks are the whole extension surface: **`resolve_actor`** (dotted paths, `f
 - `Execution Log` and `Permission Decision Log` carry `trace_id`.
 - Patch `add_actor_columns` adds the three columns to every existing non-child table (579 columns across 193 tables on the dev site) — a stamp that lands on some tables and not others is worse than none.
 
+## Operator note — restart workers on upgrade
+
+`enqueue()` now passes `actor=` to `execute_job`. A worker process started
+before the upgrade does not have that parameter and every job it picks up dies
+with `TypeError: execute_job() got an unexpected keyword argument 'actor'`.
+Frappe's own upgrade path restarts workers (`bench restart` / supervisor), but
+this is the failure to expect if one is missed: async work stops, and anything
+waiting on it times out rather than erroring loudly. Seen exactly once, on the
+dev bench, by leaving a worker up across the change.
+
 ## What it does NOT do
 
 - No new permission check. The actor is *identity and provenance*; the permission matrix and the approval gate are unchanged.
