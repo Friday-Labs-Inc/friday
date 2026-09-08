@@ -35,13 +35,10 @@ import frappe
 def acting_as(user: str):
 	"""Run the wrapped block as `user`, then always restore the prior user.
 
-	Mirrors the framework's own set_user/try/finally idiom. The restore in the
-	`finally` is the whole point — a transition that throws must never leave the
-	worker stuck impersonating an agent.
+	Design 99: delegates to the framework's `frappe.acting_as`, which restores
+	BOTH the session user and the actor context (who is acting: agent / human /
+	system) — so a transition fired as an agent's user is stamped as that agent
+	on every row it writes, and the worker never stays impersonating anyone.
 	"""
-	previous = frappe.session.user
-	frappe.set_user(user)
-	try:
+	with frappe.acting_as(user):
 		yield
-	finally:
-		frappe.set_user(previous)

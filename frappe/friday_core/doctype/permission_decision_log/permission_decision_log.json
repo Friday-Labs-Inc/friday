@@ -8,15 +8,58 @@
   "decision",
   "reason",
   "matrix_snapshot",
-  "decided_at"
+  "decided_at",
+  "trace_id"
  ],
  "fields": [
-  {"fieldname": "agent_profile", "fieldtype": "Link", "in_list_view": 1, "label": "Agent Profile", "options": "Agent Profile", "reqd": 1},
-  {"fieldname": "skill", "fieldtype": "Link", "in_list_view": 1, "label": "Skill", "options": "Skill", "reqd": 1},
-  {"fieldname": "decision", "fieldtype": "Select", "in_list_view": 1, "label": "Decision", "options": "allowed\ndenied", "reqd": 1},
-  {"fieldname": "reason", "fieldtype": "Small Text", "label": "Reason"},
-  {"fieldname": "matrix_snapshot", "fieldtype": "JSON", "label": "Matrix Snapshot (JSON)"},
-  {"fieldname": "decided_at", "fieldtype": "Datetime", "in_list_view": 1, "label": "Decided At", "reqd": 1}
+  {
+   "fieldname": "agent_profile",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Agent Profile",
+   "options": "Agent Profile",
+   "reqd": 1
+  },
+  {
+   "fieldname": "skill",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Skill",
+   "options": "Skill",
+   "reqd": 1
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Decision",
+   "options": "allowed\ndenied",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "matrix_snapshot",
+   "fieldtype": "JSON",
+   "label": "Matrix Snapshot (JSON)"
+  },
+  {
+   "fieldname": "decided_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Decided At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "trace_id",
+   "fieldtype": "Data",
+   "label": "Trace",
+   "read_only": 1,
+   "search_index": 1
+  }
  ],
  "is_submittable": 1,
  "links": [],
@@ -24,8 +67,22 @@
  "name": "Permission Decision Log",
  "naming_rule": "Autoincrement",
  "permissions": [
-  {"amend": 1, "cancel": 1, "create": 1, "delete": 1, "read": 1, "role": "System Manager", "submit": 1, "write": 1},
-  {"create": 1, "read": 1, "role": "Agent Supervisor", "write": 1}
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Agent Supervisor",
+   "write": 1
+  }
  ],
  "sort_field": "creation",
  "sort_order": "DESC",

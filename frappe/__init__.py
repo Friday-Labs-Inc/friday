@@ -11,6 +11,7 @@ be used to build database driven apps.
 Read the documentation: https://frappeframework.com/docs
 """
 
+import contextlib
 import functools
 import importlib
 import inspect
@@ -202,6 +203,7 @@ def init(site: str, sites_path: str = ".", new_site: bool = False, force: bool =
 	local.form_dict = _dict()
 	local.preload_assets = {"style": [], "script": [], "icons": []}
 	local.session = _dict(user="Guest", data=_dict())
+	local.actor = _dict(kind="system", id=None, trace_id=None)
 	local.dev_server = _dev_server  # only for backwards compatibility
 	local.qb = get_query_builder(local.conf.db_type)
 	if not cache or not client_cache:
@@ -376,6 +378,71 @@ def set_user(username: str):
 	local.role_permissions = {}
 	local.new_doc_templates = {}
 	local.user_perms = None
+	local.actor = _resolve_actor(username)
+
+
+# --- Actor context (Friday, Design 99) -------------------------------------
+# WHO is acting in this context: a human, an agent, or the system. Frappe's
+# session only knows the *user*; an agent runs as its own User, so the two are
+# related but not the same. The actor is stamped on every non-child row that is
+# written (Document.set_user_and_timestamp -> _actor_kind, _actor, _trace_id),
+# carried into background jobs by enqueue(), and echoed by the request layer.
+# Apps declare `resolve_actor` hooks (dotted paths, fn(username) -> dict|None)
+# so the framework can learn "this User is agent X" without knowing agents.
+
+ACTOR_KINDS = ("human", "agent", "system")
+
+
+def _new_trace_id() -> str:
+	return generate_hash(length=16)
+
+
+def _resolve_actor(username: str | None) -> "_dict":
+	"""Actor for a user just set via set_user(): an app-declared resolver may say
+	it is an agent; otherwise it is a human. The trace id survives user switches."""
+	previous = getattr(local, "actor", None) or {}
+	trace_id = previous.get("trace_id") or _new_trace_id()
+	if username and username != "Guest" and getattr(local, "site", None):
+		try:
+			for path in get_hooks("resolve_actor") or []:
+				resolved = get_attr(path)(username)
+				if resolved and resolved.get("kind") in ACTOR_KINDS:
+					return _dict(kind=resolved["kind"], id=resolved.get("id"), trace_id=trace_id)
+		except Exception:
+			pass  # a broken resolver must never break set_user
+	return _dict(kind="human" if username != "Guest" else "system", id=None, trace_id=trace_id)
+
+
+def set_actor(kind: str = "system", id: str | None = None, trace_id: str | None = None) -> "_dict":
+	"""Declare who is acting in this context. Returns the new actor."""
+	if kind not in ACTOR_KINDS:
+		raise ValueError(f"actor kind must be one of {ACTOR_KINDS}, got {kind!r}")
+	previous = getattr(local, "actor", None) or {}
+	local.actor = _dict(kind=kind, id=id, trace_id=trace_id or previous.get("trace_id") or _new_trace_id())
+	return local.actor
+
+
+def get_actor() -> "_dict":
+	actor = getattr(local, "actor", None)
+	if not actor:
+		local.actor = _dict(kind="system", id=None, trace_id=_new_trace_id())
+	return local.actor
+
+
+@contextlib.contextmanager
+def acting_as(user: str, *, kind: str | None = None, id: str | None = None, trace_id: str | None = None):
+	"""Run the block as `user` AND as the given actor, restoring both afterwards —
+	even when the block raises. `kind=None` lets the resolve_actor hooks decide."""
+	previous_user = local.session.user
+	previous_actor = _dict(get_actor())
+	set_user(user)
+	if kind:
+		set_actor(kind, id, trace_id or previous_actor.get("trace_id"))
+	try:
+		yield local.actor
+	finally:
+		set_user(previous_user)
+		local.actor = previous_actor
 
 
 def get_user():

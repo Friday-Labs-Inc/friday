@@ -264,3 +264,4 @@ execute:from frappe.email.doctype.notification.notification import install_notif
 execute:frappe.db.set_value("Email Account", {}, "add_x_original_from", 1)
 execute:frappe.db.set_value("Email Account", {}, "add_reply_to_header", 1)
 frappe.patches.v16_0.set_reply_to_header
+frappe.friday_core.patches.v1_0.add_actor_columns

@@ -107,6 +107,7 @@ def provision_agent_user(profile) -> str | None:
 	# Link the user back onto the profile WITHOUT saving the profile (this runs
 	# from after_insert / on_update; a save() here would re-fire those hooks).
 	frappe.db.set_value("Agent Profile", profile.get("name"), "frappe_user", email, update_modified=False)
+	frappe.cache().hset(AGENT_USER_CACHE, email, profile.get("name"))
 	return email
 
 
@@ -165,3 +166,25 @@ def on_agent_profile_after_insert(doc, method=None) -> None:
 			title=f"agent_identity: after_insert provisioning failed for {doc.get('name')!r}",
 			message=frappe.get_traceback(),
 		)
+
+
+# --- Design 99: tell the framework which Users are agents -------------------
+AGENT_USER_CACHE = "friday:agent_users"
+
+
+def resolve_actor(username: str) -> dict | None:
+	"""`resolve_actor` hook (frappe.set_user): a User that belongs to an Agent
+	Profile acts as that AGENT, not as a human. Cached per user; never raises."""
+	if not username or username in ("Guest", "Administrator"):
+		return None
+	try:
+		hit = frappe.cache().hget(AGENT_USER_CACHE, username)
+		if hit is None:
+			db = getattr(frappe.local, "db", None)
+			if db is None or not frappe.db.table_exists("Agent Profile"):
+				return None
+			hit = frappe.db.get_value("Agent Profile", {"frappe_user": username}, "name") or ""
+			frappe.cache().hset(AGENT_USER_CACHE, username, hit)
+		return {"kind": "agent", "id": hit} if hit else None
+	except Exception:
+		return None

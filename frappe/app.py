@@ -195,6 +195,13 @@ def init_request(request):
 		raise NotFound
 
 	frappe.connect(set_admin_as_user=False)
+	# Friday (Design 99): a caller's trace id flows through this request and
+	# any job it enqueues; otherwise the monitor's request id is the trace.
+	frappe.set_actor(
+		frappe.get_actor().kind,
+		frappe.get_actor().id,
+		request.headers.get("X-Trace-Id") or frappe.monitor.get_trace_id() or None,
+	)
 	if frappe.local.conf.maintenance_mode:
 		if frappe.local.conf.allow_reads_during_maintenance:
 			setup_read_only_mode()
@@ -267,6 +274,8 @@ def process_response(response: Response):
 
 	if trace_id := frappe.monitor.get_trace_id():
 		response.headers.update({"X-Frappe-Request-Id": trace_id})
+	if actor_trace := (getattr(frappe.local, "actor", None) or {}).get("trace_id"):
+		response.headers.update({"X-Trace-Id": actor_trace})
 
 	# CORS headers
 	if hasattr(frappe.local, "conf"):

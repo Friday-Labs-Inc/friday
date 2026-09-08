@@ -104,6 +104,7 @@ def record(
 	doc = frappe.get_doc(
 		{
 			"doctype": "Permission Decision Log",
+			"trace_id": frappe.get_actor().get("trace_id"),
 			"agent_profile": profile_name,
 			"skill": skill_name,
 			# Permission Decision Log's `decision` field is a Select with
