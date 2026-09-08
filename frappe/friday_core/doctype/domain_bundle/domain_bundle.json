@@ -9,6 +9,9 @@
   "description",
   "domain_doctype",
   "workflow_name",
+  "display_name_field",
+  "project_field",
+  "external_ref_field",
   "version",
   "is_active",
   "tags"
@@ -28,7 +31,7 @@
    "label": "Description"
   },
   {
-   "description": "The work-item DocType this domain governs (e.g. Brand Brief). The Frappe Workflow is attached to THIS doctype; the engine reacts to its on_update.",
+   "description": "The work-item DocType this domain governs (e.g. a Brand Brief, a Work Order). The Frappe Workflow is attached to THIS doctype; the engine reacts to its on_update.",
    "fieldname": "domain_doctype",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -42,6 +45,26 @@
    "fieldtype": "Link",
    "label": "Workflow",
    "options": "Workflow"
+  },
+  {
+   "default": "",
+   "description": "Fieldname on the work-item that holds its human-readable name (e.g. business_name). Used for console tiles, pause announcements and deliverable branding.",
+   "fieldname": "display_name_field",
+   "fieldtype": "Data",
+   "label": "Display Name Field"
+  },
+  {
+   "default": "project",
+   "description": "Fieldname on the work-item that links it to a Friday Project (default: project). Engine tasks inherit this Project.",
+   "fieldname": "project_field",
+   "fieldtype": "Data",
+   "label": "Project Field"
+  },
+  {
+   "description": "Fieldname on the work-item that holds the external system's reference (e.g. the backend's project id). Shown in announcements; optional.",
+   "fieldname": "external_ref_field",
+   "fieldtype": "Data",
+   "label": "External Ref Field"
   },
   {
    "default": "1.0",

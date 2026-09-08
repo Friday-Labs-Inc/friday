@@ -47,7 +47,7 @@
    "reqd": 1
   },
   {
-   "description": "The RandomPack backend's project id (write-back + event linkage).",
+   "description": "The external backend's project id (write-back + event linkage).",
    "fieldname": "backend_ref",
    "fieldtype": "Data",
    "label": "Backend Ref",

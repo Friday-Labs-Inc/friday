@@ -163,6 +163,11 @@ doc_events = {
 			"frappe.core.doctype.user_type.user_type.apply_permissions_for_non_standard_user_type",
 			"frappe.core.doctype.permission_log.permission_log.make_perm_log",
 			"frappe.search.sqlite_search.update_doc_index",
+			# Friday (design 75): the generic workflow interpreter. Runs on every
+			# save but returns immediately unless an active Domain Bundle governs
+			# the doctype (cached lookup) — so domain apps add pipelines as data,
+			# never by registering their DocType here.
+			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
 		],
 		"after_rename": "frappe.desk.notifications.clear_doctype_notifications",
 		"on_cancel": [
@@ -259,21 +264,6 @@ doc_events = {
 			"frappe.friday_core.engine.advance.on_task_update",
 		],
 	},
-	"Brand Brief": {
-		# Design 75 — the generic workflow interpreter, scoped to the first
-		# domain's work-item. On a Brand Brief save it dispatches the agentic
-		# phase (if any) waiting at the brief's current pipeline state. Generalise
-		# to "*" only after this is proven on Legion (Design 75 §7 step 5).
-		# Design 77 — when the brief reaches Delivered, push the union of brief
-		# + linked Friday Project deliverables back to RandomPack.
-		"on_update": [
-			"frappe.friday_core.engine.workflow_engine.on_work_item_update",
-			"frappe.friday_core.integrations.randompack_bridge.on_brief_state_change",
-			# Design 95 slice 2 — the apprenticeship study loop: observe task when
-			# the human CD finishes creating; labeled memories on his gate decisions.
-			"frappe.friday_core.domains.randompack_study.on_brief_study_signal",
-		],
-	},
 }
 
 scheduler_events = {
@@ -309,7 +299,7 @@ scheduler_events = {
 		# Every 60 seconds — Slice 8 task dispatcher + Design 61 durability
 		# reconciler. The dispatcher moves Pending → Assigned; the reconciler
 		# heals every other seam (lost enqueues, stale executors, transient
-		# blocks, stuck RandomPack events). Together: state is the source of
+		# blocks, stuck connector events). Together: state is the source of
 		# truth, the scheduler is the heartbeat, events are an optimisation.
 		"*/1 * * * *": [
 			"frappe.friday_core.tasks.dispatcher.tick",
@@ -432,13 +422,6 @@ after_migrate = [
 	# Cards, Dashboard Charts, the Task Pipeline Kanban, and the Projects
 	# Workspace. Idempotent + failure-isolated per artifact.
 	"frappe.friday_core.console.provision_console.provision_console",
-	# Friday (design 75): provision the first metadata-driven domain — the
-	# RandomPack brand pipeline (Workflow + transition meta + specialist team +
-	# gateway). The generic engine is inert without a bundle, so every site
-	# (Legion, CI, fresh installs) needs it. Idempotent + failure-isolated.
-	"frappe.friday_core.domains.randompack_brand.after_migrate",
-	# Design 95 slice 3 — the graduation flag (Custom Field on Agent Profile).
-	"frappe.friday_core.domains.randompack_study.ensure_graduation_flags",
 	# Design 95 (#19): keep the remember Skill row in lockstep with the code —
 	# provision() is CLI-only, so without this a schema edit (e.g. the scope
 	# param) never reaches existing sites.
@@ -464,19 +447,12 @@ after_migrate = [
 	# Friday (design 90): ensure the 'slack' Chat Platform row + Slack Config
 	# single so the 2nd chat surface is ready for the operator to configure.
 	"frappe.friday_core.surfaces.bootstrap_slack.provision",
-	# Friday (RandomPack chat surface): ensure the 'randompack-intake' Chat Platform
-	# row so the streaming intake surface's transcript writes pass the platform Link
-	# validation (without it, chat turns left no transcript / no usage audit).
-	"frappe.friday_core.surfaces.randompack_chat.ensure_intake_platform",
-	# Friday (RandomPack project chat): ensure the 'randompack-project' Chat Platform
-	# row for the authenticated portal advisor surface (same Link requirement).
-	"frappe.friday_core.surfaces.randompack_project_chat.ensure_project_platform",
 	# Friday (Design 96 slice 2): the `is_customer_facing` flag on File — the
 	# boundary between internal working files and what the customer receives
 	# (the E2E pushed internal CD notes to the customer without it).
 	"frappe.friday_core.deliverables.materialize.ensure_customer_facing_field",
 	# Friday (design 60 / list-projects): provision the project command-loop
-	# skills (plan/status/list/update/pause) so they reliably reach every site
+	# skills (status/list/update/pause) so they reliably reach every site
 	# instead of relying on a manual bench-execute. Guarded for fresh sites.
 	"frappe.friday_core.skills.bootstrap_project.provision_if_ready",
 ]
@@ -725,3 +701,34 @@ add_to_apps_screen = [
 		"route": app_home,
 	}
 ]
+
+# ---------------------------------------------------------------------------
+# Friday kernel seams — the hooks a domain app uses to plug into the agent
+# kernel without touching it. Any installed app may extend each list.
+# ---------------------------------------------------------------------------
+
+# Modules whose import registers skill handlers (see friday_core/skills/registry.py).
+friday_skill_handlers = [
+	"frappe.friday_core.skills.handlers_cron",  # design 87 slice 2
+	"frappe.friday_core.skills.handlers_delegate",
+	"frappe.friday_core.skills.handlers_deliverables",  # design 73 #5
+	"frappe.friday_core.skills.handlers_engine",  # design 75: get-phase-outputs
+	"frappe.friday_core.skills.handlers_files",  # design 66b
+	"frappe.friday_core.skills.handlers_memory",
+	"frappe.friday_core.skills.handlers_propose_skill",  # design 79 slice 2
+	"frappe.friday_core.skills.handlers_read",  # design 66a
+	"frappe.friday_core.skills.handlers_session_search",  # design 89
+	"frappe.friday_core.skills.handlers_visual",  # design 76 f/u: generate-image
+	"frappe.friday_core.skills.handlers_project",  # the Friday Project command loop
+]
+
+# Called as fn(doc, state) after every Task transition (see tasks/workflow.py).
+friday_task_transition_hooks = []
+
+# Dotted paths to dicts of {"@PREFIX-": (doctype, content_fields)} merged into
+# the @-reference registry (see llm/references.py).
+friday_reference_registry = []
+
+# Dotted paths to list[tuple[file_name_prefix, customer_title]] — which phase
+# outputs a customer receives, contributed by domain apps.
+friday_customer_title_map = []

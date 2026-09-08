@@ -42,10 +42,10 @@ class TestResolveProviderRowForMedium(unittest.TestCase):
 		fr.get_all.return_value = []  # ...but has no route for this medium
 		m_profile.return_value = {"name": "Codex", "provider_type": "openai"}
 
-		row = prov.resolve_provider_row_for_medium("Creative Director", "image")
+		row = prov.resolve_provider_row_for_medium("Visual Agent", "image")
 
 		self.assertEqual(row["name"], "Codex")
-		m_profile.assert_called_once_with("Creative Director")
+		m_profile.assert_called_once_with("Visual Agent")
 
 	@patch(f"{_P}._resolve_provider_row")
 	@patch(f"{_P}.frappe")
@@ -55,7 +55,7 @@ class TestResolveProviderRowForMedium(unittest.TestCase):
 		routed = {"name": "OpenAI Images", "provider_type": "openai"}
 		fr.get_doc.return_value = _provider_doc(routed)
 
-		row = prov.resolve_provider_row_for_medium("Creative Director", "image")
+		row = prov.resolve_provider_row_for_medium("Visual Agent", "image")
 
 		self.assertEqual(row, routed)
 		m_profile.assert_not_called()
@@ -71,7 +71,7 @@ class TestResolveProviderRowForMedium(unittest.TestCase):
 		fr.get_doc.return_value = _provider_doc({"name": "OpenAI Images"}, is_active=0)
 
 		with self.assertRaises(prov.LLMError):
-			prov.resolve_provider_row_for_medium("Creative Director", "image")
+			prov.resolve_provider_row_for_medium("Visual Agent", "image")
 		m_profile.assert_not_called()
 
 	@patch(f"{_P}._resolve_provider_row")
@@ -82,7 +82,7 @@ class TestResolveProviderRowForMedium(unittest.TestCase):
 		fr.get_all.return_value = [{"provider": "Gone"}]
 		m_profile.return_value = {"name": "Codex"}
 
-		row = prov.resolve_provider_row_for_medium("Creative Director", "image")
+		row = prov.resolve_provider_row_for_medium("Visual Agent", "image")
 		self.assertEqual(row["name"], "Codex")
 
 	@patch(f"{_P}._resolve_provider_row")
@@ -91,7 +91,7 @@ class TestResolveProviderRowForMedium(unittest.TestCase):
 		fr.db.exists.return_value = False
 		m_profile.return_value = {"name": "Codex"}
 
-		row = prov.resolve_provider_row_for_medium("Creative Director", "image")
+		row = prov.resolve_provider_row_for_medium("Visual Agent", "image")
 
 		self.assertEqual(row["name"], "Codex")
 		fr.get_all.assert_not_called()
@@ -109,7 +109,7 @@ class TestGetProviderForMedium(unittest.TestCase):
 		built = MagicMock()
 		m_build.return_value = built
 
-		provider = prov.get_provider_for_medium("Creative Director", "image")
+		provider = prov.get_provider_for_medium("Visual Agent", "image")
 
 		self.assertIs(provider, built)
 		self.assertEqual(provider.source_row_name, "OpenAI Images")
@@ -119,7 +119,7 @@ class TestGetProviderForMedium(unittest.TestCase):
 	def test_raises_when_nothing_resolves(self, m_resolve):
 		m_resolve.return_value = None
 		with self.assertRaises(prov.LLMError):
-			prov.get_provider_for_medium("Creative Director", "image")
+			prov.get_provider_for_medium("Visual Agent", "image")
 
 
 class TestSkillDefinitionMedium(unittest.TestCase):

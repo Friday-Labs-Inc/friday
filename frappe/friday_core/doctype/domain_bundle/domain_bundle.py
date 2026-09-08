@@ -4,7 +4,7 @@
 """
 Domain Bundle (Design 75) — the unit that defines a whole domain as DATA.
 
-A domain (RandomPack brand identity, data-center ops, a research project) is a
+A domain (a brand-identity studio, data-center ops, a research project) is a
 bundle of: a work-item DocType + a Frappe Workflow on it + the per-transition
 agentic config (Friday Workflow Transition Meta) + the agent profiles/roles +
 the skills. This doctype is the manifest + the export/import unit: exporting a
@@ -21,6 +21,12 @@ from frappe.model.document import Document
 class DomainBundle(Document):
 	def validate(self) -> None:
 		self._single_active_per_doctype()
+
+	def on_update(self) -> None:
+		_clear_engine_cache()
+
+	def on_trash(self) -> None:
+		_clear_engine_cache()
 
 	def _single_active_per_doctype(self) -> None:
 		"""At most one active bundle per work-item DocType — so the engine can
@@ -43,3 +49,11 @@ class DomainBundle(Document):
 					"Deactivate it first, or set this one inactive."
 				).format(frappe.bold(clash), frappe.bold(self.domain_doctype))
 			)
+
+
+def _clear_engine_cache() -> None:
+	"""The engine caches doctype → active bundle (it runs on every save); any
+	bundle change must invalidate it."""
+	from frappe.friday_core.engine.bundle import clear_cache
+
+	clear_cache()

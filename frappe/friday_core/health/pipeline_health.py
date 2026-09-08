@@ -111,6 +111,22 @@ def _build_snapshot() -> dict:
 		"events_failed_retriable": frappe.db.count("Connector Event", {"status": "Failed"}),
 	}
 
+	# Raven is a REQUIRED part of the platform, not an optional surface: it is
+	# Friday's chat front door (bot identity, project channels, the war room).
+	# Frappe can't express "a fork requires an app", so the health check is where
+	# a missing Raven has to be loud — otherwise it degrades into silence
+	# (channels never provision, the war room swallows every post).
+	surfaces = {"raven_installed": bool(frappe.db.table_exists("Raven Channel"))}
+	# Raven is the SURFACE; Friday is the engine (locked — see design 58). Raven
+	# ships its own agent runtime whose bots write to Frappe documents with no
+	# permission matrix, no Execution Log and no approval gate. If an operator
+	# switches it on, half the site's AI writes leave the audit trail — so the
+	# health strip reports it rather than letting it happen quietly.
+	surfaces["raven_ai_enabled"] = bool(
+		surfaces["raven_installed"]
+		and frappe.db.get_single_value("Raven Settings", "enable_ai_integration")
+	)
+
 	open_issues = frappe.db.count("Issue", {"status": "Open"})
 
 	verdict = _verdict(
@@ -119,6 +135,8 @@ def _build_snapshot() -> dict:
 		stuck=stuck,
 		pending=tasks_by_state.get("Pending", 0),
 		open_issues=open_issues,
+		raven_installed=surfaces["raven_installed"],
+		raven_ai_enabled=surfaces["raven_ai_enabled"],
 	)
 
 	return {
@@ -128,6 +146,7 @@ def _build_snapshot() -> dict:
 		"tasks_by_state": tasks_by_state,
 		"stuck": stuck,
 		"connectors": connectors,
+		"surfaces": surfaces,
 		"open_issues": open_issues,
 		"thresholds": {
 			"scheduler_tick_max_age_seconds": SCHEDULER_TICK_MAX_AGE_SECONDS,
@@ -137,7 +156,9 @@ def _build_snapshot() -> dict:
 	}
 
 
-def _verdict(*, tick_age, workers, stuck, pending, open_issues) -> str:
+def _verdict(
+	*, tick_age, workers, stuck, pending, open_issues, raven_installed=True, raven_ai_enabled=False
+) -> str:
 	"""
 	Q3 LOCKED — Strict thresholds.
 
@@ -146,6 +167,10 @@ def _verdict(*, tick_age, workers, stuck, pending, open_issues) -> str:
 	being answered honestly, not the prettiest possible reading.
 	"""
 	# 'down' conditions
+	if not raven_installed:
+		# Required platform component. Without it there is no chat front door:
+		# no bot to DM, no per-project channels, no war room.
+		return "down"
 	if tick_age is None or tick_age > SCHEDULER_TICK_MAX_AGE_SECONDS:
 		return "down"
 	for q in CRITICAL_QUEUES:
@@ -155,6 +180,10 @@ def _verdict(*, tick_age, workers, stuck, pending, open_issues) -> str:
 		return "down"
 
 	# 'degraded' conditions
+	if raven_ai_enabled:
+		# A second, ungoverned agent engine on the same records. Not a Friday
+		# outage — a governance gap, and the operator should see it.
+		return "degraded"
 	if pending > PENDING_DEGRADED_THRESHOLD:
 		return "degraded"
 	if open_issues > OPEN_ISSUES_DEGRADED_THRESHOLD:

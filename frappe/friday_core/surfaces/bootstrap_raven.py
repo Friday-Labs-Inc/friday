@@ -65,15 +65,38 @@ def provision(profile_name: str = "Friday") -> dict:
 
 
 def _ensure_bot() -> str:
-	"""Create the Friday Raven Bot; return its Raven User id."""
+	"""Create the Friday Raven Bot; return its Raven User id.
+
+	ARCHITECTURE (locked): Raven is Friday's chat SURFACE, never its engine.
+	Raven ships its own agent runtime (Raven AI) whose bots call Frappe document
+	APIs as the human who typed — no permission matrix, no Execution Log, no
+	approval gate. Friday's whole thesis is that an agent acts as ITSELF, under
+	its own roles, with every decision audited. Two engines writing to the same
+	records would put half that surface outside the audit trail.
+
+	So `is_ai_bot` is pinned to 0 — declared, not left to Raven's default. This
+	bot is a plain messaging bot; the intelligence behind it is Friday's governed
+	runner, reached through the gateway chokepoint (surfaces/raven_adapter.py).
+	`pipeline_health` reports it if anyone flips this on later.
+	"""
 	if not frappe.db.exists("Raven Bot", FRIDAY_BOT_NAME):
 		frappe.get_doc(
 			{
 				"doctype": "Raven Bot",
 				"bot_name": FRIDAY_BOT_NAME,
 				"description": "Friday — the governed agent. DM me or @mention me in a channel.",
+				"is_ai_bot": 0,
 			}
 		).insert(ignore_permissions=True)
+	elif frappe.db.get_value("Raven Bot", FRIDAY_BOT_NAME, "is_ai_bot"):
+		# Someone turned Raven's own AI on for Friday's bot: that would route
+		# turns through Raven AI and silently bypass the permission engine and
+		# the audit log. Put it back and say so.
+		frappe.db.set_value("Raven Bot", FRIDAY_BOT_NAME, "is_ai_bot", 0, update_modified=False)
+		frappe.logger("friday.raven").warning(
+			"Friday's Raven bot had is_ai_bot=1; reset to 0. Friday is the engine, "
+			"Raven is the surface — Raven AI would bypass the permission engine and audit log."
+		)
 
 	bot_user = frappe.db.get_value("Raven Bot", FRIDAY_BOT_NAME, "raven_user")
 	if not bot_user:

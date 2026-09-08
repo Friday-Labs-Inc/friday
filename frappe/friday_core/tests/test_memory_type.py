@@ -42,15 +42,15 @@ class TestMemoryTypeField(unittest.TestCase):
 class TestFormatBlockLabels(unittest.TestCase):
 	def test_user_profile_row_labelled_about_the_user(self):
 		block = M._format_block(
-			[{"memory": "prefers sans-serif", "subject": "BB-1", "memory_type": "user_profile"}], 2000
+			[{"memory": "prefers sans-serif", "subject": "WI-1", "memory_type": "user_profile"}], 2000
 		)
 		self.assertIn("[about the user] prefers sans-serif", block)
 
 	def test_general_row_keeps_subject(self):
 		block = M._format_block(
-			[{"memory": "ships fridays", "subject": "BB-1", "memory_type": "general"}], 2000
+			[{"memory": "ships fridays", "subject": "WI-1", "memory_type": "general"}], 2000
 		)
-		self.assertIn("[BB-1] ships fridays", block)
+		self.assertIn("[WI-1] ships fridays", block)
 
 	def test_general_no_subject_is_plain(self):
 		block = M._format_block([{"memory": "ships fridays", "memory_type": "general"}], 2000)

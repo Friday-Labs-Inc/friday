@@ -64,17 +64,14 @@ def on_work_item_update(doc, method: str | None = None) -> None:
 	phase_dispatcher.dispatch(doc, meta.name)
 
 
-_INTAKE_LIKE_STATES = {"Intake"}  # bundle-owned start states — engine fires "Start Pipeline" itself; no announce needed.
-
-
 def _announce_human_pause(doc, workflow: str, state: str) -> None:
 	"""Post a 'waiting for you' message to the war room when a work-item lands
 	in a state with no agentic phase AND no system-driven outgoing transition.
 
 	- Terminal (no outgoing transitions): silent. Surrounding handlers already
 	  announce delivery.
-	- Idle entry state (e.g. "Intake"): silent. The engine itself fires the
-	  Start Pipeline transition via project.created; nothing for a human here.
+	- Idle entry state (the workflow's first state): silent. A system
+	  transition starts the pipeline; nothing for a human here.
 	- Otherwise (a real gate waiting on a human): post AFTER the current
 	  transaction commits.
 
@@ -87,8 +84,8 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 	agent user (no implicit Workflow Transition read).
 	Failure-isolated: a war room outage NEVER breaks the engine save."""
 	try:
-		if state in _INTAKE_LIKE_STATES:
-			return
+		if bundle.is_entry_state(workflow, state):
+			return  # idle entry state — a system transition starts the pipeline, nothing for a human
 
 		# bypass perms — the agent user has no implicit read on Workflow Transition
 		outgoing = frappe.get_all(
@@ -101,13 +98,16 @@ def _announce_human_pause(doc, workflow: str, state: str) -> None:
 		if not outgoing:
 			return  # terminal — nothing for a human to do
 
+		# The bundle says which fields name / externally reference this work-item;
+		# the engine never hardcodes a domain's field names.
+		fields = bundle.fields_for(doc.doctype)
 		label_parts = []
-		business_name = doc.get("business_name") if hasattr(doc, "get") else getattr(doc, "business_name", None)
-		rp_project = doc.get("rp_project") if hasattr(doc, "get") else getattr(doc, "rp_project", None)
-		if business_name:
-			label_parts.append(str(business_name))
-		if rp_project:
-			label_parts.append(f"PROJ {rp_project}")
+		display = doc.get(fields["display_name_field"]) if fields.get("display_name_field") else None
+		external_ref = doc.get(fields["external_ref_field"]) if fields.get("external_ref_field") else None
+		if display:
+			label_parts.append(str(display))
+		if external_ref:
+			label_parts.append(f"REF {external_ref}")
 		label = " — ".join(label_parts) or doc.name
 
 		text = (

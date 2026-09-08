@@ -32,7 +32,7 @@ class TestCommandDetection(unittest.TestCase):
 		from frappe.friday_core.gateway import commands
 
 		self.assertTrue(commands.is_command("/status"))
-		self.assertTrue(commands.is_command("  /approve BB-0034  "))  # leading space tolerated
+		self.assertTrue(commands.is_command("  /approve WI-0034  "))  # leading space tolerated
 
 	def test_plain_text_is_not_a_command(self):
 		# The regression guard: normal conversation must still reach run_turn.
@@ -45,9 +45,9 @@ class TestCommandDetection(unittest.TestCase):
 	def test_parse_splits_name_and_args(self):
 		from frappe.friday_core.gateway import commands
 
-		name, args = commands.parse_command("/approve BB-0034 looks good")
+		name, args = commands.parse_command("/approve WI-0034 looks good")
 		self.assertEqual(name, "approve")
-		self.assertEqual(args, ["BB-0034", "looks", "good"])
+		self.assertEqual(args, ["WI-0034", "looks", "good"])
 
 		name, args = commands.parse_command("/status")
 		self.assertEqual(name, "status")

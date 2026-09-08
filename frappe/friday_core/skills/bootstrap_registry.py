@@ -28,8 +28,9 @@ operator/domain decision). Failure-isolated per bootstrap, so one broken
 ensure can never abort a migrate or starve the others.
 
 A reflection test (test_bootstrap_definitions.py) asserts every
-``skills/bootstrap_*.py`` module is covered — either listed here or wired
-into after_migrate individually — so the NEXT bootstrap cannot be forgotten.
+``skills/bootstrap_*.py`` module is covered — listed here, contributed by an
+app through the ``friday_skill_definitions`` hook, or wired into after_migrate
+individually — so the NEXT bootstrap cannot be forgotten.
 """
 
 from __future__ import annotations
@@ -42,11 +43,19 @@ import frappe
 DEFINITION_ENSURES: tuple[str, ...] = (
 	"frappe.friday_core.skills.bootstrap_files.ensure_definitions",
 	"frappe.friday_core.skills.bootstrap_read.ensure_definitions",
-	"frappe.friday_core.skills.bootstrap_brand.ensure_definitions",
 	"frappe.friday_core.skills.bootstrap_propose_skill.ensure_definitions",
 	"frappe.friday_core.skills.bootstrap_delegate.ensure_definitions",
 	"frappe.friday_core.skills.bootstrap_deliverables.ensure_definitions",
 )
+
+# A domain app adds its own bootstraps here, in its hooks.py:
+#     friday_skill_definitions = ["my_app.skills.bootstrap_x.ensure_definitions"]
+HOOK = "friday_skill_definitions"
+
+
+def definition_ensures() -> tuple[str, ...]:
+	"""The kernel's bootstraps plus every installed app's."""
+	return tuple(DEFINITION_ENSURES) + tuple(frappe.get_hooks(HOOK) or [])
 
 # Bootstraps already on the migrate path through their OWN after_migrate
 # entry (kept individual for ordering or gating reasons). The reflection
@@ -67,7 +76,7 @@ def ensure_all_skill_definitions() -> None:
 	Failure-isolated per bootstrap — a single broken ensure is logged loudly
 	and the rest still run; the migrate itself is never aborted.
 	"""
-	for path in DEFINITION_ENSURES:
+	for path in definition_ensures():
 		try:
 			frappe.get_attr(path)()
 		except Exception:

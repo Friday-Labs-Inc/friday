@@ -23,6 +23,11 @@ def _baseline_db(mock_frappe):
 	mock_frappe.db.get_all.return_value = []
 	mock_frappe.db.get_value.return_value = None
 	mock_frappe.db.sql.return_value = []
+	# Platform defaults: Raven present (required), Raven's own AI off (locked —
+	# Friday is the engine). Without these the mock returns a truthy MagicMock
+	# and every baseline test reads as "Raven AI switched on".
+	mock_frappe.db.table_exists.return_value = True
+	mock_frappe.db.get_single_value.return_value = 0
 
 
 class TestVerdictStrict(unittest.TestCase):
@@ -58,6 +63,46 @@ class TestVerdictStrict(unittest.TestCase):
 
 		self.assertEqual(out["verdict"], "down")
 		self.assertFalse(out["workers"]["friday"]["present"])
+
+	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
+	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
+	@patch("frappe.friday_core.health.pipeline_health.frappe")
+	def test_verdict_degraded_when_raven_ai_enabled(self, mock_frappe, mock_tick, mock_inflight):
+		"""Locked: Raven is the surface, Friday is the engine. Raven's own AI runtime
+		writes to documents with no permission matrix, no Execution Log and no
+		approval gate — a second, ungoverned engine on the same records. Not a
+		Friday outage, so 'degraded', but never silent."""
+		from frappe.friday_core.health.pipeline_health import pipeline_health
+
+		_baseline_db(mock_frappe)
+		mock_frappe.db.table_exists.return_value = True
+		mock_frappe.db.get_single_value.return_value = 1  # Raven AI switched on
+		mock_tick.return_value = 30
+		mock_inflight.return_value = {"default": 0, "friday": 0}
+
+		out = pipeline_health()
+
+		self.assertEqual(out["verdict"], "degraded")
+		self.assertTrue(out["surfaces"]["raven_ai_enabled"])
+
+	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
+	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
+	@patch("frappe.friday_core.health.pipeline_health.frappe")
+	def test_verdict_down_when_raven_missing(self, mock_frappe, mock_tick, mock_inflight):
+		"""Raven is a REQUIRED platform component, so its absence is 'down' — not a
+		quiet skip. Without it there is no bot to DM, no per-project channels and
+		no war room, and the operator must see that immediately."""
+		from frappe.friday_core.health.pipeline_health import pipeline_health
+
+		_baseline_db(mock_frappe)
+		mock_frappe.db.table_exists.return_value = False
+		mock_tick.return_value = 30
+		mock_inflight.return_value = {"default": 0, "friday": 0}
+
+		out = pipeline_health()
+
+		self.assertEqual(out["verdict"], "down")
+		self.assertFalse(out["surfaces"]["raven_installed"])
 
 	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
 	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
@@ -163,7 +208,7 @@ class TestRandomPackHealth(unittest.TestCase):
 	@patch("frappe.friday_core.health.pipeline_health._inflight_jobs_by_queue")
 	@patch("frappe.friday_core.health.pipeline_health._scheduler_tick_age")
 	@patch("frappe.friday_core.health.pipeline_health.frappe")
-	def test_randompack_block_present(self, mock_frappe, mock_tick, mock_inflight):
+	def test_connector_block_present(self, mock_frappe, mock_tick, mock_inflight):
 		from frappe.friday_core.health.pipeline_health import pipeline_health
 
 		_baseline_db(mock_frappe)

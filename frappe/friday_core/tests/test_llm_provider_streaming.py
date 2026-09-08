@@ -92,7 +92,7 @@ class TestStreamAssembly(unittest.TestCase):
 		tc2 = SimpleNamespace(
 			index=0,
 			id=None,
-			function=SimpleNamespace(name=None, arguments='_id": "BB-0009"}'),
+			function=SimpleNamespace(name=None, arguments='_id": "WI-0009"}'),
 		)
 		stream = iter([
 			_fake_chunk(tool_calls=[tc0]),
@@ -105,7 +105,7 @@ class TestStreamAssembly(unittest.TestCase):
 		self.assertEqual(len(tcs), 1)
 		self.assertEqual(tcs[0]["id"], "call_abc")
 		self.assertEqual(tcs[0]["function"]["name"], "get_brand_brief")
-		self.assertEqual(tcs[0]["function"]["arguments"], '{"brand_id": "BB-0009"}')
+		self.assertEqual(tcs[0]["function"]["arguments"], '{"brand_id": "WI-0009"}')
 
 	def test_function_name_is_assigned_not_concatenated(self):
 		"""Some providers resend the full name in every chunk — must NOT concat.

@@ -154,7 +154,7 @@ class TestEmbedMemoryJob(unittest.TestCase):
 		with patch(f"{_E}.frappe") as fr, patch(f"{_E}.get_embedding", return_value=[0.5]) as ge, patch(
 			f"{_E}.store_embedding"
 		) as store:
-			fr.db.get_value.return_value = {"memory": "loop hates serifs", "subject": "BB-1"}
+			fr.db.get_value.return_value = {"memory": "loop hates serifs", "subject": "WI-1"}
 			E.embed_memory("MEM-1")
 		ge.assert_called_once()
 		store.assert_called_once_with("MEM-1", [0.5])

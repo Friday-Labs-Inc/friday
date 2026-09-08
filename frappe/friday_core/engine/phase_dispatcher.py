@@ -29,6 +29,7 @@ silent-and-lost.
 from __future__ import annotations
 
 import frappe
+from frappe.friday_core.engine import bundle
 
 
 def dispatch(work_item, meta_name: str) -> str | None:
@@ -101,5 +102,5 @@ def _project_of(work_item):
 	"""Carry the work-item's Project onto the Task if it has one, so existing
 	project rollups / War Room / Raven wiring keep working. None otherwise."""
 	if work_item.meta.has_field("project"):
-		return work_item.get("project")
+		return work_item.get(bundle.fields_for(work_item.doctype)["project_field"])
 	return None

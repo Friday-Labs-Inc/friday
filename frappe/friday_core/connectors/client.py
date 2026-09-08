@@ -7,7 +7,7 @@ PLAIN ENGLISH
 =============
 A typed, never-raises POST to an external system's Frappe-style API, with auth
 sourced from the Connector row's encrypted secrets (token key:secret). This is
-the generalisation of the old `randompack_client.send` — the transport is
+the generalisation of the first domain client's `send` — the transport is
 generic; the connector's specific endpoint names + payload shapes stay in its
 domain adapter (which resolves the dotted `path` and calls us).
 
@@ -51,7 +51,7 @@ def _headers(connector) -> dict:
 # `X-RP-Signature` seam. When the Connector carries an `outbound_signing_secret`,
 # every JSON call is signed over the EXACT raw bytes sent, so the external system
 # can verify "this caller really is Friday" beyond the token auth. (Found live:
-# RandomPack's `_require_friday()` gates its integration writes on this header;
+# A consuming system's inbound guard (e.g. a `_require_friday()`) gates its writes on this header;
 # without it every attach_deliverable/request_gate_open/get_project 403'd.)
 SIGNATURE_HEADER_OUT = "X-Friday-Signature"
 

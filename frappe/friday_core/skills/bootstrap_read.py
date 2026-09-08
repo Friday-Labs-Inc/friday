@@ -30,15 +30,15 @@ READ_ROLE = "Friday Reader"
 _SKILLS: dict[str, dict] = {
 	"read-record": {
 		"description": (
-			"Fetch ONE record by its DocType and name (e.g. Brand Direction "
-			"BD-0001, Task TASK-42, Project PRJ-7). Returns the record's "
+			"Fetch ONE record by its DocType and name (e.g. a work-item "
+			"Task TASK-42, Project PRJ-7, Issue ISS-3). Returns the record's "
 			"fields. Use this whenever someone asks 'what does X say' or "
 			"'show me record X' or 'fetch the saved Y' — instead of "
 			"answering from memory or improvising."
 		),
 		"when_to_use": (
 			"Call this BEFORE answering any question about a specific saved "
-			"record. If the operator says 'what does BD-0001 say' or 'pull "
+			"record. If the operator says 'what does TASK-42 say' or 'pull "
 			"up TASK-42', call read-record with the doctype + name. If you "
 			"do not have read access, the response carries a structured "
 			"error and you must report that honestly — never invent the "
@@ -49,11 +49,11 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType, e.g. 'Brand Direction', 'Task', 'Project'.",
+					"description": "The Frappe DocType, e.g. 'Task', 'Project', 'Issue'.",
 				},
 				"name": {
 					"type": "string",
-					"description": "The record's primary key, e.g. 'BD-0001'.",
+					"description": "The record's primary key, e.g. 'TASK-42'.",
 				},
 			},
 			"required": ["doctype", "name"],
@@ -64,15 +64,15 @@ _SKILLS: dict[str, dict] = {
 	},
 	"list-records": {
 		"description": (
-			"List rows of one DocType (e.g. 'all Brand Direction rows for "
-			"brief BB-0001', 'all open Tasks on PRJ-7'). Supports filters as "
+			"List rows of one DocType (e.g. 'all Task rows for "
+			"project PRJ-7', 'all open Tasks on PRJ-7'). Supports filters as "
 			"a dict of field → value (or [operator, value] tuples). Capped "
 			"at 100 rows. Use this whenever someone asks 'what are the X "
 			"for Y' — instead of guessing or fabricating."
 		),
 		"when_to_use": (
 			"Call this whenever the operator asks about a SET of records "
-			"('which brand directions do we have for BB-0001', 'what tasks "
+			"('which Issues are open on PRJ-7', 'what tasks "
 			"are pending on PRJ-7'). Filter precisely. If your read access "
 			"is denied, the response carries a denied flag and you must "
 			"report that honestly — never invent the list."
@@ -82,11 +82,11 @@ _SKILLS: dict[str, dict] = {
 			"properties": {
 				"doctype": {
 					"type": "string",
-					"description": "The Frappe DocType to list, e.g. 'Brand Direction'.",
+					"description": "The Frappe DocType to list, e.g. 'Task'.",
 				},
 				"filters": {
 					"type": "object",
-					"description": "Field → value dict. Example: {'brief': 'BB-0001'}.",
+					"description": "Field → value dict. Example: {'project': 'PRJ-0001'}.",
 				},
 				"limit": {
 					"type": "integer",

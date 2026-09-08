@@ -5,7 +5,6 @@
 Project command-loop skills (design 60, Q7) — steer the pipeline from chat.
 
 Four small, auditable handlers behind the dispatcher chokepoint:
-  plan-project    — instantiate the productized pipeline for a brief
   project-status  — the pipeline at a glance (states, blockers, gates)
   update-task     — complete / cancel one task (human steering via chat)
   pause-project   — park a whole pipeline (the dispatcher skips On Hold)
@@ -18,44 +17,6 @@ from __future__ import annotations
 
 import frappe
 from frappe.friday_core.agent_runner.dispatcher import register_skill_handler
-
-
-def plan_project(skill_name: str, parameters: dict) -> dict:
-	"""Create a Project + the RandomPack pipeline for a Brand Brief."""
-	from frappe.friday_core.tasks.templates import instantiate_pipeline
-
-	brief = (parameters.get("brief") or "").strip()
-	if not brief:
-		raise ValueError("plan-project requires a 'brief' parameter (the Brand Brief ID)")
-	if not frappe.db.exists("Brand Brief", brief):
-		raise ValueError(f"Brand Brief {brief!r} not found")
-
-	title = (parameters.get("title") or f"Pipeline for {brief}").strip()
-	backend_ref = (parameters.get("backend_ref") or "").strip()
-
-	existing = frappe.db.get_value("Project", {"project_name": title}, "name")
-	if existing:
-		project = existing
-	else:
-		doc = frappe.get_doc(
-			{
-				"doctype": "Project",
-				"project_name": title,
-				"description": f"Productized pipeline for {brief}.",
-				"status": "Open",
-				"backend_ref": backend_ref or None,
-			}
-		)
-		doc.insert(ignore_permissions=True)
-		project = doc.name
-
-	tasks = instantiate_pipeline(project, backend_ref or project, brief)
-	return {
-		"result": f"Project {project!r} planned: {len(tasks)} pipeline tasks created for {brief}.",
-		"doctype": "Project",
-		"record_name": project,
-		"tasks_created": len(tasks),
-	}
 
 
 def project_status(skill_name: str, parameters: dict) -> dict:
@@ -167,7 +128,6 @@ def list_projects(skill_name: str, parameters: dict) -> dict:
 	return {"result": "\n".join(lines), "count": len(rows), "projects": rows}
 
 
-register_skill_handler("plan-project", plan_project)
 register_skill_handler("project-status", project_status)
 register_skill_handler("update-task", update_task)
 register_skill_handler("pause-project", pause_project)

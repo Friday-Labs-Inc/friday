@@ -18,7 +18,7 @@ connector:
 The handler map is NOT hard-coded here — the connector's `handler_module` is
 imported at process time and its `HANDLERS` dict is used. That keeps the seam
 generic (core) while the event meaning stays in the connector's domain module.
-This is the verbatim generalisation of the old `surfaces/randompack.py` spine.
+This is the verbatim generalisation of the first connector surface's spine.
 """
 
 from __future__ import annotations

@@ -327,7 +327,7 @@ def get_project_file(skill_name: str, parameters: dict) -> dict:
 
 	# `result` is what the LLM sees (dispatcher contract). The E2E bug: content
 	# lived only under "content", so the model received a bare "Done." and could
-	# never read the Creative Director's design system.
+	# never read the human reviewer's design system.
 	human_name = getattr(file_doc, "file_name", resolved_name)
 	if isinstance(content, bytes):
 		try:

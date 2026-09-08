@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 """
-@-references — point Friday at records: "draft taglines for @BB-0001" (design 59).
+@-references — point Friday at records: "summarise @PRJ-0001" (design 59).
 
 **Port** of Hermes `agent/context_references.py`, adapted from files to
 records: Hermes expands typed refs (`@file:`, `@url:`, `@git:`) and blocks
@@ -26,58 +26,42 @@ from frappe.friday_core.llm.memory import sanitize_context
 # Ported from Hermes context_references.TRAILING_PUNCTUATION.
 TRAILING_PUNCTUATION = ",.;!?"
 
-# Matches "@BB-0001"-style record refs; the prefix decides the doctype via the
+# Matches "@PRJ-0001"-style record refs; the prefix decides the doctype via the
 # registry below. (Hermes' typed `@kind:value` syntax is deferred with the
 # @url/@file slice.)
 _REFERENCE_RE = re.compile(r"(?<![\w/])@([A-Z]{2,8}-\d+)")
 
-# prefix → (doctype, content fields exposed to the model). One line per future
-# doctype — keep fields content-only (no system/audit columns).
-REFERENCE_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {
-	"BB-": (
-		"Brand Brief",
-		(
-			"business_name",
-			"industry",
-			"what_they_do",
-			"target_audience",
-			"brand_personality",
-			"competitors",
-			"color_preferences",
-			"inspirations",
-			"notes",
-			"status",
-		),
-	),
-	"BD-": (
-		"Brand Direction",
-		(
-			"brief",
-			"direction_name",
-			"concept_story",
-			"personality_keywords",
-			"color_palette",
-			"typography",
-			"logo_concept",
-			"tagline_options",
-			"status",
-		),
-	),
-}
+# prefix → (doctype, content fields exposed to the model). The kernel ships no
+# entries of its own: domain apps contribute theirs through the
+# `friday_reference_registry` hook (dotted paths to dicts of the same shape),
+# merged by `registry()` below. Keep fields content-only (no system/audit columns).
+REFERENCE_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {}
+
+
+def registry() -> dict[str, tuple[str, tuple[str, ...]]]:
+	"""The kernel's built-in entries merged with every installed app's."""
+	merged = dict(REFERENCE_REGISTRY)
+	for path in frappe.get_hooks("friday_reference_registry") or []:
+		try:
+			merged.update(frappe.get_attr(path) or {})
+		except Exception:
+			frappe.log_error(title=f"friday reference registry hook failed: {path}")
+	return merged
 
 
 def parse_references(text: str) -> list[str]:
 	"""Return registry-known record IDs referenced in `text`, in order, deduped.
 
-	Trailing punctuation is trimmed ("…for @BB-0001." → BB-0001), ported from
+	Trailing punctuation is trimmed ("…for @PRJ-0001." → PRJ-0001), ported from
 	Hermes. IDs whose prefix isn't in the registry are ignored (they're just
 	prose, e.g. an issue number from another system).
 	"""
 	found: list[str] = []
+	reg = registry()
 	for match in _REFERENCE_RE.finditer(text or ""):
 		ref = match.group(1).rstrip(TRAILING_PUNCTUATION)
 		prefix = ref.split("-")[0] + "-"
-		if prefix in REFERENCE_REGISTRY and ref not in found:
+		if prefix in reg and ref not in found:
 			found.append(ref)
 	return found
 
@@ -98,10 +82,11 @@ def expand_references(text: str, profile_name: str) -> str | None:
 
 	matrix = build_matrix(profile_name)
 
+	reg = registry()
 	sections: list[str] = []
 	for ref in refs:
 		prefix = ref.split("-")[0] + "-"
-		doctype, fields = REFERENCE_REGISTRY[prefix]
+		doctype, fields = reg[prefix]
 
 		if "read" not in matrix.ops_for(doctype):
 			sections.append(f"@{ref}: not permitted — this agent's roles cannot read {doctype}.")

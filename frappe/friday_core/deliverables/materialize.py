@@ -40,7 +40,7 @@ _PREFIX = "deliverable-"
 # The internal deliverable-*.md/.pdf files above are working artifacts. What a
 # paying client receives is different: branded PDFs with HUMAN names ("Friday
 # Labs Inc — Brand Guidelines.pdf", not brand-guidelines8e02e8.md), and ONLY
-# the finished work — the Friday Labs E2E pushed the Creative Director's
+# the finished work — an early E2E pushed a human reviewer's
 # internal refinement notes to the customer because nothing marked the
 # boundary. The boundary is the `is_customer_facing` flag on File (ensured by
 # after_migrate below); the bridge pushes only flagged files.
@@ -51,16 +51,26 @@ CUSTOMER_FLAG_FIELD = "is_customer_facing"
 # Phase-output file patterns → the human titles the customer sees. Matched by
 # file_name prefix against the Friday Project's attached files; for patterns
 # with multiple versions (refine rounds re-attach), the NEWEST wins. Anything
-# not in this map (working notes, the CD's system doc, drafts) stays internal
-# unless the CD flags it customer-facing in Desk himself.
-CUSTOMER_TITLE_MAP: list[tuple[str, str]] = [
-	("brand-guidelines", "Brand Guidelines"),
-	("production-package", "Brand System — Production Package"),
-	("gate2-final-review", "Final Review (Gate 2)"),
-	("gate1-client-presentation", "Direction Presentation (Gate 1)"),
-	("naming-candidates", "Naming Candidates"),
-	("strategy", "Brand Strategy"),
-]
+# not in the map (working notes, drafts) stays internal unless a human flags it
+# customer-facing in Desk.
+#
+# The kernel ships the map EMPTY: which phase outputs a customer receives is
+# domain knowledge. A domain app contributes its rows through the
+# ``friday_customer_title_map`` hook — dotted paths to ``list[tuple[str, str]]``.
+CUSTOMER_TITLE_MAP: list[tuple[str, str]] = []
+
+
+def customer_title_map() -> list[tuple[str, str]]:
+	"""The kernel's (empty) map plus every domain app's rows, first match wins."""
+	rows = list(CUSTOMER_TITLE_MAP)
+	for path in frappe.get_hooks("friday_customer_title_map") or []:
+		try:
+			rows.extend(frappe.get_attr(path))
+		except Exception:
+			frappe.logger("friday.deliverables").warning(
+				f"friday_customer_title_map entry {path!r} failed to load", exc_info=True
+			)
+	return rows
 
 
 def ensure_customer_facing_field() -> None:
@@ -255,14 +265,14 @@ def _deliverable_html(title: str, body_html: str, brand_context: "dict | None" =
 def select_customer_sources(files: "list[dict]") -> "list[tuple[str, dict]]":
 	"""Pick the customer-deliverable set from a Project's File rows. Pure.
 
-	`files` rows need {name, file_name, creation}. For each CUSTOMER_TITLE_MAP
+	`files` rows need {name, file_name, creation}. For each customer_title_map()
 	pattern, the NEWEST matching .md wins (refine rounds re-attach new versions —
 	the customer gets the latest, once). Returns [(human_title, file_row)] in map
 	order. Anything unmatched (refinement notes, the CD's working docs, images)
 	is NOT selected — internal stays internal unless the CD flags it himself.
 	"""
 	out: list[tuple[str, dict]] = []
-	for prefix, human_title in CUSTOMER_TITLE_MAP:
+	for prefix, human_title in customer_title_map():
 		candidates = [
 			f
 			for f in files
@@ -276,9 +286,13 @@ def select_customer_sources(files: "list[dict]") -> "list[tuple[str, dict]]":
 	return out
 
 
-def _brand_context_for(brief_name: str, project_name: str) -> dict:
-	"""Assemble the render branding: company name + the CD's logo if he flagged one."""
-	company = frappe.db.get_value("Brand Brief", brief_name, "business_name") or ""
+def _work_item_context_for(work_item_doctype: str, work_item_name: str, project_name: str) -> dict:
+	"""Assemble the render branding: the work-item's display name (its bundle's
+	`display_name_field`) + the CD's logo if he flagged one."""
+	from frappe.friday_core.engine import bundle
+
+	display_field = bundle.fields_for(work_item_doctype).get("display_name_field")
+	company = (frappe.db.get_value(work_item_doctype, work_item_name, display_field) if display_field else "") or ""
 	ctx: dict = {"company": company}
 	# The CD's flagged logo (an image File he marked customer-facing) brands the PDFs.
 	logo_rows = frappe.get_all(
@@ -307,15 +321,19 @@ def _brand_context_for(brief_name: str, project_name: str) -> dict:
 	return ctx
 
 
-def materialize_for_customer(brief_name: str) -> "dict | None":
+def materialize_for_customer(work_item_doctype: str, work_item_name: str) -> "dict | None":
 	"""Render the customer package: branded, human-named PDFs on the Project,
-	flagged `is_customer_facing` so the bridge push delivers them (and ONLY them,
-	plus whatever assets the CD flagged himself).
+	flagged `is_customer_facing` so a domain app's push delivers them (and ONLY
+	them, plus whatever assets the CD flagged himself).
 
-	Called from the bridge when the brief reaches Delivered, BEFORE the push.
-	Idempotent: prior customer PDFs are replaced.
+	Called by the domain app when its work-item reaches delivery, BEFORE the
+	push. Idempotent: prior customer PDFs are replaced. The Project is read
+	through the bundle's `project_field`.
 	"""
-	project = frappe.db.get_value("Brand Brief", brief_name, "project")
+	from frappe.friday_core.engine import bundle
+
+	project_field = bundle.fields_for(work_item_doctype)["project_field"]
+	project = frappe.db.get_value(work_item_doctype, work_item_name, project_field)
 	if not project:
 		return None
 	files = frappe.get_all(
@@ -327,7 +345,7 @@ def materialize_for_customer(brief_name: str) -> "dict | None":
 	if not sources:
 		return None
 
-	ctx = _brand_context_for(brief_name, project)
+	ctx = _work_item_context_for(work_item_doctype, work_item_name, project)
 	company = ctx.get("company") or ""
 	created: dict = {}
 	for human_title, row in sources:

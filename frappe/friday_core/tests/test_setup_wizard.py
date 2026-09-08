@@ -94,12 +94,19 @@ class TestSaveAgent(unittest.TestCase):
 
 class TestProvisionSurfaces(unittest.TestCase):
 	@patch("frappe.friday_core.setup.wizard.frappe")
-	def test_skips_when_raven_absent(self, mock_frappe):
+	def test_throws_when_raven_absent(self, mock_frappe):
+		"""Raven is REQUIRED (design 58): it is Friday's chat front door. A missing
+		Raven must fail loudly with the install command, not return a tidy
+		"skipped" that reads like setup succeeded."""
 		from frappe.friday_core.setup import wizard
 
 		mock_frappe.db.table_exists.return_value = False
-		out = wizard.provision_surfaces()
-		self.assertEqual(out["status"], "skipped")
+		mock_frappe.throw.side_effect = RuntimeError("raven required")
+
+		with self.assertRaises(RuntimeError):
+			wizard.provision_surfaces()
+
+		mock_frappe.throw.assert_called_once()
 
 	@patch("frappe.friday_core.surfaces.bootstrap_raven.provision")
 	@patch("frappe.friday_core.setup.wizard.frappe")
