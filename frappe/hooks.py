@@ -729,6 +729,11 @@ friday_task_transition_hooks = []
 # the @-reference registry (see llm/references.py).
 friday_reference_registry = []
 
+# Design 99 — actor context. The framework asks apps which Users are agents, and
+# hands every non-child document write to `on_actor_write` hooks for auditing.
+resolve_actor = ["frappe.friday_core.identity.agent_identity.resolve_actor"]
+on_actor_write = ["frappe.friday_core.audit.actor_write.on_actor_write"]
+
 # Dotted paths to list[tuple[file_name_prefix, customer_title]] — which phase
 # outputs a customer receives, contributed by domain apps.
 friday_customer_title_map = []

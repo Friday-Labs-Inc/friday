@@ -349,12 +349,13 @@ def dispatch(
 		# must carry the agent's identity, not its trigger's. Scoped to skill
 		# execution only (matrix/approval/logging already ran above); restored
 		# in finally so the ambient request/worker identity is never corrupted.
+		# Design 99: the skill runs as the agent's own User AND as actor
+		# kind=agent, so every row it writes is stamped with the profile and the
+		# turn's trace id — restored on exit even if the handler raises.
 		agent_user = frappe.db.get_value("Agent Profile", agent_profile, "frappe_user")
-		previous_user = getattr(frappe.session, "user", None)
-		switched = bool(agent_user) and agent_user != previous_user
-		if switched:
-			frappe.set_user(agent_user)
-		try:
+		from contextlib import nullcontext
+		scope = frappe.acting_as(agent_user, kind="agent", id=agent_profile) if agent_user else nullcontext()
+		with scope:
 			outcome = _execute_sandboxed(
 				skill_name=skill_name,
 				parameters=parameters,
@@ -362,9 +363,6 @@ def dispatch(
 				credentials=creds,
 				handler=handler,
 			)
-		finally:
-			if switched and previous_user:
-				frappe.set_user(previous_user)
 
 	except Exception as exc:
 		duration_ms = int(time.time() * 1000) - start_ms
@@ -565,6 +563,7 @@ def _write_execution_log(
 	doc = frappe.get_doc(
 		{
 			"doctype": "Execution Log",
+			"trace_id": frappe.get_actor().get("trace_id"),
 			"agent_profile": agent_profile,
 			"skill": skill,
 			"parameters": frappe.as_json(parameters),

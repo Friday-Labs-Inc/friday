@@ -145,6 +145,10 @@ def process_event(event_id: str) -> None:
 	event = frappe.get_doc("Connector Event", event_id)
 	if event.status == "Processed":
 		return  # replay of a success — skip
+	# Design 99: an inbound event acts as the SYSTEM on behalf of its connector;
+	# the envelope id becomes the trace id so every row it causes is traceable
+	# back to the message that caused it.
+	frappe.set_actor("system", f"connector:{event.connector}", event.get("event_id") or event.name)
 
 	handlers = _load_handlers(event.connector) if event.connector else {}
 	handler = handlers.get(event.event_type)

@@ -1303,7 +1303,7 @@ class Document(BaseDocument):
 
 	def delete(self, ignore_permissions=False, force=False, *, delete_permanently=False):
 		"""Delete document."""
-		return frappe.delete_doc(
+		result = frappe.delete_doc(
 			self.doctype,
 			self.name,
 			ignore_permissions=ignore_permissions,
@@ -1311,6 +1311,8 @@ class Document(BaseDocument):
 			force=force,
 			delete_permanently=delete_permanently,
 		)
+		self._run_actor_write_hooks("delete")
+		return result
 
 	def run_before_save_methods(self):
 		"""Run standard methods before	`INSERT` or `UPDATE`. Standard Methods are:
@@ -1390,6 +1392,55 @@ class Document(BaseDocument):
 
 		if self.flags.get("notify_update", True):
 			self.notify_update()
+
+		self._stamp_actor(self._action or "save")
+		self._run_actor_write_hooks(self._action or "save")
+
+	def _stamp_actor(self, action: str) -> None:
+		"""Friday (Design 99): record WHO acted on this row.
+
+		`modified_by` already names the user; what the framework lacked is the
+		KIND of actor, WHICH agent, and the trace that ties a row to the turn
+		that produced it. Written as a targeted UPDATE (optional columns are not
+		part of a document's valid dict, exactly like `_user_tags`), only for
+		agent writes — a human write needs no extra column — and savepointed so
+		a table without the columns can never break the write it describes."""
+		if action == "delete" or self.meta.get("istable"):
+			return
+		actor = frappe.get_actor()
+		if actor.get("kind") != "agent":
+			return
+		try:
+			frappe.db.savepoint("frappe_actor_stamp")
+			frappe.db.sql(
+				f"""update `tab{self.doctype}`
+				set `_actor_kind` = %(kind)s, `_actor` = %(id)s, `_trace_id` = %(trace)s
+				where name = %(name)s""",
+				{"kind": actor.get("kind"), "id": actor.get("id"), "trace": actor.get("trace_id"), "name": self.name},
+			)
+		except Exception:
+			frappe.db.rollback(save_point="frappe_actor_stamp")
+
+	def _run_actor_write_hooks(self, action: str) -> None:
+		"""Friday (Design 99): framework-level audit seam. Apps declare
+		`on_actor_write` hooks (fn(doc, action)) and decide what to record —
+		e.g. every row an AGENT wrote, whether or not a skill dispatcher was in
+		the loop. Re-entrancy is guarded so a hook's own writes do not recurse;
+		a failing hook is logged, never raised."""
+		if frappe.flags.get("in_actor_write_hook") or self.meta.get("istable"):
+			return
+		hooks = frappe.get_hooks("on_actor_write") or []
+		if not hooks:
+			return
+		frappe.flags.in_actor_write_hook = True
+		try:
+			for path in hooks:
+				try:
+					frappe.get_attr(path)(self, action)
+				except Exception:
+					frappe.log_error(title=f"on_actor_write hook failed: {path}")
+		finally:
+			frappe.flags.in_actor_write_hook = False
 
 		update_global_search(self)
 

@@ -177,6 +177,7 @@ def enqueue(
 	queue_args = {
 		"site": frappe.local.site,
 		"user": frappe.session.user,
+		"actor": dict(frappe.get_actor()),  # Friday (Design 99): who is acting travels with the job
 		"method": method,
 		"event": event,
 		"job_name": job_name or method_name,
@@ -236,7 +237,7 @@ def run_doc_method(doctype, name, doc_method, **kwargs):
 	getattr(frappe.get_doc(doctype, name), doc_method)(**kwargs)
 
 
-def execute_job(site, method, event, job_name, kwargs, user=None, is_async=True, retry=0):
+def execute_job(site, method, event, job_name, kwargs, user=None, is_async=True, retry=0, actor=None):
 	"""Executes job in a worker, performs commit/rollback and logs if there is any error"""
 	retval = None
 
@@ -250,6 +251,8 @@ def execute_job(site, method, event, job_name, kwargs, user=None, is_async=True,
 
 		if user:
 			frappe.set_user(user)
+		if actor:
+			frappe.set_actor(actor.get("kind") or "system", actor.get("id"), actor.get("trace_id"))
 
 	if isinstance(method, str):
 		method_name = method

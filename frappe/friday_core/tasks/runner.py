@@ -257,6 +257,17 @@ def _run_task(task_name: str, profile_name: str) -> None:
 
 	task = frappe.get_doc("Task", task_name)
 
+	# Design 99: the whole task runs as the agent — its User and its actor —
+	# so rows written outside a skill dispatch (task state, comments) are
+	# stamped too. Restored when the task ends, however it ends.
+	agent_user = frappe.db.get_value("Agent Profile", profile_name, "frappe_user")
+	if agent_user:
+		with frappe.acting_as(agent_user, kind="agent", id=profile_name):
+			return _run_task_as_actor(task, task_name, profile_name)
+	return _run_task_as_actor(task, task_name, profile_name)
+
+
+def _run_task_as_actor(task, task_name: str, profile_name: str) -> None:
 	# Design 60, Q2 — agentic tasks run a REAL governed turn instead of the
 	# mechanical skill sequence. Milestones never reach here (the dispatcher
 	# filters them), but guard anyway.
