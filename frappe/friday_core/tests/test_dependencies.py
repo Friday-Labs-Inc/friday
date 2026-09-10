@@ -111,8 +111,7 @@ class TestKernelDependencies(unittest.TestCase):
 			self.assertNotIn(
 				module,
 				_declared_distributions(),
-				f"{module} is declared in pyproject.toml, so it is not optional — "
-				"remove it from OPTIONAL.",
+				f"{module} is declared in pyproject.toml, so it is not optional — remove it from OPTIONAL.",
 			)
 
 	def test_the_llm_transport_is_installed(self):
