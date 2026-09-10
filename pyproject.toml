@@ -40,6 +40,11 @@ dependencies = [
     "email-reply-parser~=0.5.12",
     "gunicorn @ git+https://github.com/frappe/gunicorn@bb554053bb87218120d76ab6676af7015680e8b6",
     "html5lib~=1.1",
+    # Friday: the LLM transport. friday_core/llm/provider.py imports both on the
+    # chat path, so a bench without them fails the first customer turn, not at
+    # install — which is exactly how it escaped notice until a clean deploy.
+    "httpx~=0.28.1",
+    "openai~=3.8.0",
     "ipython~=8.37.0",
     "ldap3~=2.9.1",
     "markdown2~=2.5.4",
