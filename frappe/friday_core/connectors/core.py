@@ -9,8 +9,10 @@ An external system POSTs a signed event. The generic spine, for ANY system
 connector:
 
   1. Verifies the Stripe-style per-attempt signature
-     (`<header>: t=<unix>,v1=HMAC-SHA256(secret, "{t}.{raw_body}")`):
-     constant-time compare on v1 FIRST, then a freshness window on `t`.
+     (`<header>: t=<unix>,v1=HMAC(secret,"{t}.{body}"),v2=HMAC(secret,"{t}.{path}.{body}")`):
+     constant-time compare FIRST, then a freshness window on `t`. v2 binds the
+     endpoint so a captured signature cannot be replayed at another method that
+     accepts the same body shape; v1 is accepted while both ends change over.
   2. Persists the envelope as a Connector Event row (`event_id` UNIQUE → a
      duplicate delivery is a 200 no-op), tagged with the connector.
   3. Acks 200 immediately; the handler runs on the dedicated `friday` queue.
@@ -59,7 +61,14 @@ def receive_event(connector_name: str) -> dict:
 		secret = ""  # unset secret → verify_signature fails closed (401)
 	tolerance = connector.signature_tolerance_seconds or DEFAULT_TOLERANCE_SECONDS
 
-	if not verify_signature(raw_body, header, secret, tolerance):
+	# The path we are answering on, which the sender bound into v2. nginx
+	# proxies without rewriting, so both ends compute the same string.
+	try:
+		endpoint = frappe.request.path if frappe.request else ""
+	except Exception:
+		endpoint = ""
+
+	if not verify_signature(raw_body, header, secret, tolerance, endpoint=endpoint):
 		frappe.throw(frappe._("Invalid event signature."), frappe.AuthenticationError)
 
 	envelope = json.loads(raw_body)
@@ -95,24 +104,38 @@ def receive_event(connector_name: str) -> dict:
 	return {"ok": True, "event": event_id}
 
 
-def verify_signature(raw_body: bytes, header: str, secret: str, tolerance_seconds: int) -> bool:
+def verify_signature(raw_body: bytes, header: str, secret: str, tolerance_seconds: int,
+					 endpoint: str | None = None) -> bool:
 	"""Verify the Stripe-style per-attempt signature (locked contract).
 
-	Order matters: constant-time verify v1 FIRST (an attacker learns nothing
-	from timing), then enforce the freshness window on `t`.
+	Order matters: constant-time verify the digest FIRST (an attacker learns
+	nothing from timing), then enforce the freshness window on `t`.
+
+	v2 binds the endpoint, so a captured signature cannot be replayed at a
+	different method that happens to accept the same body shape. Preferred
+	whenever the caller sent one and we know our own path; v1 stays accepted
+	while both benches change over.
 	"""
 	if not secret or not header:
 		return False
 	parts = dict(part.split("=", 1) for part in header.split(",") if "=" in part)
 	t = parts.get("t")
-	v1 = parts.get("v1")
-	if not t or not v1:
+	if not t:
 		return False
 
-	signed = f"{t}.".encode() + raw_body
-	expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-	if not hmac.compare_digest(expected, v1):
-		return False
+	if endpoint and parts.get("v2"):
+		signed = f"{t}.{endpoint}.".encode() + raw_body
+		expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+		if not hmac.compare_digest(expected, parts["v2"]):
+			return False
+	else:
+		v1 = parts.get("v1")
+		if not v1:
+			return False
+		signed = f"{t}.".encode() + raw_body
+		expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+		if not hmac.compare_digest(expected, v1):
+			return False
 
 	try:
 		age = abs(time.time() - float(t))
