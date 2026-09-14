@@ -12,7 +12,8 @@ connector:
      (`<header>: t=<unix>,v1=HMAC(secret,"{t}.{body}"),v2=HMAC(secret,"{t}.{path}.{body}")`):
      constant-time compare FIRST, then a freshness window on `t`. v2 binds the
      endpoint so a captured signature cannot be replayed at another method that
-     accepts the same body shape; v1 is accepted while both ends change over.
+     accepts the same body shape. v2 is REQUIRED whenever the receiver knows its
+     own path; v1 answers only where there is no request to have one.
   2. Persists the envelope as a Connector Event row (`event_id` UNIQUE → a
      duplicate delivery is a 200 no-op), tagged with the connector.
   3. Acks 200 immediately; the handler runs on the dedicated `friday` queue.
@@ -123,12 +124,21 @@ def verify_signature(raw_body: bytes, header: str, secret: str, tolerance_second
 	if not t:
 		return False
 
-	if endpoint and parts.get("v2"):
+	if endpoint:
+		# REQUIRED, not preferred. Accepting v1 as a fallback was the changeover
+		# and it left the hole open: anyone able to capture a signed request
+		# could strip v2 from the header and be back to the old guarantee. Both
+		# ends were confirmed sending v2 in production before this closed.
+		if not parts.get("v2"):
+			return False
 		signed = f"{t}.{endpoint}.".encode() + raw_body
 		expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
 		if not hmac.compare_digest(expected, parts["v2"]):
 			return False
 	else:
+		# No request means no path to bind — the CLI and the test path. A caller
+		# cannot reach this: the server always knows its own path when a request
+		# exists.
 		v1 = parts.get("v1")
 		if not v1:
 			return False
