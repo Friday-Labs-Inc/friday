@@ -56,15 +56,32 @@ def _headers(connector) -> dict:
 SIGNATURE_HEADER_OUT = "X-Friday-Signature"
 
 
-def _outbound_signature(secret: str, raw_body: bytes) -> str:
-	"""`t=<unix>,v1=HMAC_SHA256(secret, "t." + raw_body)` — the shared signing contract."""
+def _outbound_signature(secret: str, raw_body: bytes, endpoint: str = "") -> str:
+	"""`t=<unix>,v1=HMAC(secret,"t."+body),v2=HMAC(secret,"t."+endpoint+"."+body)`.
+
+	v2 binds the endpoint. v1 covered the body alone, so within the freshness
+	window a captured signed request stayed valid at any other method that
+	accepted the same body shape — a signed `post_project_note` replayed at
+	`request_gate_open`, because `{"project": "X"}` is a legal body for both.
+	The signature proved who was calling and what they said, never what they
+	were calling.
+
+	Both are sent while the two benches change over, so they can be deployed in
+	either order: a receiver that only knows v1 ignores v2; one that knows v2
+	prefers it.
+	"""
 	import hashlib
 	import hmac
 	import time
 
 	t = int(time.time())
-	sig = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
-	return f"t={t},v1={sig}"
+	v1 = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+	if not endpoint:
+		return f"t={t},v1={v1}"
+	v2 = hmac.new(
+		secret.encode(), f"{t}.{endpoint}.".encode() + raw_body, hashlib.sha256
+	).hexdigest()
+	return f"t={t},v1={v1},v2={v2}"
 
 
 def _signing_secret(connector) -> str:
@@ -104,7 +121,14 @@ def send(connector_name: str, path: str, payload: dict, files: dict | None = Non
 			secret = _signing_secret(connector)
 			if secret:
 				body = json.dumps(payload or {}).encode("utf-8")
-				headers[SIGNATURE_HEADER_OUT] = _outbound_signature(secret, body)
+				# The endpoint is the URL's path, which is what the receiver
+				# reads back as frappe.request.path — nginx proxies without
+				# rewriting, so both ends compute the same string.
+				from urllib.parse import urlparse
+
+				headers[SIGNATURE_HEADER_OUT] = _outbound_signature(
+					secret, body, urlparse(url).path
+				)
 				headers["Content-Type"] = "application/json"
 				response = requests.post(url, data=body, headers=headers, timeout=_TIMEOUT_SECONDS)
 			else:
