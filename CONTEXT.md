@@ -153,9 +153,19 @@ product talks to Friday.
 This section exists because the previous documentation set lost the distinction
 between decided, built, and observed working. Keep it honest or delete it.
 
-- **The governed loop has never run end to end** — message in, LLM, skill
-  dispatched, submitted Execution Log out. Every "COMPLETE" in the old port
-  ledger means *code exists*, never *observed running*.
+- **The governed loop now runs** — first observed 2026-09-17 on
+  `friday.localhost`. An inbound `Chat Message` produced a real MiniMax-M2 call
+  (1,812 tokens), dispatched `list-projects`, and left a **submitted** Execution
+  Log (`1pprhgc11s`) beside a **submitted** Permission Decision Log
+  (`1pplrvub2e`, `allowed`), both carrying trace `944bdcce8836ae7d`. That is one
+  turn, one skill, one profile — not a guarantee about the other pillars. Every
+  "COMPLETE" in the old port ledger still means *code exists*, never *observed
+  running*, until each is run the same way.
+- **The Execution Log does not link its Permission Decision Log on success.**
+  `dispatcher.py:240` resolves the link only on the *rejected* path; a
+  successful dispatch leaves `permission_decision` empty. The two rows
+  correlate by `trace_id` alone. The audit chain holds, but through the trace,
+  not the Link field.
 - **CI runs zero tests.** `tests.yml` names a module that collects nothing and
   ends every step in `|| true`. 108 test modules go unexecuted.
   See [ADR-0010](docs/adr/0010-blocking-test-ratchet.md).
