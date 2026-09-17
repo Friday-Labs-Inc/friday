@@ -1,3 +1,12 @@
+> **SUPERSEDED 2026-09-17 by [`hermes-ledger-v2.md`](hermes-ledger-v2.md).**
+>
+> Kept for lineage. Its file map no longer resolves — Hermes restructured in
+> September 2026 (`run.py` → `run_*.py` siblings, `session.py` → `session_*.py`)
+> and `gateway/` grew from 22 files to 159. Its three "COMPLETE" verdicts for the
+> ReAct loop, context assembly and compression were tested against current source
+> and do not hold. Read it for *why* a decision was taken, never for *what is
+> true now*.
+
 # Hermes → Friday ports ledger
 
 _Authoritative 1:1-port comparison, grounded in real source on both sides

@@ -1,29 +1,33 @@
 # Friday
 
-Friday is an open-source, Frappe-derived agentic framework for governed business agents.
+**Frappe + Hermes.** A hard fork of the Frappe framework with the Hermes agent
+ported into it, making an agentic orchestration platform that Friday Labs runs
+for itself — agents that act as themselves, under their own roles, with every
+decision audited.
 
-The project is currently in design and Phase 1 planning. The immediate focus is the fundamentals:
+Frappe supplies the substrate: DocTypes, roles, workflows, the scheduler,
+background jobs. Hermes supplies the agent: the turn loop, context assembly,
+compression, the gateway, memory. Friday adds the governance neither has alone —
+a permission matrix, immutable audit rows, an approval gate, actor provenance.
 
-- Agent Profile
-- Skill
-- permission checks
-- sandboxed execution
-- Execution Log
-- Permission Decision Log
-- Agent Project / Agent Task
-- configurable workflow and Kanban views
-- Control Room
+It hosts many domains; each is a separate Frappe app carrying its own pipeline
+as data. It is a platform we operate, not software we distribute
+([ADR-0003](docs/adr/0003-internal-enterprise-platform.md)).
 
-The first Phase 1 flagship dogfood is ERPNext Purchase Order automation after the governed framework loop is green.
+**Status: under restructuring.** The port is architecturally complete on paper
+and has never run end to end. What is and is not true today is recorded in
+[CONTEXT.md](CONTEXT.md); the exit criterion is
+[ADR-0012](docs/adr/0012-re-baseline-exit-criterion.md).
 
 ## Start Here
 
-**New to Friday? Read [START_HERE.md](START_HERE.md) first** — a 5-minute front door for humans and AI agents who want to contribute.
+**New to Friday? Read [CONTEXT.md](CONTEXT.md) first** — the vocabulary of this
+codebase and which of its rules are real.
 
 After that:
 
-- [CODEX.md](CODEX.md) — self-contained Phase 1 implementation brief
-- [Design dossier](docs/design/00-README.md) — full design documentation
+- [Decisions](docs/adr/) — architecture decision records; start at [ADR-0001](docs/adr/0001-friday-is-frappe-plus-hermes.md)
+- [Hermes port ledger](docs/ports/) — what Friday must contain, and its state
 - [Roadmap](docs/ROADMAP.md)
 - [GitHub Project Plan](docs/project/GITHUB_PROJECT_PLAN.md)
 - [Contributing](CONTRIBUTING.md) — PR workflow and rules

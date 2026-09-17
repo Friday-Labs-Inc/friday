@@ -14,11 +14,12 @@ The project is early. Contributions should protect the fundamentals first:
 
 Read these documents before opening implementation work:
 
-1. `docs/design/39-friday-framework-strategy.md`
-2. `docs/design/41-porting-strategy-hermes-erpnext-raven.md`
-3. `docs/design/42-phase-one-authority-contract.md`
-4. `docs/design/06-phase-one-scope.md`
-5. `docs/design/10-agent-execution-guide.md`
+1. `CONTEXT.md` — the vocabulary, and what is not true yet
+2. `docs/adr/` — the decisions, newest wins
+3. `docs/ports/` — the Hermes port ledger: what Friday must contain
+
+Older design reasoning is in `docs/archive/` — read it for *why*, never for
+*what is true now* (ADR-0009).
 
 ## Development Rules
 
