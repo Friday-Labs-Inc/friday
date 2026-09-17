@@ -36,8 +36,8 @@ Friday adapts design concepts from [Hermes](https://github.com/Friday-Labs-Inc/h
 | `frappe.friday_core.agent_runner` | ADAPT | Adapted runner patterns, reimplemented for Frappe DocTypes |
 
 For questions about the Hermes relationship, see:
-- [Design: Porting Strategy](docs/design/41-porting-strategy-hermes-erpnext-raven.md)
-- [Design: Gap Analysis](docs/design/40-gap-analysis-and-resolution-plan.md)
+- [Design: Porting Strategy](docs/archive/design/41-porting-strategy-hermes-erpnext-raven.md)
+- [Design: Gap Analysis](docs/archive/design/40-gap-analysis-and-resolution-plan.md)
 
 ---
 
